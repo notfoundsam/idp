@@ -4,15 +4,22 @@ import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.testing.TestOpenBao
 import idp.worker.WorkerApplication
+import idp.worker.mail.Mail
+import idp.worker.mail.MailDispatcher
+import idp.worker.mail.MailTemplate
+import idp.worker.mail.MailTemplates
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import org.springframework.boot.runApplication
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.mail.javamail.JavaMailSender
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -98,6 +105,21 @@ class LocalSeedTest :
                 tenants() shouldContainExactlyInAnyOrder listOf("acme.idp.test", "globex.idp.test")
                 jdbc.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 2
                 tenantIds().forEach { id -> wrappedKey(id) shouldBe keys[id] }
+            }
+
+            test("mail goes to Mailpit without TLS or a password") {
+                TestMailpit.start().use { mailpit ->
+                    val mailServer = arrayOf("--MAIL_HOST=${mailpit.host}", "--MAIL_PORT=${mailpit.smtpPort}")
+
+                    runApplication<WorkerApplication>(*arguments, *mailServer).use { context ->
+                        val sender = context.getBean(JavaMailSender::class.java)
+
+                        MailDispatcher(sender, { "ada@acme.test" }, MailTemplates(), "no-reply@idp.test")
+                            .send(Mail(UUID.randomUUID(), MailTemplate.EMAIL_CHANGED, mapOf("tenant" to "Acme")))
+
+                        mailpit.messages() shouldHaveSize 1
+                    }
+                }
             }
         }
     })

@@ -7,6 +7,7 @@ dependencies {
     implementation(platform(libs.spring.boot.bom))
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.actuator)
+    implementation(libs.spring.boot.starter.mail)
     implementation(libs.spring.jdbc)
     implementation(project(":shared-kernel"))
     implementation(project(":modules:tenancy"))

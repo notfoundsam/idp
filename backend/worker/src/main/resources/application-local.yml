@@ -1,3 +1,10 @@
+spring:
+  mail:
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+      mail.smtp.starttls.required: false
+
 idp:
   seed:
     url: ${SEED_DB_URL}
