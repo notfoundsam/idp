@@ -26,6 +26,7 @@ object ArchitectureRules {
             "TenantDomains" to listOf("tenancy", "sharedkernel"),
             "TenantApplications" to listOf("tenancy"),
             "OperatorAudit" to listOf("audit"),
+            "AuditEntries" to listOf("audit"),
             "TenantKeys" to listOf("sharedkernel"),
             "UserKeys" to listOf("sharedkernel"),
             "Outbox" to listOf("sharedkernel"),
