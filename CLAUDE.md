@@ -31,6 +31,8 @@ A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for dec
 ## Commands
 
 ```bash
+make up        # start the local environment, see dev-tools/README.md
+make smoke     # check every local service
 make test      # backend and frontend tests
 make lint      # ktlint and frontend lint
 make build     # assemble everything
@@ -41,6 +43,15 @@ Gradle runs on the host and needs a JVM to start, because Testcontainers would n
 The frontend runs only in Docker, so the host needs no Node. Use `docker compose run --rm frontend corepack pnpm ...`. `node_modules` lives in a named volume, and pnpm is pinned in `frontend/package.json`.
 
 Kotlin stays at the newest version CodeQL supports, currently 2.4.20. `renovate.json` holds the limit.
+
+## Task board
+
+Every plan task has an issue `Task N: ...` on the [project board](https://github.com/users/notfoundsam/projects/1). The repository is public and plans are not, so issues hold only the goal.
+
+1. Starting a task: move its issue to `Implementing`.
+2. Code and tests are done: move it to `Testing`.
+3. Open a PR with `Closes #N`, then move the issue to `Review`. Linking a PR resets the status to `Implementing`, so this step goes last.
+4. Merging the PR closes the issue and moves it to `Done`.
 
 ## Git workflow
 

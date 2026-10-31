@@ -1,0 +1,5 @@
+http:
+  serversTransports:
+    # SimpleSAMLphp serves only HTTPS with its own self-signed certificate.
+    self-signed-backend:
+      insecureSkipVerify: true

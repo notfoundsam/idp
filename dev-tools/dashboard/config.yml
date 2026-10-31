@@ -1,0 +1,27 @@
+---
+title: IdP
+subtitle: Local development
+header: true
+footer: false
+theme: default
+
+services:
+  - name: Tools
+    items:
+      - name: Mailpit
+        subtitle: Outgoing email
+        url: https://mail.idp.test
+      - name: SimpleSAMLphp
+        subtitle: Test Service Provider
+        url: https://sp.idp.test/simplesaml/
+  - name: Application
+    items:
+      - name: Tenant acme
+        subtitle: API
+        url: https://acme.idp.test/api
+      - name: Tenant globex
+        subtitle: API
+        url: https://globex.idp.test/api
+      - name: Operator
+        subtitle: ops
+        url: https://ops.idp.test
