@@ -140,6 +140,7 @@ class DatabaseRolesTest :
                 app.query("SELECT count(*) FROM platform.tenant_domains") shouldBe "0"
                 denied { app.query("SELECT count(*) FROM platform.tenant_applications") }
                 denied { app.query("SELECT count(*) FROM platform.operator_audit") }
+                denied { app.query("SELECT count(*) FROM platform.scheduled_locks") }
                 denied { app.update("UPDATE platform.tenants SET name = 'x'") }
                 denied { app.update("CREATE TABLE platform.extra (id int)") }
             }
@@ -152,6 +153,7 @@ class DatabaseRolesTest :
                 ops.update("INSERT INTO platform.operator_audit (actor, action) VALUES ('operator', 'approved')")
                 denied { ops.update("DELETE FROM platform.operator_audit") }
                 denied { ops.query("SELECT count(*) FROM platform.outbox") }
+                denied { ops.query("SELECT count(*) FROM platform.scheduled_locks") }
                 denied { ops.query("""SELECT count(*) FROM "${tenant.name}".fixture""") }
             }
         }

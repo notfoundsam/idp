@@ -12,7 +12,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
 private const val PENDING = "PENDING"
-private const val DONE = "DONE"
+internal const val DONE = "DONE"
 private const val DEAD = "DEAD"
 
 private val log = LoggerFactory.getLogger(OutboxDispatcher::class.java)
@@ -37,6 +37,10 @@ class OutboxDispatcher(
     private val maxAttempts: Int = 8,
 ) {
     private val handlers = handlers.groupBy { it.eventType }
+
+    /** The longest an event can keep coming back: every attempt holds a lease, and every retry waits out its delay. */
+    val redeliveryWindow: Duration =
+        lease.multipliedBy(maxAttempts.toLong()).plus(retryDelay.multipliedBy((1L shl (maxAttempts - 1)) - 1))
 
     init {
         val names = handlers.map { it.name }
