@@ -35,9 +35,10 @@ class ThrottleConfiguration {
     fun rateLimiter(
         @Value("\${idp.throttle.valkey.url}") url: String,
         @Value("\${idp.throttle.valkey.timeout}") timeout: Duration,
+        @Value("\${idp.throttle.valkey.connect-timeout}") connectTimeout: Duration,
         @Value("\${idp.throttle.valkey.cooldown}") cooldown: Duration,
         registry: MeterRegistry,
-    ) = ValkeyRateLimiter(url, timeout, cooldown, registry)
+    ) = ValkeyRateLimiter(url, timeout, connectTimeout, cooldown, registry)
 
     @Bean
     fun throttleKeys(

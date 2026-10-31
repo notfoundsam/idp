@@ -144,6 +144,8 @@ class ThrottleApplicationTest :
                 "--VALKEY_URL=$valkey",
                 "--THROTTLE_IP_HMAC_KEY=${UUID.randomUUID()}",
                 "--idp.throttle.default.capacity=$LIMIT",
+                "--idp.throttle.valkey.timeout=5s",
+                "--idp.throttle.valkey.connect-timeout=10s",
                 *overrides,
             )
 

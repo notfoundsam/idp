@@ -20,6 +20,7 @@ idp:
     valkey:
       url: ${VALKEY_URL}
       timeout: 100ms
+      connect-timeout: 1s
       cooldown: 30s
 
 server:

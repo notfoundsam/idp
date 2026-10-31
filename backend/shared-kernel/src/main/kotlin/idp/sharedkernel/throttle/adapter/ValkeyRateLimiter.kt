@@ -51,23 +51,27 @@ private class Breaker(
     fun close() = openUntil.set(CLOSED)
 }
 
-/** Fails open: Postgres keeps the counters that must not be lost, and this limiter only sheds load. */
+/**
+ * Fails open: Postgres keeps the counters that must not be lost, and this limiter only sheds load.
+ * Connecting has its own timeout: TLS and AUTH on a cold JVM outlast a command, and only one probe waits for them.
+ */
 class ValkeyRateLimiter(
     url: String,
     private val timeout: Duration,
+    connectTimeout: Duration,
     cooldown: Duration,
     registry: MeterRegistry,
     clock: Clock = Clock.systemUTC(),
 ) : RateLimiter,
     AutoCloseable {
-    private val uri: RedisURI = RedisURI.create(url).also { it.setTimeout(timeout) }
+    private val uri: RedisURI = RedisURI.create(url).also { it.setTimeout(connectTimeout) }
     private val client: RedisClient =
         RedisClient.create().also {
             it.options =
                 ClientOptions
                     .builder()
                     .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
-                    .socketOptions(SocketOptions.builder().connectTimeout(timeout).build())
+                    .socketOptions(SocketOptions.builder().connectTimeout(connectTimeout).build())
                     .timeoutOptions(TimeoutOptions.enabled(timeout))
                     .build()
         }

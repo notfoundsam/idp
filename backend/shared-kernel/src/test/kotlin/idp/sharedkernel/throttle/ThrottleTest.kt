@@ -50,13 +50,16 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.reflect.KClass
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
+import kotlin.time.toJavaDuration
 
 private const val ADDRESS = "203.0.113.7"
 private const val OTHER_ADDRESS = "198.51.100.9"
 private const val MESSAGE_FAILURES = "idp.throttle.failures"
 private val SECRET = ByteArray(32) { 1 }
 private val MINUTE: Duration = Duration.ofMinutes(1)
-private val TIMEOUT: Duration = Duration.ofMillis(200)
+private val SHORT: Duration = Duration.ofMillis(200)
+private val CONNECT: Duration = Duration.ofSeconds(1)
+private val LONG: Duration = Duration.ofSeconds(5)
 private val COOLDOWN: Duration = Duration.ofSeconds(30)
 private val TENANT = TenantContext(UUID.randomUUID(), null)
 private val OTHER_TENANT = TenantContext(UUID.randomUUID(), null)
@@ -127,7 +130,9 @@ private fun limiter(
     url: String,
     registry: SimpleMeterRegistry = SimpleMeterRegistry(),
     clock: MovableClock = MovableClock(),
-) = ValkeyRateLimiter(url, TIMEOUT, COOLDOWN, registry, clock)
+    timeout: Duration = LONG,
+    connectTimeout: Duration = LONG,
+) = ValkeyRateLimiter(url, timeout, connectTimeout, COOLDOWN, registry, clock)
 
 private fun uniqueKey() = "throttle:test:${UUID.randomUUID()}"
 
@@ -380,7 +385,7 @@ class ThrottleTest :
                 val clock = MovableClock()
 
                 ServerSocket(0).use { silent ->
-                    limiter("redis://127.0.0.1:${silent.localPort}", registry, clock).use { limiter ->
+                    limiter("redis://127.0.0.1:${silent.localPort}", registry, clock, SHORT, SHORT).use { limiter ->
                         measureTime { limiter.decide(uniqueKey()) shouldBe RateDecision.Allowed } shouldBeLessThan 3.seconds
 
                         measureTime { repeat(100) { limiter.decide(uniqueKey()) shouldBe RateDecision.Allowed } } shouldBeLessThan 1.seconds
@@ -393,12 +398,22 @@ class ThrottleTest :
                 }
             }
 
+            test("connecting gets its own timeout, because TLS and AUTH on a cold JVM outlast a command") {
+                ServerSocket(0).use { silent ->
+                    limiter("redis://127.0.0.1:${silent.localPort}", timeout = SHORT, connectTimeout = CONNECT).use { limiter ->
+                        val elapsed = measureTime { limiter.decide(uniqueKey()) shouldBe RateDecision.Allowed }
+
+                        elapsed.toJavaDuration() shouldBeGreaterThan CONNECT.dividedBy(2)
+                    }
+                }
+            }
+
             test("limits return after a hung Valkey recovers") {
                 val registry = SimpleMeterRegistry()
                 val clock = MovableClock()
 
                 TestValkey.start().use { server ->
-                    limiter(server.url, registry, clock).use { limiter ->
+                    limiter(server.url, registry, clock, timeout = CONNECT).use { limiter ->
                         val key = uniqueKey()
                         limiter.decide(key) shouldBe RateDecision.Allowed
 
