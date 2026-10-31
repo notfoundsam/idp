@@ -1,6 +1,14 @@
 spring:
   application:
     name: app
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+idp:
+  tenants:
+    cache-ttl: 30s
 
 server:
   port: 8080

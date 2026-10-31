@@ -30,8 +30,23 @@ http_redirects() {
   [ "$(curl -s -o /dev/null -w '%{redirect_url}' --resolve mail.idp.test:80:127.0.0.1 http://mail.idp.test/)" = "https://mail.idp.test/" ]
 }
 
-app_answers_not_traefik() {
-  curl -s --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/api -H 'Accept: application/json' | grep -q '"status":404'
+# Spring answers with a JSON 404, Traefik with plain text, and the tenant filter with an empty body.
+reaches_spring() {
+  curl -s --cacert "$CA" --resolve "$1:443:127.0.0.1" "https://$1/api" -H 'Accept: application/json' | grep -q '"status":404'
+}
+
+# A healthy container is not routed yet: Traefik picks it up about a second later.
+wait_for_routes() {
+  for _ in $(seq 1 15); do
+    reaches_spring acme.idp.test && reaches_spring ops.idp.test && return
+    sleep 1
+  done
+}
+
+unknown_tenant_refused() {
+  local host=nobody.idp.test
+  [ "$(status "$host" /api)" = "404" ] &&
+    [ -z "$(curl -s --cacert "$CA" --resolve "$host:443:127.0.0.1" "https://$host/api")" ]
 }
 
 bao() {
@@ -61,12 +76,16 @@ health() {
   docker compose exec -T "$1" curl -fs http://localhost:8081/actuator/health | grep -q '"status":"UP"'
 }
 
+wait_for_routes
+
 check "http redirects to https" http_redirects
 check "mail.idp.test" expect_status mail.idp.test / 200
 check "dashboard.idp.test" expect_status dashboard.idp.test / 200
 check "sp.idp.test" expect_status sp.idp.test /simplesaml/module.php/core/welcome 200
-check "tenant host reaches app" app_answers_not_traefik
-check "ops.idp.test reaches ops" expect_status ops.idp.test /api 404
+check "acme.idp.test reaches app" reaches_spring acme.idp.test
+check "globex.idp.test reaches app" reaches_spring globex.idp.test
+check "unknown tenant refused" unknown_tenant_refused
+check "ops.idp.test reaches ops" reaches_spring ops.idp.test
 check "unknown path stays on Traefik" expect_status acme.idp.test /nothing 404
 check "postgres through pgbouncer" pgbouncer_query
 check "platform schema migrated" platform_migrated

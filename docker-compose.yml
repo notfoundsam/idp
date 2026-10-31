@@ -12,6 +12,8 @@ x-java-service: &java-service
   depends_on: &java-depends-on
     role-passwords:
       condition: service_completed_successfully
+    pgbouncer:
+      condition: service_started
     valkey:
       condition: service_healthy
     mail:
@@ -55,13 +57,9 @@ services:
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.26.1-p0
-    environment:
-      DB_HOST: postgres
-      DB_NAME: idp
-      DB_USER: idp_owner
-      DB_PASSWORD: idp_owner
-      AUTH_TYPE: scram-sha-256
-      POOL_MODE: transaction
+    volumes:
+      - ./dev-tools/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./dev-tools/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,6 +164,10 @@ services:
     <<: *java-service
     environment:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      # Without server-side prepared statements, because PgBouncer shares connections between clients.
+      DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
+      DB_USERNAME: app_runtime
+      DB_PASSWORD: app_runtime
     volumes:
       - ./backend/app/build/libs/app.jar:/app/service.jar:ro
     ports:
@@ -182,6 +184,16 @@ services:
     <<: *java-service
     environment:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      SPRING_PROFILES_ACTIVE: local
+      SEED_DB_URL: jdbc:postgresql://postgres:5432/idp?options=-c%20role%3Didp_owner
+      SEED_DB_USERNAME: provisioner
+      SEED_DB_PASSWORD: provisioner
+    healthcheck:
+      # Readiness waits for the seed, so `make up` returns only when the tenants exist.
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
     volumes:
       - ./backend/worker/build/libs/worker.jar:/app/service.jar:ro
     ports:

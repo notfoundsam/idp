@@ -14,6 +14,9 @@ spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-web = { module = "org.springframework:spring-web" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+spring-jdbc = { module = "org.springframework:spring-jdbc" }
+spring-test = { module = "org.springframework:spring-test" }
+caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 flyway-core = { module = "org.flywaydb:flyway-core" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
