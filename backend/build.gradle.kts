@@ -9,6 +9,19 @@ plugins {
 
 group = "idp"
 
+// docker-compose.yml is the only place that names the Postgres image.
+val postgresImage: String =
+    Regex("""image: (postgres:\S+)""")
+        .find(rootDir.resolve("../docker-compose.yml").readText())!!
+        .groupValues[1]
+val postgresInitScript: String =
+    rootDir
+        .resolve("../dev-tools/postgres/init.sql")
+        .canonicalPath
+
+extra["postgresImage"] = postgresImage
+extra["postgresInitScript"] = postgresInitScript
+
 // `:modules` and `:audience` are only folders, so they get no build logic.
 configure(subprojects.filter { it.childProjects.isEmpty() }) {
     apply(plugin = "java-library")
@@ -29,5 +42,7 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        systemProperty("idp.postgres.image", postgresImage)
+        systemProperty("idp.postgres.init", postgresInitScript)
     }
 }

@@ -10,7 +10,7 @@ x-java-service: &java-service
     timeout: 2s
     retries: 40
   depends_on: &java-depends-on
-    migrator:
+    role-passwords:
       condition: service_completed_successfully
     valkey:
       condition: service_healthy
@@ -131,12 +131,35 @@ services:
     image: amazoncorretto:25.0.5-al2023-headless
     command: ["java", "-jar", "/app/service.jar"]
     user: "65532:65532"
+    environment:
+      # Directly to Postgres, because migrations use session locks that PgBouncer would lose.
+      DB_URL: jdbc:postgresql://postgres:5432/idp
+      DB_USERNAME: idp_owner
+      DB_PASSWORD: idp_owner
     volumes:
       - ./backend/migrator/build/libs/migrator.jar:/app/service.jar:ro
     depends_on:
       postgres:
         condition: service_healthy
       openbao-init:
+        condition: service_completed_successfully
+
+  role-passwords:
+    image: postgres:18.6-alpine3.24
+    entrypoint: ["sh", "/set-role-passwords.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: idp
+      APP_RUNTIME_PASSWORD: app_runtime
+      WORKER_RUNTIME_PASSWORD: worker_runtime
+      OPS_RUNTIME_PASSWORD: ops_runtime
+      PROVISIONER_PASSWORD: provisioner
+    volumes:
+      - ./dev-tools/set-role-passwords.sh:/set-role-passwords.sh:ro
+    depends_on:
+      migrator:
         condition: service_completed_successfully
 
   app:

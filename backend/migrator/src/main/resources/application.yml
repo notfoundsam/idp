@@ -3,3 +3,10 @@ spring:
     name: migrator
   main:
     web-application-type: none
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      # Every parallel Flyway run takes two connections, and the schema lock takes one.
+      maximum-pool-size: 12

@@ -38,7 +38,7 @@ make lint      # ktlint and frontend lint
 make build     # assemble everything
 ```
 
-Gradle runs on the host and needs a JVM to start, because Testcontainers would need the Docker socket from inside a container. The Corretto 25 toolchain is provisioned automatically, the same JVM as the production image.
+Gradle runs on the host and needs a JVM to start, because Testcontainers would need the Docker socket from inside a container. Compiling also needs Docker: jOOQ code is generated from the migrations on a temporary Postgres. The Corretto 25 toolchain is provisioned automatically, the same JVM as the production image.
 
 The frontend runs only in Docker, so the host needs no Node. Use `docker compose run --rm frontend corepack pnpm ...`. `node_modules` lives in a named volume, and pnpm is pinned in `frontend/package.json`.
 

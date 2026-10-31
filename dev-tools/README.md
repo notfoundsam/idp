@@ -1,6 +1,6 @@
 # Local environment
 
-The host needs Docker, a JVM to run Gradle, and [mkcert](https://github.com/FiloSottile/mkcert). Node is not needed: the frontend runs in Docker.
+The host needs Docker, also for compiling the backend, a JVM to run Gradle, and [mkcert](https://github.com/FiloSottile/mkcert). Node is not needed: the frontend runs in Docker.
 
 ```bash
 make install   # /etc/hosts entries (asks for sudo), certificates, dependencies, jars
@@ -30,6 +30,12 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 `*.idp.test` is used instead of `.local`, which macOS reserves for mDNS. HTTPS is required everywhere because passkeys and `Secure` cookies need it outside `localhost`.
 
 `/etc/hosts` has no wildcards, so `dev-tools/domains.sh` lists every domain. Add a new tenant there and run `make dns-mapping`. If you create tenants often, point `idp.test` at `127.0.0.1` with dnsmasq instead.
+
+## Database
+
+`migrator` runs on every `up`, connects to Postgres directly as `idp_owner`, and migrates `platform` and every tenant schema. Then `role-passwords` sets the passwords of the roles the migration created, because secrets do not belong in migrations.
+
+`dev-tools/postgres/init.sql` only runs on an empty volume, so after it changes run `make clean`.
 
 ## Secrets
 

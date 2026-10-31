@@ -49,6 +49,14 @@ pgbouncer_query() {
   docker compose exec -T -e PGPASSWORD=idp_owner postgres psql -h pgbouncer -p 5432 -U idp_owner -d idp -tAc 'select 1' | grep -q '^1$'
 }
 
+platform_migrated() {
+  [ "$(docker compose exec -T postgres psql -U postgres -d idp -tAc 'select count(*) from platform.flyway_schema_history where success')" -gt 0 ]
+}
+
+runtime_role_connects() {
+  docker compose exec -T -e PGPASSWORD=app_runtime postgres psql -h postgres -U app_runtime -d idp -tAc 'select count(*) from platform.tenants' | grep -q '^[0-9]'
+}
+
 health() {
   docker compose exec -T "$1" curl -fs http://localhost:8081/actuator/health | grep -q '"status":"UP"'
 }
@@ -61,6 +69,8 @@ check "tenant host reaches app" app_answers_not_traefik
 check "ops.idp.test reaches ops" expect_status ops.idp.test /api 404
 check "unknown path stays on Traefik" expect_status acme.idp.test /nothing 404
 check "postgres through pgbouncer" pgbouncer_query
+check "platform schema migrated" platform_migrated
+check "runtime role connects" runtime_role_connects
 check "valkey" docker compose exec -T valkey valkey-cli ping
 check "openbao transit round trip" transit_roundtrip
 check "app health" health app
