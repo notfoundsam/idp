@@ -29,6 +29,7 @@ object ArchitectureRules {
             "TenantKeys" to listOf("sharedkernel"),
             "UserKeys" to listOf("sharedkernel"),
             "Outbox" to listOf("sharedkernel"),
+            "ProcessedEvents" to listOf("sharedkernel"),
             "Users" to listOf("identity"),
         )
 

@@ -122,8 +122,8 @@ class TenantIsolationTest :
                 val transaction = TenantTransaction(database.role("app_runtime"))
                 val insert =
                     """
-                    INSERT INTO platform.outbox (id, aggregate_type, aggregate_id, aggregate_version, event_type, correlation_id)
-                    VALUES (gen_random_uuid(), 'user', gen_random_uuid(), 1, 'created', gen_random_uuid())
+                    INSERT INTO platform.outbox (id, tenant_id, aggregate_type, aggregate_id, aggregate_version, event_type, correlation_id)
+                    VALUES (gen_random_uuid(), '$a', 'user', gen_random_uuid(), 1, 'created', gen_random_uuid())
                     """
 
                 inTenant(a) { transaction.execute { it.execute(insert) } }

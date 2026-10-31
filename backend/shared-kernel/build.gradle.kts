@@ -10,6 +10,8 @@ dependencies {
     implementation(libs.spring.jdbc)
     implementation(libs.caffeine)
     implementation(libs.jackson.databind)
+    implementation(libs.jackson.module.kotlin)
+    implementation(libs.slf4j.api)
     implementation(libs.aws.sdk.kms)
     implementation(libs.tink)
 
