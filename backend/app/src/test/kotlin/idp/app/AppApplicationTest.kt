@@ -1,5 +1,7 @@
 package idp.app
 
+import idp.sharedkernel.migration.TenantMigrationRunner
+import idp.sharedkernel.testing.TestDatabase
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -11,6 +13,18 @@ import java.net.http.HttpResponse
 
 class AppApplicationTest :
     StringSpec({
+        val database = TestDatabase.create()
+        TenantMigrationRunner(database.owner()).migrateAll()
+        database.role("app_runtime")
+        val arguments =
+            arrayOf(
+                "--server.port=0",
+                "--management.server.port=0",
+                "--spring.datasource.url=${database.url}",
+                "--spring.datasource.username=app_runtime",
+                "--spring.datasource.password=app_runtime",
+            )
+
         fun get(
             port: String?,
             path: String,
@@ -23,7 +37,7 @@ class AppApplicationTest :
                 )
 
         "health answers on the management port only" {
-            runApplication<AppApplication>("--server.port=0", "--management.server.port=0").use { context ->
+            runApplication<AppApplication>(*arguments).use { context ->
                 val main = context.environment.getProperty("local.server.port")
                 val management = context.environment.getProperty("local.management.port")
 
@@ -36,7 +50,7 @@ class AppApplicationTest :
         }
 
         "the management port exposes nothing but health" {
-            runApplication<AppApplication>("--server.port=0", "--management.server.port=0").use { context ->
+            runApplication<AppApplication>(*arguments).use { context ->
                 val management = context.environment.getProperty("local.management.port")
 
                 get(management, "/actuator/env").statusCode() shouldBe 404

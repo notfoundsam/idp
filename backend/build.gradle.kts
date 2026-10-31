@@ -18,6 +18,14 @@ val postgresInitScript: String =
     rootDir
         .resolve("../dev-tools/postgres/init.sql")
         .canonicalPath
+val pgbouncerImage: String =
+    Regex("""image: (edoburu/pgbouncer:\S+)""")
+        .find(rootDir.resolve("../docker-compose.yml").readText())!!
+        .groupValues[1]
+val pgbouncerConfig: String =
+    rootDir
+        .resolve("../dev-tools/pgbouncer")
+        .canonicalPath
 
 extra["postgresImage"] = postgresImage
 extra["postgresInitScript"] = postgresInitScript
@@ -44,5 +52,8 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
         useJUnitPlatform()
         systemProperty("idp.postgres.image", postgresImage)
         systemProperty("idp.postgres.init", postgresInitScript)
+        systemProperty("idp.pgbouncer.image", pgbouncerImage)
+        systemProperty("idp.pgbouncer.config", pgbouncerConfig)
+        inputs.dir(pgbouncerConfig).withPathSensitivity(PathSensitivity.RELATIVE)
     }
 }

@@ -1,0 +1,5 @@
+idp:
+  seed:
+    url: ${SEED_DB_URL}
+    username: ${SEED_DB_USERNAME}
+    password: ${SEED_DB_PASSWORD}

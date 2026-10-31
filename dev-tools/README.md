@@ -37,6 +37,10 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 `dev-tools/postgres/init.sql` only runs on an empty volume, so after it changes run `make clean`.
 
+`app` connects through PgBouncer in transaction mode as `app_runtime`, and every tenant transaction sets its role with `SET LOCAL`. Tests start PgBouncer from the same `dev-tools/pgbouncer` files, so a new role goes into `userlist.txt`.
+
+In the `local` profile `worker` seeds the tenants `acme` and `globex`. `make up` returns after the seed, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
+
 ## Secrets
 
 Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`.

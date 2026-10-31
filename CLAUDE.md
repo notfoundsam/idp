@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for decisions. Implementation plans live in `docs/plans/` and are never committed.
+A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for decisions. Implementation plans live in `docs/plans/` and are never committed. For a plan task, read the plan's `README.md` and `tasks/task-NN.md`, and open its other files only when needed.
 
 - `backend/` — Kotlin, Spring Boot, Gradle multi-project. The root package is `idp`.
 - `frontend/` — Vue 3, pnpm workspace.
