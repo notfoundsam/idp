@@ -6,6 +6,7 @@ spring-boot = "4.1.2"
 archunit = "1.5.1"
 aws-sdk = "2.46.7"
 tink = "1.24.0"
+bucket4j = "8.21.0"
 
 [libraries]
 kotest-runner = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
@@ -22,6 +23,10 @@ caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
 slf4j-api = { module = "org.slf4j:slf4j-api" }
+logback-classic = { module = "ch.qos.logback:logback-classic" }
+micrometer-core = { module = "io.micrometer:micrometer-core" }
+lettuce-core = { module = "io.lettuce:lettuce-core" }
+bucket4j-lettuce = { module = "com.bucket4j:bucket4j_jdk17-lettuce", version.ref = "bucket4j" }
 aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
 tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }

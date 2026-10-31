@@ -9,6 +9,19 @@ spring:
 idp:
   tenants:
     cache-ttl: 30s
+  client-ip:
+    trusted-header: ${CLIENT_IP_HEADER:}
+  throttle:
+    enabled: ${THROTTLE_ENABLED:true}
+    ip-hmac-key: ${THROTTLE_IP_HMAC_KEY}
+    default:
+      capacity: 300
+      period: 1m
+    valkey:
+      url: ${VALKEY_URL}
+      timeout: 100ms
+      connect-timeout: 1s
+      cooldown: 30s
 
 server:
   port: 8080
@@ -16,6 +29,10 @@ server:
 management:
   server:
     port: 8081
+  endpoint:
+    health:
+      probes:
+        enabled: true
   endpoints:
     web:
       exposure:

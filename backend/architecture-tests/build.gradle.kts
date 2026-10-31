@@ -3,6 +3,7 @@ dependencies {
     testImplementation(project(":worker"))
     testImplementation(project(":ops"))
     testImplementation(project(":migrator"))
+    testImplementation(project(":shared-kernel"))
     testImplementation(platform(libs.spring.boot.bom))
     testImplementation(libs.archunit)
     testImplementation(libs.spring.web)

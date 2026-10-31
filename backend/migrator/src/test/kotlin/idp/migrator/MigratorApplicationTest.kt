@@ -1,12 +1,27 @@
 package idp.migrator
 
 import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.throttle.RateLimiter
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import org.springframework.boot.ApplicationArguments
+import org.springframework.boot.ApplicationRunner
+import org.springframework.context.ApplicationContext
 import java.nio.file.Path
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 import kotlin.io.path.listDirectoryEntries
+
+private val limiters = AtomicInteger(-1)
+
+private class LimiterCount(
+    private val context: ApplicationContext,
+) : ApplicationRunner {
+    override fun run(args: ApplicationArguments) {
+        limiters.set(context.getBeansOfType(RateLimiter::class.java).size)
+    }
+}
 
 class MigratorApplicationTest :
     StringSpec({
@@ -38,6 +53,19 @@ class MigratorApplicationTest :
 
             code shouldBe 0
             appliedMigrations(database.owner(), "platform") shouldBe migrationFiles("platform")
+        }
+
+        "migrator creates no Valkey adapter" {
+            val database = TestDatabase.create()
+
+            runMigrator(
+                "--DB_URL=${database.url}",
+                "--DB_USERNAME=idp_owner",
+                "--DB_PASSWORD=idp_owner",
+                sources = arrayOf(MigratorApplication::class.java, LimiterCount::class.java),
+            ) shouldBe 0
+
+            limiters.get() shouldBe 0
         }
 
         "a failed run exits with a non-zero code" {

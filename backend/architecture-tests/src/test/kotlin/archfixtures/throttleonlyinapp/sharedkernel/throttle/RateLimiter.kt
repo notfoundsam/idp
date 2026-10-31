@@ -1,0 +1,3 @@
+package archfixtures.throttleonlyinapp.sharedkernel.throttle
+
+class RateLimiter

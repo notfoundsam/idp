@@ -1,9 +1,16 @@
 package idp.architecture
 
+import com.tngtech.archunit.core.domain.JavaClass
+import com.tngtech.archunit.core.domain.JavaPackage
+import com.tngtech.archunit.lang.ArchCondition
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.CompositeArchRule
+import com.tngtech.archunit.lang.ConditionEvents
+import com.tngtech.archunit.lang.SimpleConditionEvent
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
+import idp.sharedkernel.bus.Message
+import idp.sharedkernel.security.SecurityConfig
 
 /** Every rule takes the root package, so the same rule runs on the code and on its fixture. */
 object ArchitectureRules {
@@ -34,6 +41,9 @@ object ArchitectureRules {
             "ScheduledLocks" to listOf("sharedkernel"),
             "Users" to listOf("identity"),
         )
+
+    /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */
+    val publicMessages = emptySet<String>()
 
     private const val JOOQ_SCHEMAS = """db\.jooq\.(platform|tenant)\.tables"""
     private const val CONTROLLER = "org.springframework.stereotype.Controller"
@@ -152,6 +162,89 @@ object ArchitectureRules {
             .dependOnClassesThat()
             .resideInAnyPackage("$root.audience..", "$root.sharedkernel.bus..")
 
+    private fun noMessagesInContexts(root: String): ArchRule =
+        noClasses()
+            .that()
+            .resideInAnyPackage(*contextPackages(root))
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("$root.sharedkernel.bus..")
+
+    private fun throttleOnlyInApp(root: String): ArchRule =
+        noClasses()
+            .that()
+            .resideInAnyPackage("$root.ops..", "$root.worker..", "$root.migrator..", "$root.audience.operator..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("$root.sharedkernel.throttle..")
+
+    /** A `SecurityConfig` holds data only, so an audience declares it as an object or with a no-argument constructor. */
+    private fun instanceOf(config: JavaClass): SecurityConfig {
+        val type = config.reflect()
+        val singleton = type.fields.firstOrNull { it.name == "INSTANCE" }?.get(null)
+        return (singleton ?: type.getDeclaredConstructor().newInstance()) as SecurityConfig
+    }
+
+    private fun securityConfigsOf(audience: JavaPackage): List<SecurityConfig> =
+        audience.classesInPackageTree
+            .filter { it.isAssignableTo(SecurityConfig::class.java) && !it.isInterface }
+            .map(::instanceOf)
+
+    private fun audienceOf(
+        message: JavaClass,
+        root: String,
+    ): JavaPackage {
+        val name = message.packageName.removePrefix("$root.audience.").substringBefore('.')
+        return generateSequence(message.getPackage()) { it.parent.orElse(null) }.first { it.name == "$root.audience.$name" }
+    }
+
+    private fun listedInSecurityConfig(root: String) =
+        object : ArchCondition<JavaClass>("be listed in the SecurityConfig of their audience") {
+            override fun check(
+                message: JavaClass,
+                events: ConditionEvents,
+            ) {
+                val listed = securityConfigsOf(audienceOf(message, root)).flatMap { it.permissions.keys }
+                if (listed.none { it.java.name == message.name }) {
+                    events.add(SimpleConditionEvent.violated(message, "${message.name} is not in a SecurityConfig of its audience"))
+                }
+            }
+        }
+
+    private fun audienceMessages(root: String): ArchRule =
+        classes()
+            .that()
+            .resideInAPackage("$root.audience..")
+            .and()
+            .areAssignableTo(Message::class.java)
+            .and()
+            .areNotInterfaces()
+            .should(listedInSecurityConfig(root))
+
+    private fun publicListed(root: String) =
+        object : ArchCondition<JavaClass>("make public only the messages in publicMessages") {
+            override fun check(
+                config: JavaClass,
+                events: ConditionEvents,
+            ) {
+                val public = instanceOf(config).permissions.filterValues { it == null }.keys
+                val listed = publicMessages.map { "$root.$it" }.toSet()
+                (public.map { it.java.name } - listed).forEach {
+                    events.add(SimpleConditionEvent.violated(config, "$it is public but missing from publicMessages"))
+                }
+            }
+        }
+
+    private fun publicMessagesListed(root: String): ArchRule =
+        classes()
+            .that()
+            .resideInAPackage("$root.audience..")
+            .and()
+            .areAssignableTo(SecurityConfig::class.java)
+            .and()
+            .areNotInterfaces()
+            .should(publicListed(root))
+
     private fun jooqUsage(root: String): ArchRule =
         noClasses()
             .that()
@@ -192,6 +285,10 @@ object ArchitectureRules {
             "deployableaudiences" to ::deployableAudiences,
             "nocontrollers" to ::noControllersInContexts,
             "workerisolation" to ::workerAndMigratorIsolation,
+            "contextmessages" to ::noMessagesInContexts,
+            "throttleonlyinapp" to ::throttleOnlyInApp,
+            "audiencemessages" to ::audienceMessages,
+            "publicmessages" to ::publicMessagesListed,
             "jooqusage" to ::jooqUsage,
             "tableowner" to ::tableOwner,
             "tableunmapped" to ::tableUnmapped,

@@ -1,6 +1,8 @@
 package idp.worker
 
+import idp.sharedkernel.throttle.RateLimiter
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.springframework.boot.runApplication
@@ -25,6 +27,12 @@ class WorkerApplicationTest :
 
                 health.statusCode() shouldBe 200
                 health.body() shouldContain "\"status\":\"UP\""
+            }
+        }
+
+        "worker creates no Valkey adapter" {
+            runApplication<WorkerApplication>("--server.port=0").use { context ->
+                context.getBeansOfType(RateLimiter::class.java).shouldBeEmpty()
             }
         }
     })

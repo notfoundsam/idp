@@ -168,6 +168,9 @@ services:
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: app_runtime
       DB_PASSWORD: app_runtime
+      VALKEY_URL: redis://valkey:6379
+      THROTTLE_IP_HMAC_KEY: local-throttle-key
+      CLIENT_IP_HEADER: CloudFront-Viewer-Address
     volumes:
       - ./backend/app/build/libs/app.jar:/app/service.jar:ro
     ports:
@@ -205,6 +208,9 @@ services:
     <<: *java-service
     environment:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
+      DB_USERNAME: ops_runtime
+      DB_PASSWORD: ops_runtime
     volumes:
       - ./backend/ops/build/libs/ops.jar:/app/service.jar:ro
     ports:
