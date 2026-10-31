@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: worker
+
+# worker serves no API, so its only port is the management one.
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

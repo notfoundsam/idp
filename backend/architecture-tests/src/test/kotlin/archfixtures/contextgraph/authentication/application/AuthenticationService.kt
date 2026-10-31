@@ -1,0 +1,3 @@
+package archfixtures.contextgraph.authentication.application
+
+class AuthenticationService
