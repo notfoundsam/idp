@@ -23,13 +23,16 @@ object ArchitectureRules {
     val tableOwners =
         mapOf(
             "Tenants" to listOf("tenancy", "sharedkernel"),
+            "TenantDomains" to listOf("tenancy", "sharedkernel"),
+            "TenantApplications" to listOf("tenancy"),
+            "OperatorAudit" to listOf("audit"),
             "TenantKeys" to listOf("sharedkernel"),
             "UserKeys" to listOf("sharedkernel"),
             "Outbox" to listOf("sharedkernel"),
             "Users" to listOf("identity"),
         )
 
-    private const val JOOQ_TABLES = "db.jooq..tables.."
+    private const val JOOQ_SCHEMAS = """db\.jooq\.(platform|tenant)\.tables"""
     private const val CONTROLLER = "org.springframework.stereotype.Controller"
 
     private fun composite(rules: List<ArchRule>): ArchRule =
@@ -163,14 +166,14 @@ object ArchitectureRules {
                     .resideOutsideOfPackages(*allowed.toTypedArray(), "$root.db..")
                     .should()
                     .dependOnClassesThat()
-                    .haveFullyQualifiedName("$root.db.jooq.tables.$table")
+                    .haveNameMatching("""${Regex.escape(root)}\.$JOOQ_SCHEMAS\.(records\.)?$table(Record)?""")
             },
         )
 
     private fun tableUnmapped(root: String): ArchRule =
         classes()
             .that()
-            .resideInAPackage("$root.$JOOQ_TABLES")
+            .haveNameMatching("""${Regex.escape(root)}\.$JOOQ_SCHEMAS\.[^.]+""")
             .should()
             .haveNameMatching(""".*\.(${tableOwners.keys.joinToString("|")})(\$.*)?""")
 
