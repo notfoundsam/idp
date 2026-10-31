@@ -2,6 +2,7 @@ package idp.architecture
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import java.io.File
 
@@ -26,6 +27,12 @@ class BuildGraphTest :
         "worker and migrator build no audience" {
             audiencesOf("worker").shouldBeEmpty()
             audiencesOf("migrator").shouldBeEmpty()
+        }
+
+        "app, worker and ops build the audit context" {
+            listOf("app", "worker", "ops").forEach { module ->
+                dependenciesOf(module) shouldContain ":modules:audit"
+            }
         }
 
         "contexts depend only along the graph" {

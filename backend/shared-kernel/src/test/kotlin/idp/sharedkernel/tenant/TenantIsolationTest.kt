@@ -225,6 +225,91 @@ class TenantIsolationTest :
             }
         }
 
+        test("joining needs a running transaction of the same scope") {
+            Tenants().run {
+                val dataSource = database.role("app_runtime")
+                val tenant = TenantTransaction(dataSource)
+                val platform = PlatformTransaction(dataSource)
+
+                inTenant(a) {
+                    shouldThrow<IllegalStateException> { tenant.join { it.value("SELECT 1") } }
+                    tenant.execute { tenant.join { it.value("SELECT current_user") } } shouldBe TenantSchema(a).name
+                    shouldThrow<IllegalStateException> {
+                        tenant.execute { inTenant(b) { tenant.join { it.value("SELECT 1") } } }
+                    }
+                }
+                shouldThrow<IllegalStateException> { platform.join { it.value("SELECT 1") } }
+                platform.execute { platform.join { it.value("SELECT current_user") } } shouldBe "app_runtime"
+            }
+        }
+
+        test("a separate transaction commits while the outer one rolls back") {
+            Tenants().run {
+                val transaction = TenantTransaction(database.role("app_runtime"))
+
+                shouldThrow<IllegalArgumentException> {
+                    inTenant(a) {
+                        transaction.execute {
+                            it.execute("INSERT INTO fixture VALUES (1)")
+                            transaction.executeSeparately { separate -> separate.execute("INSERT INTO fixture VALUES (2)") }
+                            throw IllegalArgumentException("stop")
+                        }
+                    }
+                }
+
+                owner.query("""SELECT string_agg(id::text, ',') FROM "${TenantSchema(a).name}".fixture""") shouldBe "2"
+            }
+        }
+
+        test("a separate transaction rolls back without touching the outer one") {
+            Tenants().run {
+                val transaction = TenantTransaction(database.role("app_runtime"))
+
+                inTenant(a) {
+                    transaction.execute {
+                        it.execute("INSERT INTO fixture VALUES (1)")
+                        shouldThrow<IllegalArgumentException> {
+                            transaction.executeSeparately { separate ->
+                                separate.execute("INSERT INTO fixture VALUES (2)")
+                                throw IllegalArgumentException("stop")
+                            }
+                        }
+                        it.execute("INSERT INTO fixture VALUES (3)")
+                    }
+                }
+
+                owner.query("""SELECT string_agg(id::text, ',' ORDER BY id) FROM "${TenantSchema(a).name}".fixture""") shouldBe "1,3"
+            }
+        }
+
+        test("the outer transaction keeps its role after a separate one") {
+            Tenants().run {
+                val transaction = TenantTransaction(database.role("app_runtime"))
+
+                inTenant(a) {
+                    transaction.execute {
+                        transaction.executeSeparately { it.value("SELECT current_user") } shouldBe TenantSchema(a).name
+                        transaction.join { it.value("SELECT current_user") } shouldBe TenantSchema(a).name
+                    }
+                }
+            }
+        }
+
+        test("a separate platform transaction leaves a tenant transaction alone") {
+            Tenants().run {
+                val dataSource = database.role("app_runtime")
+                val tenant = TenantTransaction(dataSource)
+                val platform = PlatformTransaction(dataSource)
+
+                inTenant(a) {
+                    tenant.execute {
+                        platform.executeSeparately { it.value("SELECT current_user") } shouldBe "app_runtime"
+                        it.value("SELECT current_user") shouldBe TenantSchema(a).name
+                    }
+                }
+            }
+        }
+
         context("through PgBouncer") {
             // One client like a Hikari connection: PgBouncer restores search_path for a new client and would hide a leak.
             fun DataSource.oneClient() = SingleConnectionDataSource(connection, true)
