@@ -1,5 +1,6 @@
 package idp.sharedkernel.tenant
 
+import idp.db.jooq.tenant.tables.TenantKeys.TENANT_KEYS
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
@@ -56,6 +57,26 @@ class TenantIsolationTest :
 
                 owner.query("""SELECT count(*) FROM "${TenantSchema(a).name}".fixture""") shouldBe "1"
                 owner.query("""SELECT count(*) FROM "${TenantSchema(b).name}".fixture""") shouldBe "0"
+            }
+        }
+
+        test("a generated tenant table works through search_path alone") {
+            Tenants().run {
+                val transaction = TenantTransaction(database.role("app_runtime"))
+
+                inTenant(a) {
+                    transaction.execute {
+                        it.render(it.selectFrom(TENANT_KEYS)) shouldContain """from "tenant_keys""""
+                        it
+                            .insertInto(TENANT_KEYS)
+                            .set(TENANT_KEYS.VERSION, 1)
+                            .set(TENANT_KEYS.WRAPPED_KEY, ByteArray(1))
+                            .execute()
+                    }
+                }
+
+                inTenant(a) { transaction.execute { it.fetchCount(TENANT_KEYS) } } shouldBe 1
+                inTenant(b) { transaction.execute { it.fetchCount(TENANT_KEYS) } } shouldBe 0
             }
         }
 

@@ -188,6 +188,8 @@ services:
       SEED_DB_URL: jdbc:postgresql://postgres:5432/idp?options=-c%20role%3Didp_owner
       SEED_DB_USERNAME: provisioner
       SEED_DB_PASSWORD: provisioner
+      OPENBAO_ADDRESS: http://openbao:8200
+      OPENBAO_TOKEN: local-dev-token
     healthcheck:
       # Readiness waits for the seed, so `make up` returns only when the tenants exist.
       test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]

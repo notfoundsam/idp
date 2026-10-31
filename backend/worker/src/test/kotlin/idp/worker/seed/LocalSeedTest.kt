@@ -1,13 +1,16 @@
 package idp.worker.seed
 
+import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.testing.TestOpenBao
 import idp.worker.WorkerApplication
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldStartWith
 import org.springframework.boot.runApplication
 import org.springframework.jdbc.core.JdbcTemplate
 import java.net.URI
@@ -37,6 +40,8 @@ class LocalSeedTest :
                     "--idp.seed.url=${database.url}?options=-c%20role%3Didp_owner",
                     "--idp.seed.username=provisioner",
                     "--idp.seed.password=provisioner",
+                    "--idp.seed.openbao.address=${TestOpenBao.address}",
+                    "--idp.seed.openbao.token=${TestOpenBao.TOKEN}",
                 )
 
             fun tenants(): List<String> =
@@ -49,11 +54,16 @@ class LocalSeedTest :
                         String::class.java,
                     ).filterNotNull()
 
+            fun tenantIds(): List<UUID> = jdbc.queryForList("SELECT id FROM platform.tenants", UUID::class.java).filterNotNull()
+
+            fun wrappedKey(id: UUID): ByteArray =
+                jdbc.queryForObject("SELECT wrapped_key FROM \"${TenantSchema(id).name}\".tenant_keys", ByteArray::class.java)!!
+
             test("two active tenants appear with migrated schemas") {
                 runApplication<WorkerApplication>(*arguments).use { context ->
                     tenants() shouldContainExactlyInAnyOrder listOf("acme.idp.test", "globex.idp.test")
 
-                    jdbc.queryForList("SELECT id FROM platform.tenants", UUID::class.java).filterNotNull().forEach { id ->
+                    tenantIds().forEach { id ->
                         val schema = TenantSchema(id).name
                         val history = "SELECT count(*) FROM \"$schema\".flyway_schema_history WHERE success"
                         (jdbc.queryForObject(history, Int::class.java)!! > 0) shouldBe true
@@ -69,11 +79,25 @@ class LocalSeedTest :
                 }
             }
 
+            test("each tenant gets a KEK and a tenant key under it") {
+                val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
+
+                tenantIds().forEach { id ->
+                    val kekUri = jdbc.queryForObject("SELECT kek_uri FROM platform.tenants WHERE id = ?", String::class.java, id)!!
+
+                    kekUri shouldStartWith "hcvault://transit/"
+                    kms.unwrap(kekUri, wrappedKey(id)).size shouldBe 32
+                }
+            }
+
             test("a restart changes nothing") {
+                val keys = tenantIds().associateWith(::wrappedKey)
+
                 runApplication<WorkerApplication>(*arguments).close()
 
                 tenants() shouldContainExactlyInAnyOrder listOf("acme.idp.test", "globex.idp.test")
                 jdbc.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 2
+                tenantIds().forEach { id -> wrappedKey(id) shouldBe keys[id] }
             }
         }
     })

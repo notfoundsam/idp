@@ -3,3 +3,6 @@ idp:
     url: ${SEED_DB_URL}
     username: ${SEED_DB_USERNAME}
     password: ${SEED_DB_PASSWORD}
+    openbao:
+      address: ${OPENBAO_ADDRESS}
+      token: ${OPENBAO_TOKEN}
