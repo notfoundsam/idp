@@ -2,7 +2,9 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.spring) apply false
     alias(libs.plugins.ktlint) apply false
+    alias(libs.plugins.spring.boot) apply false
 }
 
 group = "idp"
@@ -14,7 +16,10 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
 
     extensions.configure<KotlinJvmProjectExtension> {
-        jvmToolchain(25)
+        jvmToolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+            vendor = JvmVendorSpec.AMAZON
+        }
     }
 
     dependencies {

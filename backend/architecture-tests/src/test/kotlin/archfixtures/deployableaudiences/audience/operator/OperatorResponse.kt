@@ -1,0 +1,3 @@
+package archfixtures.deployableaudiences.audience.operator
+
+class OperatorResponse

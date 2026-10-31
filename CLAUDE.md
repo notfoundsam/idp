@@ -17,6 +17,7 @@ A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for dec
 - Direct calls between contexts follow the graph `federation → authentication → identity` and `federation → identity`. The audience or `worker` composes everything else.
 - `audience/operator` is built only into `ops`, the other audiences only into `app`. `worker` and `migrator` never depend on `audience`.
 - `backend/db` owns all migrations and jOOQ code. A table is accessed only from its owner's `adapters/persistence`.
+- These rules live in `backend/architecture-tests`. A new rule needs a fixture with a violation, and a new table needs an entry in `tableOwners`.
 
 ## Conventions
 
@@ -35,7 +36,7 @@ make lint      # ktlint and frontend lint
 make build     # assemble everything
 ```
 
-Gradle runs on the host and needs a JVM to start, because Testcontainers would need the Docker socket from inside a container. The Java 25 toolchain is provisioned automatically.
+Gradle runs on the host and needs a JVM to start, because Testcontainers would need the Docker socket from inside a container. The Corretto 25 toolchain is provisioned automatically, the same JVM as the production image.
 
 The frontend runs only in Docker, so the host needs no Node. Use `docker compose run --rm frontend corepack pnpm ...`. `node_modules` lives in a named volume, and pnpm is pinned in `frontend/package.json`.
 

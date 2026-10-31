@@ -1,0 +1,3 @@
+package archfixtures.sharedkernelindependent.identity.application
+
+class IdentityService
