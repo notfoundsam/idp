@@ -20,6 +20,8 @@ spring-jdbc = { module = "org.springframework:spring-jdbc" }
 spring-test = { module = "org.springframework:spring-test" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }
+jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
+slf4j-api = { module = "org.slf4j:slf4j-api" }
 aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
 tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }

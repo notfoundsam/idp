@@ -1,6 +1,7 @@
 package idp.db
 
 import idp.db.jooq.platform.tables.Tenants.TENANTS
+import idp.db.jooq.tenant.tables.ProcessedEvents.PROCESSED_EVENTS
 import idp.db.jooq.tenant.tables.TenantKeys.TENANT_KEYS
 import idp.db.jooq.tenant.tables.UserKeys.USER_KEYS
 import io.kotest.core.spec.style.FunSpec
@@ -17,7 +18,7 @@ class GeneratedCodeTest :
         }
 
         test("tenant tables render without a schema") {
-            listOf(TENANT_KEYS, USER_KEYS).forEach { table ->
+            listOf(TENANT_KEYS, USER_KEYS, PROCESSED_EVENTS).forEach { table ->
                 val sql = DSL.using(SQLDialect.POSTGRES).render(DSL.selectFrom(table))
 
                 sql shouldContain table.name
