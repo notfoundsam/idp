@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "minimumReleaseAge": "7 days",
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "CodeQL analyzes Kotlin only up to this version. Raise it when CodeQL supports a newer one.",
+      "matchPackageNames": ["/^org\\.jetbrains\\.kotlin/"],
+      "allowedVersions": "<=2.4.20"
+    }
+  ]
+}

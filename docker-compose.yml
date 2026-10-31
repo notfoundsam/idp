@@ -1,0 +1,17 @@
+name: idp
+
+services:
+  frontend:
+    image: node:24.22.2-alpine
+    profiles: [tools]
+    working_dir: /app/frontend
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    volumes:
+      - ./frontend:/app/frontend
+      - idp-frontend-node-modules:/app/frontend/node_modules
+      - idp-corepack-cache:/root/.cache/node/corepack
+
+volumes:
+  idp-frontend-node-modules:
+  idp-corepack-cache:
