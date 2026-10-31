@@ -9,8 +9,26 @@ dependencies {
     implementation(libs.flyway.postgresql)
     implementation(libs.spring.jdbc)
     implementation(libs.caffeine)
+    implementation(libs.jackson.databind)
+    implementation(libs.aws.sdk.kms)
 
     testFixturesApi(platform(libs.spring.boot.bom))
     testFixturesApi(libs.postgresql)
     testFixturesImplementation(libs.testcontainers.postgresql)
+}
+
+// LocalStack runs as its own CI job, so `check` needs nothing beyond Postgres, PgBouncer and OpenBao.
+tasks.test {
+    exclude("**/*LocalStackTest*")
+}
+
+tasks.register<Test>("localStackTest") {
+    description = "Runs the KMS contract against LocalStack."
+    group = "verification"
+    testClassesDirs =
+        sourceSets.test
+            .get()
+            .output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/*LocalStackTest*")
 }

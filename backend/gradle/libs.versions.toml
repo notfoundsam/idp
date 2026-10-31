@@ -4,6 +4,7 @@ kotest = "6.2.6"
 ktlint-gradle = "14.2.0"
 spring-boot = "4.1.2"
 archunit = "1.5.1"
+aws-sdk = "2.46.7"
 
 [libraries]
 kotest-runner = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
@@ -17,6 +18,8 @@ spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-star
 spring-jdbc = { module = "org.springframework:spring-jdbc" }
 spring-test = { module = "org.springframework:spring-test" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind" }
+aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 flyway-core = { module = "org.flywaydb:flyway-core" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
