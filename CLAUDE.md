@@ -44,6 +44,8 @@ The frontend runs only in Docker, so the host needs no Node. Use `docker compose
 
 Kotlin stays at the newest version CodeQL supports, currently 2.4.20. `renovate.json` holds the limit.
 
+CodeQL analyzes JavaScript and TypeScript on every PR, but Kotlin only on a manual run, because its extractor hangs on Kotlin code that uses jOOQ. Static analysis of Kotlin must return to CI before the first customer.
+
 ## Task board
 
 Every plan task has an issue `Task N: ...` on the [project board](https://github.com/users/notfoundsam/projects/1). The repository is public and plans are not, so issues hold only the goal.
