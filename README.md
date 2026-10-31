@@ -15,7 +15,11 @@ Docker, and a JVM to run Gradle. The frontend runs in Docker, so Node is not nee
 
 ## Commands
 
+See [dev-tools/README.md](dev-tools/README.md) for the local environment.
+
 ```bash
+make install
+make up
 make test
 make lint
 make build
