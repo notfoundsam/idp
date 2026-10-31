@@ -30,6 +30,7 @@ object ArchitectureRules {
             "UserKeys" to listOf("sharedkernel"),
             "Outbox" to listOf("sharedkernel"),
             "ProcessedEvents" to listOf("sharedkernel"),
+            "ScheduledLocks" to listOf("sharedkernel"),
             "Users" to listOf("identity"),
         )
 

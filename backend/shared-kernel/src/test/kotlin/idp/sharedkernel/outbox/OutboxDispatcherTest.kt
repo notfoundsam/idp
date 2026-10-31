@@ -9,6 +9,7 @@ import idp.sharedkernel.migration.update
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
+import idp.sharedkernel.testing.MovableClock
 import idp.sharedkernel.testing.TestDatabase
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -18,11 +19,7 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.jooq.exception.DataAccessException
-import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CyclicBarrier
@@ -34,16 +31,6 @@ private val LEASE: Duration = Duration.ofMinutes(5)
 private val RETRY_DELAY: Duration = Duration.ofSeconds(30)
 private const val MAX_ATTEMPTS = 3
 private const val WAIT_SECONDS = 60L
-
-private class MovableClock : Clock() {
-    var offset: Duration = Duration.ZERO
-
-    override fun instant(): Instant = Instant.now().plus(offset)
-
-    override fun getZone(): ZoneId = ZoneOffset.UTC
-
-    override fun withZone(zone: ZoneId): Clock = this
-}
 
 private class Recording(
     override val eventType: String = "created",
@@ -381,6 +368,12 @@ class OutboxDispatcherTest :
             test("two handlers with one name are rejected") {
                 Outbox().run {
                     shouldThrow<IllegalArgumentException> { dispatcher(Recording(), Recording()) }
+                }
+            }
+
+            test("the redelivery window covers a lease for every attempt and every retry delay") {
+                Outbox().run {
+                    dispatcher().redeliveryWindow shouldBe LEASE.multipliedBy(3).plus(RETRY_DELAY.multipliedBy(3))
                 }
             }
         }
