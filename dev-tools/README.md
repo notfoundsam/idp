@@ -43,4 +43,4 @@ In the `local` profile `worker` seeds the tenants `acme` and `globex`. `make up`
 
 ## Secrets
 
-Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`.
+Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`. The seed gives each local tenant a KEK there, so wiping the OpenBao volume without Postgres leaves their tenant keys unreadable.

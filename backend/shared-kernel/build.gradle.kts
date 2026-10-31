@@ -11,6 +11,7 @@ dependencies {
     implementation(libs.caffeine)
     implementation(libs.jackson.databind)
     implementation(libs.aws.sdk.kms)
+    implementation(libs.tink)
 
     testFixturesApi(platform(libs.spring.boot.bom))
     testFixturesApi(libs.postgresql)

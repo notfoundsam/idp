@@ -25,4 +25,15 @@ object TestOpenBao {
     const val TOKEN = ROOT_TOKEN
 
     val address: URI by lazy { URI("http://${openbao.host}:${openbao.getMappedPort(OPENBAO_PORT)}") }
+
+    fun tokenWithPolicy(
+        name: String,
+        rules: String,
+    ): String {
+        val policy = openbao.execInContainer("sh", "-c", "bao policy write $name - <<'RULES'\n$rules\nRULES")
+        check(policy.exitCode == 0) { policy.stderr }
+        val token = openbao.execInContainer("bao", "token", "create", "-policy=$name", "-field=token")
+        check(token.exitCode == 0) { token.stderr }
+        return token.stdout.trim()
+    }
 }
