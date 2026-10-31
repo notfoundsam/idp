@@ -18,7 +18,7 @@ data class NewEvent(
 /** Bound around a handler, so a reaction joins the chain of its cause without passing IDs by hand. */
 internal data class EventCause(
     val correlationId: UUID,
-    val eventId: UUID,
+    val eventId: UUID?,
 ) {
     companion object {
         private val current: ScopedValue<EventCause> = ScopedValue.newInstance()

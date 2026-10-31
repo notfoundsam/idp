@@ -67,6 +67,7 @@ class TenantFilterTest :
                 "--spring.datasource.url=${database.pooledUrl()}",
                 "--spring.datasource.username=app_runtime",
                 "--spring.datasource.password=app_runtime",
+                "--THROTTLE_ENABLED=false",
             )
         val management = application.environment.getProperty("local.management.port")
 

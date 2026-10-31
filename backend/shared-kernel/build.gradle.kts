@@ -14,6 +14,12 @@ dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.aws.sdk.kms)
     implementation(libs.tink)
+    implementation(libs.lettuce.core)
+    implementation(libs.bucket4j.lettuce)
+    implementation(libs.micrometer.core)
+    compileOnly(libs.spring.web)
+
+    testImplementation(libs.logback.classic)
 
     testFixturesApi(platform(libs.spring.boot.bom))
     testFixturesApi(libs.postgresql)

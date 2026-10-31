@@ -23,6 +23,8 @@ class AppApplicationTest :
                 "--spring.datasource.url=${database.url}",
                 "--spring.datasource.username=app_runtime",
                 "--spring.datasource.password=app_runtime",
+                "--VALKEY_URL=redis://127.0.0.1:1",
+                "--THROTTLE_IP_HMAC_KEY=test-key",
             )
 
         fun get(

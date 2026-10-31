@@ -1,6 +1,10 @@
 package idp.ops
 
+import idp.sharedkernel.migration.TenantMigrationRunner
+import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.throttle.RateLimiter
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.springframework.boot.runApplication
@@ -11,6 +15,18 @@ import java.net.http.HttpResponse
 
 class OpsApplicationTest :
     StringSpec({
+        val database = TestDatabase.create()
+        TenantMigrationRunner(database.owner()).migrateAll()
+        database.role("ops_runtime")
+        val arguments =
+            arrayOf(
+                "--server.port=0",
+                "--management.server.port=0",
+                "--DB_URL=${database.url}",
+                "--DB_USERNAME=ops_runtime",
+                "--DB_PASSWORD=ops_runtime",
+            )
+
         fun get(
             port: String?,
             path: String,
@@ -23,7 +39,7 @@ class OpsApplicationTest :
                 )
 
         "health answers on the management port only" {
-            runApplication<OpsApplication>("--server.port=0", "--management.server.port=0").use { context ->
+            runApplication<OpsApplication>(*arguments).use { context ->
                 val main = context.environment.getProperty("local.server.port")
                 val management = context.environment.getProperty("local.management.port")
 
@@ -36,10 +52,16 @@ class OpsApplicationTest :
         }
 
         "the management port exposes nothing but health" {
-            runApplication<OpsApplication>("--server.port=0", "--management.server.port=0").use { context ->
+            runApplication<OpsApplication>(*arguments).use { context ->
                 val management = context.environment.getProperty("local.management.port")
 
                 get(management, "/actuator/env").statusCode() shouldBe 404
+            }
+        }
+
+        "ops creates no Valkey adapter" {
+            runApplication<OpsApplication>(*arguments).use { context ->
+                context.getBeansOfType(RateLimiter::class.java).shouldBeEmpty()
             }
         }
     })
