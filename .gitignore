@@ -1,0 +1,11 @@
+.idea/
+.DS_Store
+
+# Backend
+.gradle/
+.kotlin/
+build/
+
+# Frontend
+node_modules/
+dist/
