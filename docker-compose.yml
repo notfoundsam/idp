@@ -193,6 +193,8 @@ services:
       SEED_DB_PASSWORD: provisioner
       OPENBAO_ADDRESS: http://openbao:8200
       OPENBAO_TOKEN: local-dev-token
+      MAIL_HOST: mail
+      MAIL_PORT: "1025"
     healthcheck:
       # Readiness waits for the seed, so `make up` returns only when the tenants exist.
       test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]

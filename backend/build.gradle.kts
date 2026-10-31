@@ -34,6 +34,10 @@ val valkeyImage: String =
     Regex("""image: (valkey/valkey:\S+)""")
         .find(rootDir.resolve("../docker-compose.yml").readText())!!
         .groupValues[1]
+val mailpitImage: String =
+    Regex("""image: (axllent/mailpit:\S+)""")
+        .find(rootDir.resolve("../docker-compose.yml").readText())!!
+        .groupValues[1]
 
 extra["postgresImage"] = postgresImage
 extra["postgresInitScript"] = postgresInitScript
@@ -64,6 +68,7 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
         systemProperty("idp.pgbouncer.config", pgbouncerConfig)
         systemProperty("idp.openbao.image", openbaoImage)
         systemProperty("idp.valkey.image", valkeyImage)
+        systemProperty("idp.mailpit.image", mailpitImage)
         inputs.dir(pgbouncerConfig).withPathSensitivity(PathSensitivity.RELATIVE)
     }
 }

@@ -24,6 +24,7 @@ dependencies {
     testFixturesApi(platform(libs.spring.boot.bom))
     testFixturesApi(libs.postgresql)
     testFixturesImplementation(libs.testcontainers.postgresql)
+    testFixturesImplementation(libs.jackson.databind)
 }
 
 // LocalStack runs as its own CI job, so `check` needs nothing beyond Postgres, PgBouncer and OpenBao.

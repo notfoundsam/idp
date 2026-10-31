@@ -17,6 +17,7 @@ spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-web = { module = "org.springframework:spring-web" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+spring-boot-starter-mail = { module = "org.springframework.boot:spring-boot-starter-mail" }
 spring-jdbc = { module = "org.springframework:spring-jdbc" }
 spring-test = { module = "org.springframework:spring-test" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }

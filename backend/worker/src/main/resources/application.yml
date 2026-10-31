@@ -1,12 +1,29 @@
 spring:
   application:
     name: worker
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      # A send holds a tenant transaction, and JavaMail waits forever by default.
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
 
 # worker serves no API, so its only port is the management one.
 server:
   port: 8081
 
 management:
+  health:
+    # A mail outage is retried through the outbox, it is no reason to replace the worker.
+    mail:
+      enabled: false
   endpoint:
     health:
       probes:

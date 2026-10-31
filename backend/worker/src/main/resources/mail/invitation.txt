@@ -1,0 +1,6 @@
+You are invited to {{tenant}}.
+
+Accept the invitation:
+{{link}}
+
+This link works once and expires soon. If you did not expect this email, ignore it.
