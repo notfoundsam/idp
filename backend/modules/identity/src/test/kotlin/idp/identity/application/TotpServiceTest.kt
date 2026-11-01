@@ -303,6 +303,37 @@ class TotpServiceTest :
             }
         }
 
+        context("whether a user has TOTP") {
+            test("false before the enrollment") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe false
+                }
+            }
+
+            test("false until a code confirms the secret") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.enrolled(user)
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe false
+                }
+            }
+
+            test("true after the confirmation") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe true
+                }
+            }
+        }
+
         context("verifying") {
             test("the current code passes") {
                 TotpFixture().run {

@@ -681,6 +681,47 @@ class PasskeyServiceTest :
             }
         }
 
+        context("whether a user has a passkey") {
+            test("false before the first one") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+
+                    tenant.acting { hasPasskey(user) } shouldBe false
+                }
+            }
+
+            test("true after a registration") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+
+                    tenant.acting { hasPasskey(user) } shouldBe true
+                }
+            }
+
+            test("a started registration does not count") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.acting { beginRegistration(user) }
+
+                    tenant.acting { hasPasskey(user) } shouldBe false
+                }
+            }
+
+            test("the passkey of another user does not count") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    tenant.registered(tenant.user())
+                    val other = tenant.user("grace.hopper@acme.test")
+
+                    tenant.acting { hasPasskey(other) } shouldBe false
+                }
+            }
+        }
+
         context("logging in") {
             test("gives the owner and records the use") {
                 PasskeyFixture().run {

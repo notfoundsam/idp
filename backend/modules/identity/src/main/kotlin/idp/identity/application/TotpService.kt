@@ -72,6 +72,8 @@ class TotpService(
             }
         }
 
+    fun hasConfirmedTotp(userId: UUID): Boolean = transaction.execute { dsl -> totps.find(dsl, userId)?.isConfirmed == true }
+
     /** False for a wrong code, a repeated code, a running delay and a user without TOTP alike. */
     fun verify(
         userId: UUID,
