@@ -8,6 +8,7 @@ aws-sdk = "2.46.7"
 tink = "1.24.0"
 bucket4j = "8.21.0"
 bouncycastle = "1.86"
+webauthn4j = "0.31.11.RELEASE"
 
 [libraries]
 kotest-runner = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
@@ -35,6 +36,8 @@ aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
 aws-sdk-sts = { module = "software.amazon.awssdk:sts", version.ref = "aws-sdk" }
 tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
 bouncycastle = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+webauthn4j-core = { module = "com.webauthn4j:webauthn4j-core", version.ref = "webauthn4j" }
+webauthn4j-test = { module = "com.webauthn4j:webauthn4j-test", version.ref = "webauthn4j" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 flyway-core = { module = "org.flywaydb:flyway-core" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }

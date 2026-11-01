@@ -2,6 +2,7 @@ package idp.identity.application
 
 import idp.identity.adapters.persistence.InvitationCleanup
 import idp.identity.adapters.persistence.Invitations
+import idp.identity.adapters.persistence.PasskeyChallengeCleanup
 import idp.identity.adapters.persistence.UserProfiles
 import idp.identity.adapters.persistence.Users
 import idp.identity.domain.Email
@@ -86,6 +87,9 @@ class IdentityService(
     private val random = SecureRandom()
 
     val invitationCleanup: TenantCleanup = InvitationCleanup()
+
+    /** Lives here because `worker` has this service and no reason to hold a WebAuthn verifier. */
+    val passkeyChallengeCleanup: TenantCleanup = PasskeyChallengeCleanup()
 
     /** The event carries no token: its handler issues one and sends it in the same transaction. */
     fun invite(

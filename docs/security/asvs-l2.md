@@ -263,7 +263,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V11.1.1 | 2 | Planned | T26 | `docs/security/crypto-inventory.md` holds the key policy and lifecycle |
 | V11.1.2 | 2 | Planned | T26 | The same document inventories keys, algorithms and certificates |
-| V11.2.1 | 2 | Partial | T20, T27 | Tink, the JDK, KMS and Bouncy Castle are merged, WebAuthn and SAML libraries remain |
+| V11.2.1 | 2 | Partial | T27 | Tink, the JDK, KMS, Bouncy Castle and WebAuthn4J are merged, SAML libraries remain |
 | V11.2.2 | 2 | Partial | T26 | Ciphertexts carry a key version in the Tink prefix, password hashes carry their parameters (`PasswordHasherTest`), key rotation remains |
 | V11.2.3 | 2 | Partial | T27 | AES-256 and HMAC-SHA-256 are merged, SAML keys need RSA-3072 or stronger |
 | V11.3.1 | 1 | Done | T7 | Only AES-GCM through Tink and KMS envelopes (`FieldCipherTest`) |
@@ -274,7 +274,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
 | V11.5.1 | 2 | Partial | T22, T24 | Key material, invitation tokens, TOTP secrets and recovery codes use `SecureRandom` (`InvitationTest`, `TotpCredentialTest`, `RecoveryCodeTest`), other tokens need 128 bits and never a UUID |
-| V11.6.1 | 2 | Exception | T20, T27 | RSA-PSS or ECDSA by default. See [Exceptions](#exceptions) |
+| V11.6.1 | 2 | Exception | T27 | RSA-PSS or ECDSA by default, passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
 
