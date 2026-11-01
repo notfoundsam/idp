@@ -68,6 +68,8 @@ class TenantFilterTest :
                 "--spring.datasource.username=app_runtime",
                 "--spring.datasource.password=app_runtime",
                 "--THROTTLE_ENABLED=false",
+                "--KMS_NEW_KEYS=hcvault",
+                "--OPENBAO_ADDRESS=http://127.0.0.1:1",
             )
         val management = application.environment.getProperty("local.management.port")
 

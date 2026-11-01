@@ -8,10 +8,13 @@ import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.FieldDecryptionException
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
+import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.tenant.PlatformTransaction
+import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
+import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
 import idp.tenancy.adapters.persistence.Tenants
@@ -130,6 +133,34 @@ private class Platform {
 
 class TenancyServiceTest :
     FunSpec({
+        context("the site of a tenant") {
+            test("names the tenant and its host") {
+                Platform().run {
+                    val tenant = approved()
+
+                    worker.site(tenant) shouldBe TenantSite("Acme", "acme.$BASE_DOMAIN")
+                }
+            }
+
+            test("is null for an unknown tenant") {
+                Platform().run {
+                    worker.site(UUID.randomUUID()).shouldBeNull()
+                }
+            }
+
+            test("reads from inside a tenant transaction, whose role cannot see platform") {
+                Platform().run {
+                    val tenant = approved()
+                    TenantSchemaFactory(owner).create(tenant)
+                    val transaction = TenantTransaction(database.pooled("worker_runtime"))
+
+                    TenantContext.with(TenantContext(tenant, KEK)) {
+                        transaction.execute { worker.site(tenant) }
+                    } shouldBe TenantSite("Acme", "acme.$BASE_DOMAIN")
+                }
+            }
+        }
+
         context("application") {
             test("a submitted application holds a requested tenant") {
                 Platform().run {

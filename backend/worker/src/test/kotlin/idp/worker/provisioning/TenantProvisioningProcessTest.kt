@@ -1,6 +1,9 @@
 package idp.worker.provisioning
 
+import idp.audit.application.AuditService
 import idp.audit.application.OperatorAuditService
+import idp.identity.application.IdentityEvents
+import idp.identity.application.IdentityService
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.audit.AuditRecord
@@ -18,16 +21,24 @@ import idp.sharedkernel.outbox.IdempotentHandler
 import idp.sharedkernel.outbox.OutboxDispatcher
 import idp.sharedkernel.outbox.OutboxEvent
 import idp.sharedkernel.outbox.OutboxPublisher
+import idp.sharedkernel.security.UserRole
+import idp.sharedkernel.security.UserStatus
 import idp.sharedkernel.tenant.PlatformTransaction
+import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.testing.TestOpenBao
 import idp.tenancy.application.NewApplication
 import idp.tenancy.application.TenancyEvents
 import idp.tenancy.application.TenancyNotFound
 import idp.tenancy.application.TenancyService
 import idp.tenancy.application.TenantView
+import idp.worker.handlers.InvitationMailHandler
+import idp.worker.mail.MailDispatcher
+import idp.worker.mail.MailRecipients
+import idp.worker.mail.MailTemplates
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.FunSpec
@@ -39,9 +50,12 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.postgresql.util.PSQLException
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.mail.javamail.JavaMailSenderImpl
 import java.io.PrintWriter
+import java.net.URI
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.SQLException
@@ -52,6 +66,8 @@ import javax.sql.DataSource
 import kotlin.io.path.listDirectoryEntries
 
 private const val BASE_DOMAIN = "idp.test"
+private const val CONTACT = "admin@acme.example"
+private const val FROM = "no-reply@idp.test"
 private const val NEXT_RELEASE = "classpath:fixtures/migrations/next"
 private const val CURRENT_RELEASE = "classpath:db/tenant"
 private val OPERATOR = Actor.Operator("alice")
@@ -114,6 +130,20 @@ private object UnusedAudit : AuditLog {
     override fun recordDenial(record: AuditRecord) = throw UnsupportedOperationException()
 }
 
+private class FailingAudit(
+    private val delegate: AuditLog,
+) : AuditLog by delegate {
+    @Volatile var down = false
+
+    @Volatile var afterChange: () -> Unit = {}
+
+    override fun recordChange(record: AuditRecord) {
+        check(!down) { "audit is down" }
+        delegate.recordChange(record)
+        afterChange()
+    }
+}
+
 private class Provisioning {
     val database = TestDatabase.create()
     val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
@@ -129,13 +159,16 @@ private class Provisioning {
     val tenancy = TenancyService(PlatformTransaction(platform), UnusedAudit, publisher, contacts, BASE_DOMAIN)
     private val opsTransaction = PlatformTransaction(database.pooled("ops_runtime"))
     val ops = TenancyService(opsTransaction, OperatorAuditService(opsTransaction), publisher, contacts, BASE_DOMAIN)
-    private val keys = KeyHierarchy(kms, TenantTransaction(worker), Duration.ofMinutes(1))
+    private val tenantTransaction = TenantTransaction(worker)
+    private val keys = KeyHierarchy(kms, tenantTransaction, Duration.ofMinutes(1))
+    private val audit = FailingAudit(AuditService(tenantTransaction, keys))
+    val identity = IdentityService(tenantTransaction, keys, audit, publisher)
 
     fun process(runner: TenantMigrationRunner = TenantMigrationRunner(migrations)) =
-        TenantProvisioningProcess(tenancy, TenantSchemaFactory(schemas), runner, kms, keys)
+        TenantProvisioningProcess(tenancy, TenantSchemaFactory(schemas), runner, kms, keys, identity)
 
     fun approved(subdomain: String = "acme"): UUID {
-        val application = ops.submit(NewApplication("Acme", subdomain, "admin@acme.example"), OPERATOR)
+        val application = ops.submit(NewApplication("Acme", subdomain, CONTACT), OPERATOR)
         ops.approve(application, OPERATOR)
         return ops.application(application).shouldNotBeNull().tenantId
     }
@@ -163,7 +196,35 @@ private class Provisioning {
         kms.creationDown = false
         kms.wrappingDown = false
         kms.afterWrap = {}
+        audit.afterChange = {}
+        audit.down = false
     }
+
+    fun failInvitation() {
+        audit.down = true
+    }
+
+    fun failAfterInvitation() {
+        audit.afterChange = { platform.down = true }
+    }
+
+    fun <T> inTenant(
+        tenant: UUID,
+        block: IdentityService.() -> T,
+    ): T = TenantContext.with(TenantContext(tenant, view(tenant).kekUri)) { identity.block() }
+
+    fun users(tenant: UUID): Int? = sql.queryForObject("""SELECT count(*) FROM "${TenantSchema(tenant).name}".users""", Int::class.java)
+
+    fun invitations(tenant: UUID): Int? =
+        sql.queryForObject("""SELECT count(*) FROM "${TenantSchema(tenant).name}".invitations""", Int::class.java)
+
+    fun invitedEvents(tenant: UUID): List<UUID?> =
+        sql.queryForList(
+            "SELECT aggregate_id FROM platform.outbox WHERE tenant_id = ? AND event_type = ?",
+            UUID::class.java,
+            tenant,
+            IdentityEvents.INVITED,
+        )
 
     fun wrappedKeys(tenant: UUID): List<ByteArray> =
         sql.queryForList("""SELECT wrapped_key FROM "${TenantSchema(tenant).name}".tenant_keys""", ByteArray::class.java).filterNotNull()
@@ -173,6 +234,17 @@ private class Provisioning {
             """SELECT count(*) FROM "${TenantSchema(tenant).name}".flyway_schema_history WHERE success AND version IS NOT NULL""",
             Int::class.java,
         )
+
+    fun approvalStatus(): String? =
+        sql.queryForObject("SELECT status FROM platform.outbox WHERE event_type = ?", String::class.java, TenancyEvents.APPROVED)
+
+    /** The rule protects a tenant from its people, and here nobody else exists to keep it. */
+    fun eraseSoleAdmin(
+        tenant: UUID,
+        admin: UUID,
+    ) {
+        sql.update("""DELETE FROM "${TenantSchema(tenant).name}".users WHERE id = ?""", admin)
+    }
 
     fun processedEvents(tenant: UUID): Int? =
         sql.queryForObject("""SELECT count(*) FROM "${TenantSchema(tenant).name}".processed_events""", Int::class.java)
@@ -200,12 +272,17 @@ private val FAILURES =
         Failure("creating the KEK", "migrations") { kms.creationDown = true },
         Failure("creating the tenant key", "migrations") { kms.wrappingDown = true },
         Failure("recording the keys step", "migrations") { kms.afterWrap = { platform.down = true } },
+        Failure("inviting the first admin", "keys") { failInvitation() },
+        Failure("recording the invitation step", "keys") { failAfterInvitation() },
     )
 
 private fun tenantMigrationFiles(): Int = Path.of("../db/src/main/resources/db/tenant").listDirectoryEntries("V*.sql").size
 
 class TenantProvisioningProcessTest :
     FunSpec({
+        val mailpit = TestMailpit.start()
+        afterSpec { mailpit.close() }
+
         context("the steps") {
             test("the first step creates the schema and the role of the tenant") {
                 Provisioning().run {
@@ -248,7 +325,34 @@ class TenantProvisioningProcessTest :
                     deliver(tenant)
 
                     view(tenant).status shouldBe TenantStatus.ACTIVE
-                    view(tenant).provisioningStep shouldBe "keys"
+                    view(tenant).provisioningStep shouldBe "admin-invitation"
+                }
+            }
+
+            test("the last step invites the contact as a tenant admin") {
+                Provisioning().run {
+                    val tenant = approved()
+
+                    deliver(tenant)
+
+                    val admin = inTenant(tenant) { findByEmail(CONTACT) }.shouldNotBeNull()
+                    admin.role shouldBe UserRole.TENANT_ADMIN
+                    admin.status shouldBe UserStatus.INVITED
+                    invitedEvents(tenant).shouldContainExactly(admin.id)
+                }
+            }
+
+            test("the events of a provisioned tenant carry no address") {
+                Provisioning().run {
+                    val tenant = approved()
+
+                    deliver(tenant)
+
+                    sql
+                        .queryForList(
+                            "SELECT payload::text FROM platform.outbox",
+                            String::class.java,
+                        ).forEach { it shouldNotContain CONTACT }
                 }
             }
 
@@ -293,6 +397,8 @@ class TenantProvisioningProcessTest :
                         view(tenant).status shouldBe TenantStatus.ACTIVE
                         appliedMigrations(tenant) shouldBe tenantMigrationFiles()
                         wrappedKeys(tenant) shouldHaveSize 1
+                        users(tenant) shouldBe 1
+                        invitedEvents(tenant) shouldHaveSize 1
                     }
                 }
             }
@@ -319,12 +425,28 @@ class TenantProvisioningProcessTest :
                     shouldThrowAny { deliver(tenant) }
                     heal()
                     val kekUri = "hcvault://transit/tenant-$tenant"
-                    tenancy.recordProvisioningStep(tenant, "keys", kekUri)
+                    tenancy.recordProvisioningStep(tenant, "admin-invitation", kekUri)
                     kms.creationDown = true
 
                     deliver(tenant)
 
                     view(tenant).status shouldBe TenantStatus.ACTIVE
+                }
+            }
+
+            test("a tenant stopped by the previous release on the keys step goes on to the invitation") {
+                Provisioning().run {
+                    val tenant = approved()
+                    failInvitation()
+                    shouldThrowAny { deliver(tenant) }
+                    heal()
+                    view(tenant).provisioningStep shouldBe "keys"
+                    kms.creationDown = true
+
+                    deliver(tenant)
+
+                    view(tenant).status shouldBe TenantStatus.ACTIVE
+                    users(tenant) shouldBe 1
                 }
             }
 
@@ -444,7 +566,7 @@ class TenantProvisioningProcessTest :
                     dispatcher().dispatch()
 
                     view(tenant).status shouldBe TenantStatus.ACTIVE
-                    sql.queryForObject("SELECT status FROM platform.outbox", String::class.java) shouldBe "DONE"
+                    approvalStatus() shouldBe "DONE"
                 }
             }
 
@@ -452,13 +574,132 @@ class TenantProvisioningProcessTest :
                 Provisioning().run {
                     val tenant = approved()
                     dispatcher().dispatch()
-                    sql.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = now()")
+                    sql.update(
+                        "UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = now() WHERE event_type = ?",
+                        TenancyEvents.APPROVED,
+                    )
 
                     dispatcher().dispatch()
 
                     processedEvents(tenant) shouldBe 0
                     kms.created shouldHaveSize 1
-                    sql.queryForObject("SELECT status FROM platform.outbox", String::class.java) shouldBe "DONE"
+                    approvalStatus() shouldBe "DONE"
+                }
+            }
+        }
+
+        context("the invitation mail") {
+            beforeEach {
+                mailpit.acceptRecipients()
+                mailpit.clear()
+            }
+
+            fun Provisioning.mailing(): OutboxDispatcher {
+                val sender =
+                    JavaMailSenderImpl().apply {
+                        host = mailpit.host
+                        port = mailpit.smtpPort
+                    }
+                val mail = MailDispatcher(sender, MailRecipients(identity::emailOf), MailTemplates(), FROM)
+                return OutboxDispatcher(
+                    PlatformTransaction(worker),
+                    IdempotentHandler(TenantTransaction(worker)),
+                    listOf(process(), InvitationMailHandler(identity, tenancy, mail)),
+                )
+            }
+
+            fun OutboxDispatcher.drain() {
+                do {
+                    val ran = dispatch()
+                } while (ran > 0)
+            }
+
+            test("reaches the contact through the real recipients") {
+                Provisioning().run {
+                    val tenant = approved()
+
+                    mailing().drain()
+
+                    val mail = mailpit.messages().single()
+                    mail.from shouldBe FROM
+                    mail.to.shouldContainExactly(CONTACT)
+                    mail.subject shouldBe "You are invited to Acme"
+                    invitations(tenant) shouldBe 1
+                }
+            }
+
+            test("carries the token in the fragment of a link to the tenant host") {
+                Provisioning().run {
+                    val tenant = approved()
+
+                    mailing().drain()
+
+                    val text = mailpit.messages().single().text
+                    val link = URI(text.lineSequence().first { it.startsWith("https://") })
+                    link.host shouldBe "acme.$BASE_DOMAIN"
+                    link.path shouldBe "/invite"
+                    link.query.shouldBeNull()
+                    val token = link.fragment.removePrefix("token=")
+                    val admin = inTenant(tenant) { acceptInvitation(token, Actor.Anonymous) }
+                    inTenant(tenant) { user(admin) }.shouldNotBeNull().status shouldBe UserStatus.ACTIVE
+                }
+            }
+
+            test("a redelivered event sends no second mail") {
+                Provisioning().run {
+                    approved()
+                    mailing().drain()
+                    sql.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = now()")
+
+                    mailing().drain()
+
+                    mailpit.messages() shouldHaveSize 1
+                }
+            }
+
+            test("a rejected mail keeps no invitation, and the retry sends a working link") {
+                Provisioning().run {
+                    val tenant = approved()
+                    mailpit.rejectRecipients()
+                    mailing().drain()
+                    invitations(tenant) shouldBe 0
+
+                    mailpit.acceptRecipients()
+                    sql.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = now()")
+                    mailing().drain()
+
+                    mailpit.messages() shouldHaveSize 1
+                    invitations(tenant) shouldBe 1
+                }
+            }
+
+            test("is sent after the contact is erased, from the encrypted address") {
+                Provisioning().run {
+                    val tenant = approved()
+                    deliver(tenant)
+                    tenancy.contact(tenant).shouldBeNull()
+
+                    mailing().drain()
+
+                    mailpit
+                        .messages()
+                        .single()
+                        .to
+                        .shouldContainExactly(CONTACT)
+                }
+            }
+
+            test("an admin erased before delivery gets nothing and the event finishes") {
+                Provisioning().run {
+                    val tenant = approved()
+                    deliver(tenant)
+                    val admin = inTenant(tenant) { findByEmail(CONTACT) }.shouldNotBeNull()
+                    eraseSoleAdmin(tenant, admin.id)
+
+                    mailing().drain()
+
+                    mailpit.messages().shouldBeEmpty()
+                    sql.queryForList("SELECT status FROM platform.outbox", String::class.java).toSet().shouldContainExactly("DONE")
                 }
             }
         }

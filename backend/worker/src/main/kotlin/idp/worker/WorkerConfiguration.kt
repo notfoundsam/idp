@@ -1,6 +1,7 @@
 package idp.worker
 
 import idp.audit.application.AuditService
+import idp.identity.application.IdentityService
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.KeyHierarchy
@@ -9,14 +10,20 @@ import idp.sharedkernel.crypto.adapter.KeyManagementSettings
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
+import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.tenancy.application.TenancyService
+import idp.worker.handlers.InvitationMailHandler
+import idp.worker.mail.MailDispatcher
+import idp.worker.mail.MailRecipients
+import idp.worker.mail.MailTemplates
 import idp.worker.provisioning.TenantProvisioningProcess
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.mail.javamail.JavaMailSender
 import java.time.Duration
 import javax.sql.DataSource
 
@@ -59,17 +66,42 @@ class WorkerConfiguration {
         @Value("\${idp.tenants.base-domain}") baseDomain: String,
     ) = TenancyService(platform, audit, OutboxPublisher(), FieldCipher.platform(kms, platformKekUri), baseDomain)
 
+    @Bean
+    fun identityService(
+        transaction: TenantTransaction,
+        keys: KeyHierarchy,
+        audit: AuditLog,
+    ) = IdentityService(transaction, keys, audit, OutboxPublisher())
+
+    @Bean
+    fun invitationCleanup(identity: IdentityService): TenantCleanup = identity.invitationCleanup
+
+    @Bean
+    fun mailDispatcher(
+        sender: JavaMailSender,
+        identity: IdentityService,
+        @Value("\${idp.mail.from}") from: String,
+    ) = MailDispatcher(sender, MailRecipients(identity::emailOf), MailTemplates(), from)
+
+    @Bean
+    fun invitationMailHandler(
+        identity: IdentityService,
+        tenancy: TenancyService,
+        mail: MailDispatcher,
+    ) = InvitationMailHandler(identity, tenancy, mail)
+
     /** No pool and no bean: provisioning is rare, and a second `DataSource` bean would switch off the runtime one. */
     @Bean
     fun tenantProvisioningProcess(
         tenancy: TenancyService,
         kms: KeyManagementService,
         keys: KeyHierarchy,
+        identity: IdentityService,
         @Value("\${idp.provisioner.url}") url: String,
         @Value("\${idp.provisioner.username}") username: String,
         @Value("\${idp.provisioner.password}") password: String,
     ): TenantProvisioningProcess {
         val provisioner = DriverManagerDataSource(url, username, password)
-        return TenantProvisioningProcess(tenancy, TenantSchemaFactory(provisioner), TenantMigrationRunner(provisioner), kms, keys)
+        return TenantProvisioningProcess(tenancy, TenantSchemaFactory(provisioner), TenantMigrationRunner(provisioner), kms, keys, identity)
     }
 }

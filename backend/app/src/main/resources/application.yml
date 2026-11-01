@@ -11,6 +11,15 @@ idp:
     cache-ttl: 30s
   client-ip:
     trusted-header: ${CLIENT_IP_HEADER:}
+  kms:
+    new-keys: ${KMS_NEW_KEYS}
+    key-cache-ttl: 5m
+    openbao:
+      address: ${OPENBAO_ADDRESS:}
+      token: ${OPENBAO_TOKEN:}
+    aws:
+      region: ${KMS_AWS_REGION:}
+      key-policy: ${KMS_AWS_KEY_POLICY:}
   throttle:
     enabled: ${THROTTLE_ENABLED:true}
     ip-hmac-key: ${THROTTLE_IP_HMAC_KEY}

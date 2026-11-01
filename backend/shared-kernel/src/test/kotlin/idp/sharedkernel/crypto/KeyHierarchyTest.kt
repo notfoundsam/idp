@@ -115,11 +115,31 @@ private class Hierarchy {
             userId,
         )!!
 
+    /** `user_keys` references `users`, and these tests care only about the key. */
+    fun addUsers(
+        context: TenantContext,
+        users: List<UUID>,
+    ) {
+        JdbcTemplate(owner).batchUpdate(
+            """
+            INSERT INTO ${table(context, "users")} (id, email_index, email_ciphertext, role, status)
+            VALUES (?, ?, '\x00', 'USER', 'ACTIVE') ON CONFLICT DO NOTHING
+            """,
+            users.map { arrayOf(it, it.toString().toByteArray()) },
+        )
+    }
+
+    fun createUser(user: UUID) {
+        addUsers(TenantContext.current(), listOf(user))
+        keys.createUserKey(user)
+    }
+
     fun storeKeyset(
         context: TenantContext,
         userId: UUID,
         keyset: ByteArray,
     ) {
+        addUsers(context, listOf(userId))
         JdbcTemplate(owner).update("INSERT INTO ${table(context, "user_keys")} (user_id, keyset) VALUES (?, ?)", userId, keyset)
     }
 
@@ -151,7 +171,7 @@ class KeyHierarchyTest :
                 val user = UUID.randomUUID()
                 val ciphertext =
                     TenantContext.with(context) {
-                        keys.createUserKey(user)
+                        createUser(user)
                         keys.userCipher(user).encrypt(PLAINTEXT, email)
                     }
 
@@ -163,7 +183,7 @@ class KeyHierarchyTest :
             Hierarchy().run {
                 val context = tenant()
                 val user = UUID.randomUUID()
-                TenantContext.with(context) { keys.createUserKey(user) }
+                TenantContext.with(context) { createUser(user) }
 
                 val tenantKey = kms.wrapped.single()
                 wrappedTenantKey(context) shouldNotBe tenantKey
@@ -181,10 +201,10 @@ class KeyHierarchyTest :
                 val user = UUID.randomUUID()
                 val ciphertext =
                     TenantContext.with(a) {
-                        keys.createUserKey(user)
+                        createUser(user)
                         keys.userCipher(user).encrypt(PLAINTEXT, email)
                     }
-                TenantContext.with(b) { keys.createUserKey(user) }
+                TenantContext.with(b) { createUser(user) }
 
                 shouldThrow<FieldDecryptionException> {
                     TenantContext.with(b) { keys.userCipher(user).decrypt(ciphertext, email) }
@@ -197,7 +217,7 @@ class KeyHierarchyTest :
                 val a = tenant()
                 val b = tenant()
                 val user = UUID.randomUUID()
-                TenantContext.with(a) { keys.createUserKey(user) }
+                TenantContext.with(a) { createUser(user) }
                 storeKeyset(b, user, keyset(a, user))
 
                 shouldThrow<FieldDecryptionException> { TenantContext.with(b) { keys.userCipher(user) } }
@@ -209,7 +229,7 @@ class KeyHierarchyTest :
                 val context = tenant()
                 val first = UUID.randomUUID()
                 val other = UUID.randomUUID()
-                TenantContext.with(context) { keys.createUserKey(first) }
+                TenantContext.with(context) { createUser(first) }
                 storeKeyset(context, other, keyset(context, first))
 
                 shouldThrow<FieldDecryptionException> { TenantContext.with(context) { keys.userCipher(other) } }
@@ -220,6 +240,7 @@ class KeyHierarchyTest :
             Hierarchy().run {
                 val context = tenant()
                 val users = List(1000) { UUID.randomUUID() }
+                addUsers(context, users)
                 TenantContext.with(context) { TenantTransaction(runtime).execute { users.forEach(keys::createUserKey) } }
                 expireCache()
                 kms.unwraps.set(0)
@@ -237,7 +258,7 @@ class KeyHierarchyTest :
                 val users = List(20) { UUID.randomUUID() }
 
                 TenantContext.with(context) {
-                    users.forEach(keys::createUserKey)
+                    users.forEach(::createUser)
                     users.forEach(keys::userCipher)
                 }
 
@@ -250,7 +271,7 @@ class KeyHierarchyTest :
                 val context = tenant()
                 val kept = UUID.randomUUID()
                 val erased = UUID.randomUUID()
-                TenantContext.with(context) { keys.createUserKey(kept) }
+                TenantContext.with(context) { createUser(kept) }
 
                 val ciphers = TenantContext.with(context) { keys.userCiphers(listOf(kept, erased)) }
 
@@ -320,7 +341,7 @@ class KeyHierarchyTest :
             Hierarchy().run {
                 val context = tenant()
                 val user = UUID.randomUUID()
-                TenantContext.with(context) { keys.createUserKey(user) }
+                TenantContext.with(context) { createUser(user) }
                 kms.down = true
 
                 TenantContext.with(context) { keys.userCipher(user) }
@@ -383,12 +404,12 @@ class KeyHierarchyTest :
                 val user = UUID.randomUUID()
                 val ciphertext =
                     TenantContext.with(context) {
-                        keys.createUserKey(user)
+                        createUser(user)
                         keys.userCipher(user).encrypt(PLAINTEXT, email)
                     }
 
                 TenantContext.with(context) {
-                    keys.createUserKey(user)
+                    createUser(user)
                     keys.userCipher(user).decrypt(ciphertext, email)
                 } shouldBe PLAINTEXT
             }

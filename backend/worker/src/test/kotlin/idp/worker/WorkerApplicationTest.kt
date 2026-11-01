@@ -8,6 +8,7 @@ import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantStatus
+import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.throttle.RateLimiter
 import idp.tenancy.application.NewApplication
 import idp.tenancy.application.TenancyService
@@ -15,12 +16,15 @@ import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainAll
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.springframework.boot.runApplication
+import org.springframework.mail.javamail.JavaMailSender
+import org.springframework.mail.javamail.JavaMailSenderImpl
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -108,13 +112,51 @@ class WorkerApplicationTest :
             }
         }
 
+        "the first admin of an approved tenant gets the invitation through the beans of worker" {
+            val isolated = WorkerEnvironment()
+            val operator = isolated.operatorService()
+            val application = operator.submit(NewApplication("Acme", "acme", "admin@acme.example"), Actor.Operator("alice"))
+            val mailpit = TestMailpit.start()
+
+            mailpit.use {
+                runApplication<WorkerApplication>(
+                    *isolated.arguments,
+                    "--spring.mail.host=${mailpit.host}",
+                    "--spring.mail.port=${mailpit.smtpPort}",
+                    "--spring.mail.properties.mail.smtp.auth=false",
+                    "--spring.mail.properties.mail.smtp.starttls.enable=false",
+                    "--spring.mail.properties.mail.smtp.starttls.required=false",
+                ).use {
+                    operator.approve(application, Actor.Operator("alice"))
+
+                    eventually(30.seconds) {
+                        mailpit
+                            .messages()
+                            .single()
+                            .to
+                            .shouldContainExactly("admin@acme.example")
+                    }
+                    mailpit.messages().single().from shouldBe "no-reply@$BASE_DOMAIN"
+                }
+            }
+        }
+
+        "the SMTP client verifies the host name and refuses TLS older than 1.2" {
+            runApplication<WorkerApplication>(*arguments).use { context ->
+                val settings = (context.getBean(JavaMailSender::class.java) as JavaMailSenderImpl).javaMailProperties
+
+                settings["mail.smtp.ssl.checkserveridentity"].toString() shouldBe "true"
+                settings["mail.smtp.ssl.protocols"] shouldBe "TLSv1.3 TLSv1.2"
+            }
+        }
+
         "the timer runs the outbox cleanup and a cleanup job per tenant cleanup" {
             val isolated = WorkerEnvironment()
 
             runApplication<WorkerApplication>(*isolated.arguments, "--idp.jobs.tick-interval=PT0.05S").use {
                 eventually(30.seconds) {
                     isolated.jdbc.queryForList("SELECT name FROM platform.scheduled_locks", String::class.java) shouldContainAll
-                        listOf("cleanup:outbox", "cleanup:processed-events")
+                        listOf("cleanup:outbox", "cleanup:processed-events", "cleanup:invitations")
                 }
             }
         }

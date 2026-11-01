@@ -2,28 +2,26 @@ package idp.app.throttle
 
 import idp.app.AppApplication
 import idp.sharedkernel.audit.Actor
-import idp.sharedkernel.audit.AuditLog
-import idp.sharedkernel.audit.AuditRecord
-import idp.sharedkernel.bus.BusPipeline
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.bus.MessageHandler
 import idp.sharedkernel.bus.Query
 import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.bus.TransactionScope
-import idp.sharedkernel.bus.decorators.LoggerDecorator
-import idp.sharedkernel.bus.decorators.SecurityDecorator
 import idp.sharedkernel.bus.decorators.ThrottleDecorator
-import idp.sharedkernel.bus.decorators.TransactionDecorator
+import idp.sharedkernel.crypto.KeyHierarchy
+import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
+import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.security.Permission
 import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.Role
 import idp.sharedkernel.security.SecurityConfig
 import idp.sharedkernel.security.SecurityContext
-import idp.sharedkernel.tenant.PlatformTransaction
+import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.testing.TestOpenBao
 import idp.sharedkernel.testing.TestValkey
 import idp.sharedkernel.throttle.RateLimiter
 import idp.sharedkernel.web.ClientIp
@@ -35,7 +33,6 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.micrometer.core.instrument.MeterRegistry
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.SpringApplication
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
@@ -48,8 +45,8 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.time.Duration
 import java.util.UUID
-import javax.sql.DataSource
 import kotlin.reflect.KClass
 
 private const val HOST = "acme.idp.test"
@@ -72,33 +69,21 @@ private class Answer<M : Query<String>>(
     override fun handle(message: M) = "pong"
 }
 
-private object Silent : AuditLog {
-    override fun recordChange(record: AuditRecord) = Unit
-
-    override fun recordDenial(record: AuditRecord) = Unit
-}
-
 private object ProbeSecurity : SecurityConfig {
     override val permissions = mapOf<KClass<out Message<*>>, Permission?>(Ping::class to null, AdminPing::class to READ)
     override val roles = emptyMap<Role, Set<Permission>>()
 }
 
-/** The assembly `app` gets once `AuditLog` is a bean there. */
 @Configuration(proxyBeanMethods = false)
-private class ProbeBus {
+private class ProbeMessages {
     @Bean
-    fun queryBus(
-        throttle: ObjectProvider<ThrottleDecorator>,
-        dataSource: DataSource,
-    ) = QueryBus(
-        BusPipeline(
-            handlers = listOf(Answer(Ping::class), Answer(AdminPing::class)),
-            security = SecurityDecorator(listOf(ProbeSecurity), Silent),
-            logger = LoggerDecorator(),
-            transaction = TransactionDecorator(TenantTransaction(dataSource), PlatformTransaction(dataSource)),
-            throttle = throttle.ifAvailable,
-        ),
-    )
+    fun pingHandler() = Answer(Ping::class)
+
+    @Bean
+    fun adminPingHandler() = Answer(AdminPing::class)
+
+    @Bean
+    fun probeSecurity(): SecurityConfig = ProbeSecurity
 }
 
 @RestController
@@ -123,19 +108,26 @@ class ThrottleApplicationTest :
         val database = TestDatabase.create()
         val owner = database.owner()
         val tenant: UUID = UUID.randomUUID()
+        val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
+        val kekUri = kms.createKey("tenant-$tenant")
+        val sql = JdbcTemplate(owner)
         TenantMigrationRunner(owner).migrateAll()
-        JdbcTemplate(owner).run {
-            update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'acme', 'ACTIVE')", tenant)
+        sql.run {
+            update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'acme', 'ACTIVE', ?)", tenant, kekUri)
             update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES (?, ?)", HOST, tenant)
         }
         TenantSchemaFactory(owner).create(tenant)
-        database.role("app_runtime")
+        TenantMigrationRunner(owner).migrateTenant(tenant)
+        val runtime = database.role("app_runtime")
+        TenantContext.with(TenantContext(tenant, kekUri)) {
+            KeyHierarchy(kms, TenantTransaction(runtime), Duration.ofMinutes(1)).createTenantKey()
+        }
 
         fun start(
             vararg overrides: String,
             valkey: String = TestValkey.shared.url,
         ): ConfigurableApplicationContext =
-            SpringApplication(AppApplication::class.java, ProbeBus::class.java, ProbeEndpoints::class.java).run(
+            SpringApplication(AppApplication::class.java, ProbeMessages::class.java, ProbeEndpoints::class.java).run(
                 "--server.port=0",
                 "--management.server.port=0",
                 "--spring.datasource.url=${database.url}",
@@ -143,6 +135,9 @@ class ThrottleApplicationTest :
                 "--spring.datasource.password=app_runtime",
                 "--VALKEY_URL=$valkey",
                 "--THROTTLE_IP_HMAC_KEY=${UUID.randomUUID()}",
+                "--KMS_NEW_KEYS=hcvault",
+                "--OPENBAO_ADDRESS=${TestOpenBao.address}",
+                "--OPENBAO_TOKEN=${TestOpenBao.TOKEN}",
                 "--idp.throttle.default.capacity=$LIMIT",
                 "--idp.throttle.valkey.timeout=5s",
                 "--idp.throttle.valkey.connect-timeout=10s",
@@ -180,6 +175,18 @@ class ThrottleApplicationTest :
             start().use { application ->
                 application.get("/probe/admin").statusCode() shouldBe 401
                 application.get("/probe/member").statusCode() shouldBe 403
+            }
+        }
+
+        test("the real audit log keeps a denial in the journal of the tenant") {
+            start().use { application ->
+                val journal = "\"${TenantSchema(tenant).name}\".audit_entries"
+                val denials = { sql.queryForObject("SELECT count(*) FROM $journal WHERE actor_type = 'ANONYMOUS'", Int::class.java) }
+                val before = denials()
+
+                application.get("/probe/admin").statusCode() shouldBe 401
+
+                denials() shouldBe before?.plus(1)
             }
         }
 

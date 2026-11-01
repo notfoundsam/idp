@@ -68,7 +68,15 @@ private class Audit {
         return context
     }
 
-    fun TenantContext.user(): UUID = UUID.randomUUID().also { user -> TenantContext.with(this) { keys.createUserKey(user) } }
+    fun TenantContext.user(): UUID =
+        UUID.randomUUID().also { user ->
+            sql.update(
+                "INSERT INTO ${table("users")} (id, email_index, email_ciphertext, role, status) VALUES (?, ?, '\\x00', 'USER', 'ACTIVE')",
+                user,
+                user.toString().toByteArray(),
+            )
+            TenantContext.with(this) { keys.createUserKey(user) }
+        }
 
     fun TenantContext.entries(): List<AuditEntryView> = TenantContext.with(this) { audit.read(limit = 100) }
 

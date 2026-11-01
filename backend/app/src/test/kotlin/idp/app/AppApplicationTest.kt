@@ -1,10 +1,17 @@
 package idp.app
 
+import idp.audit.application.AuditService
+import idp.sharedkernel.audit.AuditLog
+import idp.sharedkernel.bus.CommandBus
+import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.testing.TestDatabase
+import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.springframework.boot.runApplication
 import java.net.URI
 import java.net.http.HttpClient
@@ -25,6 +32,8 @@ class AppApplicationTest :
                 "--spring.datasource.password=app_runtime",
                 "--VALKEY_URL=redis://127.0.0.1:1",
                 "--THROTTLE_IP_HMAC_KEY=test-key",
+                "--KMS_NEW_KEYS=hcvault",
+                "--OPENBAO_ADDRESS=http://127.0.0.1:1",
             )
 
         fun get(
@@ -57,5 +66,17 @@ class AppApplicationTest :
 
                 get(management, "/actuator/env").statusCode() shouldBe 404
             }
+        }
+
+        "the bus and the audit log of app write to the tenant journal" {
+            runApplication<AppApplication>(*arguments).use { context ->
+                context.getBean(AuditLog::class.java).shouldBeInstanceOf<AuditService>()
+                context.getBean(CommandBus::class.java).shouldNotBeNull()
+                context.getBean(QueryBus::class.java).shouldNotBeNull()
+            }
+        }
+
+        "new keys need a configured adapter" {
+            shouldThrowAny { runApplication<AppApplication>(*arguments, "--KMS_NEW_KEYS=aws-kms") }
         }
     })
