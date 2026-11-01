@@ -171,6 +171,9 @@ services:
       VALKEY_URL: redis://valkey:6379
       THROTTLE_IP_HMAC_KEY: local-throttle-key
       CLIENT_IP_HEADER: CloudFront-Viewer-Address
+      KMS_NEW_KEYS: hcvault
+      OPENBAO_ADDRESS: http://openbao:8200
+      OPENBAO_TOKEN: local-dev-token
     volumes:
       - ./backend/app/build/libs/app.jar:/app/service.jar:ro
     ports:
@@ -203,6 +206,7 @@ services:
       OPENBAO_TOKEN: local-dev-token
       MAIL_HOST: mail
       MAIL_PORT: "1025"
+      MAIL_FROM: no-reply@idp.test
     healthcheck:
       # Readiness waits for the seed, so `make up` returns only when the tenants exist.
       test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]

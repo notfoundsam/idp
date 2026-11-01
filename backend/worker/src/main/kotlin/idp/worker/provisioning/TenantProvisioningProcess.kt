@@ -1,5 +1,6 @@
 package idp.worker.provisioning
 
+import idp.identity.application.IdentityService
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.KeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
@@ -31,6 +32,7 @@ class TenantProvisioningProcess(
     private val migrations: TenantMigrationRunner,
     private val kms: KeyManagementService,
     private val keys: KeyHierarchy,
+    private val identity: IdentityService,
 ) : EventHandler {
     override val name: String = "tenant-provisioning"
     override val eventType: String = TenancyEvents.APPROVED
@@ -47,6 +49,10 @@ class TenantProvisioningProcess(
                 null
             },
             Step("keys", ::createKeys),
+            Step("admin-invitation") { id ->
+                inviteFirstAdmin(id)
+                null
+            },
         )
 
     override fun handle(event: OutboxEvent) {
@@ -76,5 +82,12 @@ class TenantProvisioningProcess(
         val kekUri = kms.createKey("tenant-$id")
         TenantContext.with(TenantContext(id, kekUri)) { keys.createTenantKey() }
         return kekUri
+    }
+
+    /** Before activation, which erases the contact. From here the address lives only in the encrypted `users` row. */
+    private fun inviteFirstAdmin(id: UUID) {
+        val tenant = tenancy.tenant(id) ?: throw TenancyNotFound(id)
+        val contact = checkNotNull(tenancy.contact(id)) { "Tenant $id has no contact to invite" }
+        TenantContext.with(TenantContext(id, tenant.kekUri)) { identity.inviteFirstAdmin(contact) }
     }
 }

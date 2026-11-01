@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 11 |
-| Partial | Part of the control is merged, the listed tasks finish it | 41 |
-| Planned | The listed tasks build the control | 131 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 12 |
+| Partial | Part of the control is merged, the listed tasks finish it | 45 |
+| Planned | The listed tasks build the control | 126 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -74,7 +74,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.1 | 1 | Planned | T21, T23 | `AuthFlow` decides the next step, a client cannot skip one |
 | V2.3.2 | 2 | Planned | T23 | The limits from `docs/security/limits.md` are enforced |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
-| V2.3.4 | 2 | Planned | T17, T19, T23 | One-time tokens, codes and flow steps are consumed by conditional updates |
+| V2.3.4 | 2 | Partial | T19, T23 | Invitation tokens are consumed by a conditional delete (`IdentityServiceTest`), TOTP codes and flow steps remain |
 | V2.4.1 | 2 | Partial | T23, T28, T40 | The throttle decorator is merged (`ThrottleTest`), message limits, SAML filter and WAF remain |
 
 ## V3 Web Frontend Security
@@ -152,10 +152,10 @@ SP metadata import is the only file upload.
 | V6.2.11 | 2 | Planned | T18 | Context-specific words are refused |
 | V6.2.12 | 2 | Planned | T18 | Breached passwords are refused using an offline list |
 | V6.3.1 | 1 | Planned | T18, T19, T23 | Growing delay, attempt counters in Postgres and throttling |
-| V6.3.2 | 1 | Partial | T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited |
+| V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
 | V6.3.3 | 2 | Exception | T21, T22, T34 | MFA by default, a passkey with user verification counts as MFA. See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Planned | T23 | Every pathway goes through `AuthFlow`, the document has no undocumented entry |
-| V6.4.1 | 1 | Planned | T17, T24 | Invitations are random, short-lived and one-time, and users set their own password |
+| V6.4.1 | 1 | Partial | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), setting the first password remains |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
 | V6.4.3 | 2 | Planned | T24 | A reset never opens a session, the next login still asks for the second factor |
 | V6.4.4 | 2 | Planned | T24, T34 | Lost factors are reset by the tenant admin, who also enrolled the user |
@@ -273,20 +273,20 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V11.4.2 | 2 | Planned | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value |
 | V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
-| V11.5.1 | 2 | Partial | T17, T19, T22, T24 | Key material uses `SecureRandom`, tokens need 128 bits and never a UUID |
+| V11.5.1 | 2 | Partial | T19, T22, T24 | Key material and invitation tokens use `SecureRandom` (`InvitationTest`), other tokens need 128 bits and never a UUID |
 | V11.6.1 | 2 | Exception | T20, T27 | RSA-PSS or ECDSA by default. See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V12.1.1 | 1 | Planned | T17, T39, T40, T41 | TLS 1.2 or newer on every connection, including SMTP |
+| V12.1.1 | 1 | Partial | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`), the other connections remain |
 | V12.1.2 | 2 | Planned | T40, T41 | Edge and load balancer security policies with recommended suites |
 | V12.1.3 | 2 | N/A | | No mTLS |
 | V12.2.1 | 1 | Planned | T40 | HTTPS only at the edge |
 | V12.2.2 | 1 | Planned | T40 | Public certificates from ACM |
 | V12.3.1 | 2 | Partial | T39, T41 | SMTP requires STARTTLS, database, Valkey, telemetry and targets remain |
-| V12.3.2 | 2 | Planned | T17, T39, T41 | Clients verify certificates and host names, including SMTP and `verify-full` for Postgres |
+| V12.3.2 | 2 | Partial | T39, T41 | SMTP verifies the server name (`WorkerApplicationTest`), `verify-full` for Postgres and the other clients remain |
 | V12.3.3 | 2 | Planned | T41 | TLS between the load balancer and services |
 | V12.3.4 | 2 | Planned | T39, T41 | Internal certificates come from a pinned private CA |
 
@@ -314,10 +314,10 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V14.1.1 | 2 | Planned | T25 | `docs/security/data-protection.md` classifies data |
 | V14.1.2 | 2 | Planned | T25 | The same document defines requirements per class |
-| V14.2.1 | 1 | Planned | T17, T24, T28, T31 | Mail tokens travel in the URL fragment. SAML redirect parameters carry no secrets |
+| V14.2.1 | 1 | Partial | T24, T28, T31 | The invitation token travels in the URL fragment (`TenantProvisioningProcessTest`). Other mail tokens and SAML redirect parameters remain |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
-| V14.2.4 | 2 | Partial | T17, T22, T25, T38 | Field encryption and audit are merged (`FieldCipherTest`, `AuditTest`), users, sessions and logs remain |
+| V14.2.4 | 2 | Partial | T22, T25, T38 | Field encryption, audit and users are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`), sessions and logs remain |
 | V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
 | V14.3.2 | 2 | Planned | T23 | `Cache-Control: no-store` on all `/api/*` |
 | V14.3.3 | 2 | Planned | T31 | Nothing sensitive in browser storage |

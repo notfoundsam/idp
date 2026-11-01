@@ -61,6 +61,18 @@ internal class Tenants {
         domain: String,
     ): Boolean = dsl.fetchExists(TENANT_DOMAINS, TENANT_DOMAINS.DOMAIN.eq(domain))
 
+    fun domainOf(
+        dsl: DSLContext,
+        tenantId: UUID,
+    ): String? =
+        dsl
+            .select(TENANT_DOMAINS.DOMAIN)
+            .from(TENANT_DOMAINS)
+            .where(TENANT_DOMAINS.TENANT_ID.eq(tenantId))
+            .orderBy(TENANT_DOMAINS.DOMAIN)
+            .limit(1)
+            .fetchOne(TENANT_DOMAINS.DOMAIN)
+
     /** False when the domain already belongs to someone. */
     fun addDomain(
         dsl: DSLContext,

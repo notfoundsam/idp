@@ -19,6 +19,8 @@ private val postgres: PostgreSQLContainer by lazy {
         .withUsername("postgres")
         .withNetwork(network)
         .withNetworkAliases("postgres")
+        // PgBouncer keeps idle connections to every test database for ten minutes, and each test has a database.
+        .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=500")
         .withCopyFileToContainer(
             MountableFile.forHostPath(System.getProperty("idp.postgres.init")),
             "/docker-entrypoint-initdb.d/init.sql",

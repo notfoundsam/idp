@@ -54,6 +54,11 @@ data class TenantApplicationView(
     val status: String,
 )
 
+data class TenantSite(
+    val name: String,
+    val host: String,
+)
+
 /**
  * `ops` submits, approves and suspends. `worker` provisions and reads the contact.
  * Their KMS rights differ, so `contacts` only encrypts in `ops` and only decrypts in `worker`.
@@ -152,6 +157,14 @@ class TenancyService(
     fun application(id: UUID): TenantApplicationView? = transaction.execute { dsl -> applications.find(dsl, id)?.view() }
 
     fun contact(tenantId: UUID): String? = transaction.execute { dsl -> applications.findWithContact(dsl, tenantId) }?.contact(contacts)
+
+    /** On a connection of its own, because a tenant handler calls it and a tenant role cannot read `platform`. */
+    fun site(tenantId: UUID): TenantSite? =
+        transaction.executeSeparately { dsl ->
+            val tenant = tenants.find(dsl, tenantId) ?: return@executeSeparately null
+            val host = tenants.domainOf(dsl, tenantId) ?: return@executeSeparately null
+            TenantSite(tenant.name, host)
+        }
 
     private fun add(
         companyName: String,

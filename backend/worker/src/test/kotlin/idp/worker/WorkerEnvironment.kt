@@ -32,6 +32,7 @@ class WorkerEnvironment {
             "--PROVISIONER_DB_USERNAME=provisioner",
             "--PROVISIONER_DB_PASSWORD=provisioner",
             "--TENANTS_BASE_DOMAIN=$BASE_DOMAIN",
+            "--MAIL_FROM=no-reply@$BASE_DOMAIN",
             "--KMS_NEW_KEYS=hcvault",
             "--PLATFORM_KEK_URI=$platformKekUri",
             "--OPENBAO_ADDRESS=${TestOpenBao.address}",

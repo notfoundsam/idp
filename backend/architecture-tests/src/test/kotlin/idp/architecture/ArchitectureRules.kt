@@ -40,6 +40,8 @@ object ArchitectureRules {
             "ProcessedEvents" to listOf("sharedkernel"),
             "ScheduledLocks" to listOf("sharedkernel"),
             "Users" to listOf("identity"),
+            "UserProfiles" to listOf("identity"),
+            "Invitations" to listOf("identity"),
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */
