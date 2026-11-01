@@ -24,6 +24,7 @@ A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for dec
 - TDD: write the test first, including failure cases.
 - Accepted migrations are never edited. Add a new `V<n>__*.sql`.
 - Every sensitive action writes through `AuditLog` and has a test for it.
+- A change that adds, removes or weakens a security control updates its row in `docs/security/asvs-l2.md`.
 - ADRs state the decision, then its rationale once.
 - Comments: default to none. Write one only for a non-obvious why.
 - Name repository fields after what they store: `users`, not `userRepository`.
