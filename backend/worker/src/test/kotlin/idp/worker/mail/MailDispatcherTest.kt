@@ -21,6 +21,7 @@ import idp.sharedkernel.testing.MovableClock
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestMailpit
 import idp.worker.WorkerApplication
+import idp.worker.WorkerEnvironment
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -137,8 +138,10 @@ class MailDispatcherTest :
         val mailpit = TestMailpit.start()
         afterSpec { mailpit.close() }
 
+        val environment = WorkerEnvironment()
+
         fun worker(vararg arguments: String): ConfigurableApplicationContext =
-            runApplication<WorkerApplication>("--server.port=0", *arguments)
+            runApplication<WorkerApplication>(*environment.arguments, *arguments)
 
         val plain =
             worker(

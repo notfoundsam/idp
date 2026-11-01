@@ -188,9 +188,17 @@ services:
     environment:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
       SPRING_PROFILES_ACTIVE: local
-      SEED_DB_URL: jdbc:postgresql://postgres:5432/idp?options=-c%20role%3Didp_owner
-      SEED_DB_USERNAME: provisioner
-      SEED_DB_PASSWORD: provisioner
+      # Without server-side prepared statements, because PgBouncer shares connections between clients.
+      DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
+      DB_USERNAME: worker_runtime
+      DB_PASSWORD: worker_runtime
+      # Directly to Postgres, because schema creation uses session locks that PgBouncer would lose.
+      PROVISIONER_DB_URL: jdbc:postgresql://postgres:5432/idp?options=-c%20role%3Didp_owner
+      PROVISIONER_DB_USERNAME: provisioner
+      PROVISIONER_DB_PASSWORD: provisioner
+      TENANTS_BASE_DOMAIN: idp.test
+      KMS_NEW_KEYS: hcvault
+      PLATFORM_KEK_URI: hcvault://transit/platform-contacts
       OPENBAO_ADDRESS: http://openbao:8200
       OPENBAO_TOKEN: local-dev-token
       MAIL_HOST: mail

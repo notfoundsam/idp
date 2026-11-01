@@ -6,6 +6,7 @@ import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
+import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
@@ -24,6 +25,7 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 import kotlin.concurrent.thread
 
@@ -71,6 +73,7 @@ private class Outbox {
     val publisher = OutboxPublisher()
     val tenants = TenantTransaction(worker)
     val platform = PlatformTransaction(worker)
+    val handlerCalls = AtomicInteger()
 
     init {
         listOf(a, b).forEach { id ->
@@ -424,6 +427,69 @@ class OutboxDispatcherTest :
                     dispatcher(Recording()).dispatch()
 
                     status() shouldBe "DONE"
+                }
+            }
+        }
+
+        context("version conflict") {
+            fun conflict(): Nothing = throw VersionConflictException("tenants", "row", 1)
+
+            test("a platform handler runs again and the event finishes") {
+                Outbox().run {
+                    publishPlatform()
+                    val handler =
+                        Recording(scope = EventScope.PLATFORM) {
+                            if (handlerCalls.incrementAndGet() < IdempotentHandler.CONFLICT_ATTEMPTS) conflict()
+                        }
+
+                    dispatcher(handler).dispatch()
+
+                    handler.seen shouldHaveSize IdempotentHandler.CONFLICT_ATTEMPTS
+                    status() shouldBe "DONE"
+                    attempts() shouldBe "1"
+                }
+            }
+
+            test("a tenant handler keeps no row of the attempt that lost") {
+                Outbox().run {
+                    publish(a)
+                    val handler =
+                        Recording {
+                            tenants.join { it.execute("""INSERT INTO fixture VALUES (1)""") }
+                            if (handlerCalls.incrementAndGet() == 1) conflict()
+                        }
+
+                    dispatcher(handler).dispatch()
+
+                    handler.seen shouldHaveSize 2
+                    fixtureRows(a) shouldBe "1"
+                    processed(a) shouldBe "1"
+                    status() shouldBe "DONE"
+                }
+            }
+
+            test("the retries are limited and the event goes back to the queue") {
+                Outbox().run {
+                    publishPlatform()
+                    val handler = Recording(scope = EventScope.PLATFORM) { conflict() }
+
+                    dispatcher(handler).dispatch()
+
+                    handler.seen shouldHaveSize IdempotentHandler.CONFLICT_ATTEMPTS
+                    status() shouldBe "PENDING"
+                    attempts() shouldBe "1"
+                }
+            }
+
+            test("any other failure is not repeated at once") {
+                Outbox().run {
+                    publishPlatform()
+                    val handler = Recording(scope = EventScope.PLATFORM) { throw IllegalStateException("broken") }
+
+                    dispatcher(handler).dispatch()
+
+                    handler.seen shouldHaveSize 1
+                    status() shouldBe "PENDING"
                 }
             }
         }

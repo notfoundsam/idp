@@ -1,12 +1,10 @@
 package idp.worker.seed
 
-import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestMailpit
-import idp.sharedkernel.testing.TestOpenBao
+import idp.tenancy.application.TenancyEvents
 import idp.worker.WorkerApplication
+import idp.worker.WorkerEnvironment
 import idp.worker.mail.Mail
 import idp.worker.mail.MailDispatcher
 import idp.worker.mail.MailTemplate
@@ -18,7 +16,6 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import org.springframework.boot.runApplication
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mail.javamail.JavaMailSender
 import java.net.URI
 import java.net.http.HttpClient
@@ -29,27 +26,15 @@ import java.util.UUID
 class LocalSeedTest :
     FunSpec({
         test("the seed does not run outside the local profile") {
-            runApplication<WorkerApplication>("--server.port=0").use { context ->
+            runApplication<WorkerApplication>(*WorkerEnvironment().arguments).use { context ->
                 context.getBeansOfType(LocalSeed::class.java).keys.shouldBeEmpty()
             }
         }
 
         context("in the local profile") {
-            val database = TestDatabase.create()
-            val owner = database.owner()
-            TenantMigrationRunner(owner).migrateAll()
-            database.role("provisioner")
-            val jdbc = JdbcTemplate(owner)
-            val arguments =
-                arrayOf(
-                    "--server.port=0",
-                    "--spring.profiles.active=local",
-                    "--idp.seed.url=${database.url}?options=-c%20role%3Didp_owner",
-                    "--idp.seed.username=provisioner",
-                    "--idp.seed.password=provisioner",
-                    "--idp.seed.openbao.address=${TestOpenBao.address}",
-                    "--idp.seed.openbao.token=${TestOpenBao.TOKEN}",
-                )
+            val environment = WorkerEnvironment()
+            val jdbc = environment.jdbc
+            val arguments = environment.arguments + "--spring.profiles.active=local"
 
             fun tenants(): List<String> =
                 jdbc
@@ -86,8 +71,24 @@ class LocalSeedTest :
                 }
             }
 
+            test("the tenants come from approved applications, as in ops") {
+                jdbc.queryForObject(
+                    "SELECT count(*) FROM platform.tenant_applications WHERE status = 'APPROVED'",
+                    Int::class.java,
+                ) shouldBe 2
+                jdbc.queryForList(
+                    "SELECT status FROM platform.outbox WHERE event_type = ?",
+                    String::class.java,
+                    TenancyEvents.APPROVED,
+                ) shouldContainExactlyInAnyOrder listOf("DONE", "DONE")
+                jdbc.queryForObject(
+                    "SELECT count(*) FROM platform.operator_audit WHERE action = 'tenant.approved' AND actor LIKE '%local-seed%'",
+                    Int::class.java,
+                ) shouldBe 2
+            }
+
             test("each tenant gets a KEK and a tenant key under it") {
-                val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
+                val kms = environment.kms
 
                 tenantIds().forEach { id ->
                     val kekUri = jdbc.queryForObject("SELECT kek_uri FROM platform.tenants WHERE id = ?", String::class.java, id)!!

@@ -38,3 +38,5 @@ done
 
 bao token lookup "$TOKEN" >/dev/null 2>&1 || bao token create -id="$TOKEN" -policy=root -orphan >/dev/null
 bao secrets list | grep -q '^transit/' || bao secrets enable transit >/dev/null
+# Terraform creates this KEK in production, because it belongs to no tenant.
+bao write -f transit/keys/platform-contacts >/dev/null

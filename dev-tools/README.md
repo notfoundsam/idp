@@ -37,10 +37,10 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 `dev-tools/postgres/init.sql` only runs on an empty volume, so after it changes run `make clean`.
 
-`app` connects through PgBouncer in transaction mode as `app_runtime`, and every tenant transaction sets its role with `SET LOCAL`. Tests start PgBouncer from the same `dev-tools/pgbouncer` files, so a new role goes into `userlist.txt`.
+`app`, `worker` and `ops` connect through PgBouncer in transaction mode under their own roles, and every tenant transaction sets its role with `SET LOCAL`. Tests start PgBouncer from the same `dev-tools/pgbouncer` files, so a new role goes into `userlist.txt`. `worker` also connects directly as `provisioner` to create tenant schemas.
 
-In the `local` profile `worker` seeds the tenants `acme` and `globex`. `make up` returns after the seed, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
+In the `local` profile `worker` applies for the tenants `acme` and `globex` and approves them as `ops` would, then provisions them from the outbox event like any other tenant. `make up` returns after that, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
 
 ## Secrets
 
-Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`. The seed gives each local tenant a KEK there, so wiping the OpenBao volume without Postgres leaves their tenant keys unreadable.
+Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`. Provisioning gives each tenant a KEK there and `openbao-init` creates the `platform-contacts` KEK, so wiping the OpenBao volume without Postgres leaves tenant keys and application contacts unreadable.
