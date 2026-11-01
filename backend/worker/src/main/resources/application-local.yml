@@ -4,12 +4,3 @@ spring:
       mail.smtp.auth: false
       mail.smtp.starttls.enable: false
       mail.smtp.starttls.required: false
-
-idp:
-  seed:
-    url: ${SEED_DB_URL}
-    username: ${SEED_DB_USERNAME}
-    password: ${SEED_DB_PASSWORD}
-    openbao:
-      address: ${OPENBAO_ADDRESS}
-      token: ${OPENBAO_TOKEN}

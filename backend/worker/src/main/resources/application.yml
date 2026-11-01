@@ -1,6 +1,18 @@
 spring:
   application:
     name: worker
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  task:
+    scheduling:
+      # The outbox and the jobs have a thread each, so a long provisioning does not hold back the cleanup.
+      pool:
+        size: 2
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:587}
@@ -14,6 +26,29 @@ spring:
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
+
+idp:
+  tenants:
+    base-domain: ${TENANTS_BASE_DOMAIN}
+  provisioner:
+    # Directly to Postgres: schema locks live in a session, and PgBouncer in transaction mode would lose them.
+    url: ${PROVISIONER_DB_URL}
+    username: ${PROVISIONER_DB_USERNAME}
+    password: ${PROVISIONER_DB_PASSWORD}
+  kms:
+    new-keys: ${KMS_NEW_KEYS}
+    platform-kek-uri: ${PLATFORM_KEK_URI}
+    key-cache-ttl: 5m
+    openbao:
+      address: ${OPENBAO_ADDRESS:}
+      token: ${OPENBAO_TOKEN:}
+    aws:
+      region: ${KMS_AWS_REGION:}
+      key-policy: ${KMS_AWS_KEY_POLICY:}
+  outbox:
+    poll-interval: PT0.5S
+  jobs:
+    tick-interval: PT1M
 
 # worker serves no API, so its only port is the management one.
 server:

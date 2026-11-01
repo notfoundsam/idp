@@ -113,12 +113,18 @@ class AwsKeyManagementService(
         }
 
     companion object {
+        /** Credentials come from the task role. The signature holds no SDK type, so code outside this package can call it. */
+        fun create(
+            region: String,
+            keyPolicy: String,
+        ): AwsKeyManagementService = create(region, keyPolicy, endpoint = null, credentials = null)
+
         /** The AWS SDK stays inside this package, so callers cannot build the client themselves. */
         fun create(
             region: String,
             keyPolicy: String,
-            endpoint: URI? = null,
-            credentials: AwsCredentialsProvider? = null,
+            endpoint: URI?,
+            credentials: AwsCredentialsProvider?,
         ): AwsKeyManagementService {
             val client =
                 KmsClient
