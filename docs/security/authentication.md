@@ -10,7 +10,7 @@ MFA is required by default, and a tenant can relax it only for the `USER` role. 
 
 A user with no second factor enrolls one right after the password when MFA is required, so until then the password alone stands behind that enrollment. A user who already has a factor must pass it first, so a stolen password cannot add a new one. When a passkey is required, neither TOTP nor a recovery code replaces it.
 
-A flow can start from a session and then asks only for what is missing. A demand for a fresh login makes the session count for nothing.
+A flow can start from a session and then asks only for what is missing. A demand for a fresh login makes the session count for nothing. The role, the factors and the policy are read again at every step, so a tighter policy or a new factor reaches a login in progress. See [sessions.md](sessions.md) for what a completed flow opens.
 
 ## Passkeys
 

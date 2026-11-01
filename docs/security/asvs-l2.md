@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 24 |
-| Partial | Part of the control is merged, the listed tasks finish it | 49 |
-| Planned | The listed tasks build the control | 110 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 33 |
+| Partial | Part of the control is merged, the listed tasks finish it | 55 |
+| Planned | The listed tasks build the control | 95 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -83,10 +83,10 @@ A change that adds, removes or weakens a control updates its row in the same pul
 |---|---|---|---|---|
 | V3.2.1 | 1 | Planned | T23, T29 | The API answers JSON with `nosniff` and a closed CSP, uploaded files are never served |
 | V3.2.2 | 1 | Planned | T31 | Vue interpolation only, a lint rule forbids `v-html` |
-| V3.3.1 | 1 | Planned | T22, T23 | All cookies are `Secure` |
-| V3.3.2 | 2 | Planned | T22, T23 | Session cookie is `SameSite=Lax`, every other cookie has a stated value |
-| V3.3.3 | 2 | Planned | T22, T23 | All cookies use `__Host-` |
-| V3.3.4 | 2 | Planned | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` |
+| V3.3.1 | 1 | Partial | T23 | The session cookie is `Secure` (`SessionCookieTest`), the other cookies remain |
+| V3.3.2 | 2 | Partial | T23 | The session cookie is `SameSite=Lax` (`SessionCookieTest`), a stated value on every other cookie remains |
+| V3.3.3 | 2 | Partial | T23 | The session cookie uses `__Host-` (`SessionCookieTest`), the other cookies remain |
+| V3.3.4 | 2 | Done | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` (`SessionCookieTest`) |
 | V3.4.1 | 1 | Planned | T23, T31, T40 | HSTS with one year and `includeSubDomains` on every response |
 | V3.4.2 | 1 | Planned | T23 | The API is same-origin and sends no CORS headers |
 | V3.4.3 | 2 | Planned | T23, T29, T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'`, nonce on the SAML form |
@@ -153,7 +153,7 @@ SP metadata import is the only file upload.
 | V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.3.1 | 1 | Partial | T23 | Growing delay and attempt counters in Postgres (`PasswordServiceTest`, `TotpServiceTest`), login throttling remains |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
-| V6.3.3 | 2 | Exception | T22, T34 | MFA by default, a passkey with user verification counts as MFA (`AuthFlowTest`, `TenantPolicyTest`), the stored default policy and its relaxing remain. See [Exceptions](#exceptions) |
+| V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`), its relaxing remains. See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Planned | T23 | Every pathway goes through `AuthFlow`, the document has no undocumented entry |
 | V6.4.1 | 1 | Partial | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), setting the first password remains |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
@@ -176,17 +176,17 @@ SP metadata import is the only file upload.
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V7.1.1 | 2 | Planned | T22 | `docs/security/sessions.md` justifies timeouts against NIST SP 800-63B |
-| V7.1.2 | 2 | Planned | T22 | The same document defines concurrent sessions |
-| V7.1.3 | 2 | Planned | T22, T29 | The same document covers the IdP session and SP sessions |
-| V7.2.1 | 1 | Planned | T22 | `resolveSession` checks tokens on the backend |
-| V7.2.2 | 1 | Planned | T22 | Tokens are generated per session |
-| V7.2.3 | 1 | Planned | T22 | Reference tokens with at least 128 bits from a CSPRNG, not UUIDs |
-| V7.2.4 | 1 | Planned | T22 | A new token on login and on re-authentication |
-| V7.3.1 | 2 | Planned | T22 | Idle timeout from tenant policy |
-| V7.3.2 | 2 | Planned | T22 | Absolute timeout from tenant policy |
+| V7.1.1 | 2 | Done | T22 | `docs/security/sessions.md` justifies timeouts against NIST SP 800-63B |
+| V7.1.2 | 2 | Done | T22 | The same document defines concurrent sessions, the limit holds (`SessionsTest`) |
+| V7.1.3 | 2 | Partial | T29 | The same document covers the IdP session and SP sessions, `SessionNotOnOrAfter` remains |
+| V7.2.1 | 1 | Done | T22 | `resolveSession` checks tokens on the backend (`SessionsTest`, `SessionFilterTest`) |
+| V7.2.2 | 1 | Done | T22 | Tokens are generated per session (`SessionsTest`) |
+| V7.2.3 | 1 | Done | T22 | Reference tokens with 256 bits from a CSPRNG, not UUIDs (`SsoSessionTest`) |
+| V7.2.4 | 1 | Done | T22 | A new token on login and on re-authentication (`SessionsTest`) |
+| V7.3.1 | 2 | Done | T22 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`) |
+| V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
 | V7.4.1 | 1 | Planned | T32 | Logout invalidates the session on the server |
-| V7.4.2 | 1 | Planned | T25, T34 | Blocking or erasing a user ends the sessions |
+| V7.4.2 | 1 | Partial | T25, T34 | A blocked user is refused on the next request, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
 | V7.4.3 | 2 | Planned | T24, T32 | A factor change offers ending other sessions, a reset ends them |
 | V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
@@ -273,7 +273,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V11.4.2 | 2 | Done | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value (`PasswordHasherTest`) |
 | V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
-| V11.5.1 | 2 | Partial | T22, T24 | Key material, invitation tokens, TOTP secrets and recovery codes use `SecureRandom` (`InvitationTest`, `TotpCredentialTest`, `RecoveryCodeTest`), other tokens need 128 bits and never a UUID |
+| V11.5.1 | 2 | Partial | T24 | Key material, invitation and session tokens, TOTP secrets and recovery codes use `SecureRandom` (`InvitationTest`, `SsoSessionTest`, `TotpCredentialTest`, `RecoveryCodeTest`), other tokens need 128 bits and never a UUID |
 | V11.6.1 | 2 | Exception | T27 | RSA-PSS or ECDSA by default, passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
@@ -317,7 +317,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.2.1 | 1 | Partial | T24, T28, T31 | The invitation token travels in the URL fragment (`TenantProvisioningProcessTest`). Other mail tokens and SAML redirect parameters remain |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
-| V14.2.4 | 2 | Partial | T22, T25, T38 | Field encryption, audit and users are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`), sessions and logs remain |
+| V14.2.4 | 2 | Partial | T25, T38 | Field encryption, audit, users and sessions are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`), logs remain |
 | V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
 | V14.3.2 | 2 | Planned | T23 | `Cache-Control: no-store` on all `/api/*` |
 | V14.3.3 | 2 | Planned | T31 | Nothing sensitive in browser storage |

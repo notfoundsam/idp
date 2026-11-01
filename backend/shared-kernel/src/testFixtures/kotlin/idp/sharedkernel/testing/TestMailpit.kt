@@ -28,6 +28,8 @@ class MailpitServer internal constructor() : AutoCloseable {
         GenericContainer(System.getProperty("idp.mailpit.image"))
             .withExposedPorts(SMTP_PORT, API_PORT)
             .withEnv("MP_ENABLE_CHAOS", "true")
+            // The lookup holds back the greeting by seconds, enough to pass the SMTP timeout of `worker` on a busy machine.
+            .withEnv("MP_SMTP_DISABLE_RDNS", "true")
             .waitingFor(Wait.forHttp("/readyz").forPort(API_PORT))
             .also { it.start() }
 

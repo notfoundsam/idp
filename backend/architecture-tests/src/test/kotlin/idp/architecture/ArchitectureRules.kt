@@ -47,6 +47,9 @@ object ArchitectureRules {
             "RecoveryCodes" to listOf("identity"),
             "PasskeyCredentials" to listOf("identity"),
             "PasskeyChallenges" to listOf("identity"),
+            "TenantPolicies" to listOf("authentication"),
+            "SsoSessions" to listOf("authentication"),
+            "Flows" to listOf("authentication"),
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */
