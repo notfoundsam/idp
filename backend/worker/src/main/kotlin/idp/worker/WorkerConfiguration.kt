@@ -77,6 +77,9 @@ class WorkerConfiguration {
     fun invitationCleanup(identity: IdentityService): TenantCleanup = identity.invitationCleanup
 
     @Bean
+    fun passkeyChallengeCleanup(identity: IdentityService): TenantCleanup = identity.passkeyChallengeCleanup
+
+    @Bean
     fun mailDispatcher(
         sender: JavaMailSender,
         identity: IdentityService,
