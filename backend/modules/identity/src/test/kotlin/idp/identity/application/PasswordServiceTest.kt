@@ -40,11 +40,7 @@ import io.kotest.matchers.string.shouldStartWith
 import org.jooq.DSLContext
 import org.springframework.jdbc.core.JdbcTemplate
 import java.lang.management.ManagementFactory
-import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
@@ -75,17 +71,6 @@ private class PasswordAudit : AuditLog {
     }
 
     override fun recordDenial(record: AuditRecord) = throw UnsupportedOperationException()
-}
-
-/** Stands still, so a delay of a second cannot run out under a slow test. */
-private class SteppedClock : Clock() {
-    @Volatile var now: Instant = Instant.parse("2026-11-01T00:00:00Z")
-
-    override fun instant(): Instant = now
-
-    override fun getZone(): ZoneId = ZoneOffset.UTC
-
-    override fun withZone(zone: ZoneId): Clock = this
 }
 
 private class Fixture(
