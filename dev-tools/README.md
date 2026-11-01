@@ -41,6 +41,18 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 In the `local` profile `worker` applies for the tenants `acme` and `globex` and approves them as `ops` would, then provisions them from the outbox event like any other tenant. `make up` returns after that, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
 
+## Operator
+
+In the `local` profile the API of `ops` acts as the fixed operator `local-operator`, because SAML arrives in a later task. Elsewhere a request without a principal gets 401. Until then the API stays inside compose.
+
+The CLI is a one-off run of the same image. In production IAM decides who may start it and `sts:GetCallerIdentity` names the actor. Locally the actor is `local-operator`.
+
+```bash
+docker compose run --rm --no-deps ops java -jar /app/service.jar cli
+```
+
+Without an operation it prints the usage. It exits with 1 when an operation is refused and with 2 on wrong arguments.
+
 ## Secrets
 
-Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`. Provisioning gives each tenant a KEK there and `openbao-init` creates the `platform-contacts` KEK, so wiping the OpenBao volume without Postgres leaves tenant keys and application contacts unreadable.
+Every credential here is for local use only. OpenBao stores its data in a volume and is unsealed by `openbao-init` on every `up`, because keys must survive a restart as long as Postgres keeps data encrypted with them. Its token is `local-dev-token`, and `local-ops-token` given to `ops` can only encrypt with `platform-contacts`. Provisioning gives each tenant a KEK there and `openbao-init` creates the `platform-contacts` KEK, so wiping the OpenBao volume without Postgres leaves tenant keys and application contacts unreadable.

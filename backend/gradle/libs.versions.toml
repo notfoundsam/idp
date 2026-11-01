@@ -16,6 +16,8 @@ spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-st
 spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-web = { module = "org.springframework:spring-web" }
+spring-context = { module = "org.springframework:spring-context" }
+jakarta-servlet-api = { module = "jakarta.servlet:jakarta.servlet-api" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
 spring-boot-starter-mail = { module = "org.springframework.boot:spring-boot-starter-mail" }
 spring-jdbc = { module = "org.springframework:spring-jdbc" }
@@ -29,6 +31,7 @@ micrometer-core = { module = "io.micrometer:micrometer-core" }
 lettuce-core = { module = "io.lettuce:lettuce-core" }
 bucket4j-lettuce = { module = "com.bucket4j:bucket4j_jdk17-lettuce", version.ref = "bucket4j" }
 aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
+aws-sdk-sts = { module = "software.amazon.awssdk:sts", version.ref = "aws-sdk" }
 tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 flyway-core = { module = "org.flywaydb:flyway-core" }

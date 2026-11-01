@@ -1,13 +1,13 @@
 package idp.ops.bus
 
 import idp.ops.OpsApplication
+import idp.ops.OpsEnvironment
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.Command
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.bus.MessageHandler
 import idp.sharedkernel.bus.TransactionScope
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.security.AccessDeniedException
 import idp.sharedkernel.security.Permission
 import idp.sharedkernel.security.Principal
@@ -15,7 +15,6 @@ import idp.sharedkernel.security.Role
 import idp.sharedkernel.security.SecurityConfig
 import idp.sharedkernel.security.SecurityContext
 import idp.sharedkernel.tenant.TenantContext
-import idp.sharedkernel.testing.TestDatabase
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
@@ -24,7 +23,6 @@ import io.kotest.matchers.string.shouldContain
 import org.springframework.boot.SpringApplication
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 import java.net.URI
@@ -74,19 +72,14 @@ private class ProbeOperatorEndpoint(
 
 class OpsBusTest :
     FunSpec({
-        val database = TestDatabase.create()
-        val owner = database.owner()
-        TenantMigrationRunner(owner).migrateAll()
-        database.role("ops_runtime")
-        val sql = JdbcTemplate(owner)
+        val environment = OpsEnvironment()
+        val sql = environment.sql
         val application =
-            SpringApplication(OpsApplication::class.java, ProbeOperator::class.java, ProbeOperatorEndpoint::class.java).run(
-                "--server.port=0",
-                "--management.server.port=0",
-                "--DB_URL=${database.url}",
-                "--DB_USERNAME=ops_runtime",
-                "--DB_PASSWORD=ops_runtime",
-            )
+            SpringApplication(
+                OpsApplication::class.java,
+                ProbeOperator::class.java,
+                ProbeOperatorEndpoint::class.java,
+            ).run(*environment.arguments)
         val bus = application.getBean(CommandBus::class.java)
 
         afterSpec { application.close() }

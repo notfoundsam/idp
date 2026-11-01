@@ -4,6 +4,7 @@ set -eu
 
 STATE=/openbao/file/local-init
 TOKEN=local-dev-token
+OPS_TOKEN=local-ops-token
 
 # `bao status` exits with 2 while the server is sealed, which still means it is reachable.
 attempts=0
@@ -40,3 +41,10 @@ bao token lookup "$TOKEN" >/dev/null 2>&1 || bao token create -id="$TOKEN" -poli
 bao secrets list | grep -q '^transit/' || bao secrets enable transit >/dev/null
 # Terraform creates this KEK in production, because it belongs to no tenant.
 bao write -f transit/keys/platform-contacts >/dev/null
+
+# `ops` stores contacts and never reads them, so its token stops at `Encrypt` as its IAM role does in production.
+bao policy write ops - >/dev/null <<'RULES'
+path "transit/keys/platform-contacts" { capabilities = ["read"] }
+path "transit/encrypt/platform-contacts" { capabilities = ["update"] }
+RULES
+bao token lookup "$OPS_TOKEN" >/dev/null 2>&1 || bao token create -id="$OPS_TOKEN" -policy=ops -orphan >/dev/null

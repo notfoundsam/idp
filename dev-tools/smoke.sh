@@ -60,6 +60,15 @@ transit_roundtrip() {
   [ "$(bao write -field=plaintext transit/decrypt/smoke ciphertext="$cipher" | base64 -d)" = "smoke" ]
 }
 
+ops_encrypts_only() {
+  local cipher
+  cipher=$(bao write -field=ciphertext transit/encrypt/platform-contacts plaintext="$(printf 'smoke' | base64)")
+  docker compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=local-ops-token openbao \
+    bao write -field=ciphertext transit/encrypt/platform-contacts plaintext="$(printf 'smoke' | base64)" &&
+    ! docker compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_TOKEN=local-ops-token openbao \
+      bao write transit/decrypt/platform-contacts ciphertext="$cipher"
+}
+
 pgbouncer_query() {
   docker compose exec -T -e PGPASSWORD=idp_owner postgres psql -h pgbouncer -p 5432 -U idp_owner -d idp -tAc 'select 1' | grep -q '^1$'
 }
@@ -92,6 +101,7 @@ check "platform schema migrated" platform_migrated
 check "runtime role connects" runtime_role_connects
 check "valkey" docker compose exec -T valkey valkey-cli ping
 check "openbao transit round trip" transit_roundtrip
+check "ops token cannot decrypt" ops_encrypts_only
 check "app health" health app
 check "worker health" health worker
 check "ops health" health ops

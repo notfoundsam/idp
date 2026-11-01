@@ -13,11 +13,14 @@ dependencies {
     implementation(libs.jackson.module.kotlin)
     implementation(libs.slf4j.api)
     implementation(libs.aws.sdk.kms)
+    implementation(libs.aws.sdk.sts)
     implementation(libs.tink)
     implementation(libs.lettuce.core)
     implementation(libs.bucket4j.lettuce)
     implementation(libs.micrometer.core)
     compileOnly(libs.spring.web)
+    compileOnly(libs.spring.context)
+    compileOnly(libs.jakarta.servlet.api)
 
     testImplementation(libs.logback.classic)
 

@@ -39,6 +39,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: make test-frontend
 
+  api-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Old frontends keep calling the backend, so a contract is compared with the last release, not with main.
+      - id: release
+        run: |
+          tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -z "$tag" ]; then
+            echo "::notice title=oasdiff skipped::No release tag yet, so there is no contract to compare with"
+          else
+            git worktree add .release "$tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - if: steps.release.outputs.tag != ''
+        uses: oasdiff/oasdiff-action/breaking@9e56cf8b3aff7edb326d5767d3d23f96127e20c3 # v0.1.21
+        with:
+          base: .release/contracts/openapi/ops.yaml
+          revision: contracts/openapi/ops.yaml
+          fail-on: ERR
+
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
