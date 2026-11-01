@@ -71,7 +71,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.2.1 | 1 | Partial | T23, T32, T34, T36 | Domain types validate on the server (`TenantTest`), each API adds its inputs |
 | V2.2.2 | 1 | Partial | T23, T32, T34, T36 | Validation lives in the domain and the audience, client checks are convenience only |
 | V2.2.3 | 2 | Planned | T34, T36 | Policy and SP settings are checked as a combination |
-| V2.3.1 | 1 | Planned | T21, T23 | `AuthFlow` decides the next step, a client cannot skip one |
+| V2.3.1 | 1 | Partial | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API remains |
 | V2.3.2 | 2 | Planned | T23 | The limits from `docs/security/limits.md` are enforced |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
 | V2.3.4 | 2 | Partial | T23 | Invitation tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps remain |
@@ -153,7 +153,7 @@ SP metadata import is the only file upload.
 | V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.3.1 | 1 | Partial | T23 | Growing delay and attempt counters in Postgres (`PasswordServiceTest`, `TotpServiceTest`), login throttling remains |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
-| V6.3.3 | 2 | Exception | T21, T22, T34 | MFA by default, a passkey with user verification counts as MFA. See [Exceptions](#exceptions) |
+| V6.3.3 | 2 | Exception | T22, T34 | MFA by default, a passkey with user verification counts as MFA (`AuthFlowTest`, `TenantPolicyTest`), the stored default policy and its relaxing remain. See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Planned | T23 | Every pathway goes through `AuthFlow`, the document has no undocumented entry |
 | V6.4.1 | 1 | Partial | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), setting the first password remains |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |

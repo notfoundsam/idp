@@ -109,6 +109,8 @@ class PasskeyService(
         return credential.id
     }
 
+    fun hasPasskey(userId: UUID): Boolean = transaction.execute { dsl -> passkeys.credentialIds(dsl, userId).isNotEmpty() }
+
     fun beginAuthentication(): PasskeyAuthenticationOptions =
         transaction.execute { dsl ->
             val challenge = newChallenge()

@@ -1,5 +1,17 @@
 # Authentication
 
+## Login steps
+
+`AuthFlow` derives the next step from what was proved, the tenant policy, the factors of the user and the demands of the caller. A client cannot skip a step, because any other step is refused. A flow lives for a fixed time, and no step extends it.
+
+The first step takes a login or a passkey. A login that matches nobody leads to the same password step as any other, and a user without a password gets it too, so the steps say nothing about an account. That step still takes a passkey, but only the passkey of the user who entered the login. A passkey fails the same way when the login belongs to someone else and when it belongs to nobody, so a valid passkey of one's own cannot probe logins.
+
+MFA is required by default, and a tenant can relax it only for the `USER` role. The policy has no switch for `TENANT_ADMIN`. A passkey with user verification is enough on its own. A second factor the user enrolled is asked for even under a relaxed policy.
+
+A user with no second factor enrolls one right after the password when MFA is required, so until then the password alone stands behind that enrollment. A user who already has a factor must pass it first, so a stolen password cannot add a new one. When a passkey is required, neither TOTP nor a recovery code replaces it.
+
+A flow can start from a session and then asks only for what is missing. A demand for a fresh login makes the session count for nothing.
+
 ## Passkeys
 
 Passkeys follow WebAuthn through WebAuthn4J. They are discoverable, so a login starts before anyone is known and no response tells whether an account exists.
