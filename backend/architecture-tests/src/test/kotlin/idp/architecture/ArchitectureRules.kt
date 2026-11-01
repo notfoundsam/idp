@@ -42,6 +42,7 @@ object ArchitectureRules {
             "Users" to listOf("identity"),
             "UserProfiles" to listOf("identity"),
             "Invitations" to listOf("identity"),
+            "PasswordCredentials" to listOf("identity"),
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */

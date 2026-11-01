@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 12 |
-| Partial | Part of the control is merged, the listed tasks finish it | 45 |
-| Planned | The listed tasks build the control | 126 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 19 |
+| Partial | Part of the control is merged, the listed tasks finish it | 49 |
+| Planned | The listed tasks build the control | 115 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -137,21 +137,21 @@ SP metadata import is the only file upload.
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V6.1.1 | 1 | Planned | T23 | `docs/security/authentication.md` covers rate limits and malicious lockout |
-| V6.1.2 | 2 | Planned | T18, T23 | The same document lists context-specific words |
+| V6.1.2 | 2 | Partial | T23 | Context-specific words are refused (`PasswordPolicyTest`), the document that lists them remains |
 | V6.1.3 | 2 | Planned | T23 | The same document lists every pathway with its strength |
-| V6.2.1 | 1 | Planned | T18 | At least 8 characters, the UI recommends 15 |
+| V6.2.1 | 1 | Partial | T31, T33 | At least 8 characters (`PasswordPolicyTest`), the UI hint for 15 remains |
 | V6.2.2 | 1 | Planned | T32 | Users change their password in the account area |
 | V6.2.3 | 1 | Planned | T32 | The change requires the current password |
-| V6.2.4 | 1 | Planned | T18 | Top passwords are refused |
-| V6.2.5 | 1 | Planned | T18 | No composition rules |
+| V6.2.4 | 1 | Done | T18 | Top passwords are refused (`PasswordPolicyTest`, `BannedPasswordsTest`) |
+| V6.2.5 | 1 | Done | T18 | No composition rules (`PasswordPolicyTest`) |
 | V6.2.6 | 1 | Planned | T31 | `type=password` with an optional reveal |
 | V6.2.7 | 1 | Planned | T31 | Paste and password managers work |
-| V6.2.8 | 1 | Planned | T18 | The password is verified exactly as received |
-| V6.2.9 | 2 | Planned | T18 | At least 64 characters are accepted |
-| V6.2.10 | 2 | Planned | T18, T34 | No password expiry, policy offers none |
-| V6.2.11 | 2 | Planned | T18 | Context-specific words are refused |
-| V6.2.12 | 2 | Planned | T18 | Breached passwords are refused using an offline list |
-| V6.3.1 | 1 | Planned | T18, T19, T23 | Growing delay, attempt counters in Postgres and throttling |
+| V6.2.8 | 1 | Done | T18 | The password is verified exactly as received (`PasswordHasherTest`) |
+| V6.2.9 | 2 | Done | T18 | Up to 128 characters are accepted (`PasswordPolicyTest`) |
+| V6.2.10 | 2 | Partial | T34 | A credential has no expiry (`PasswordCredential`), the test that the policy offers none remains |
+| V6.2.11 | 2 | Done | T18 | Context-specific words are refused (`PasswordPolicyTest`, `PasswordServiceTest`) |
+| V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
+| V6.3.1 | 1 | Partial | T19, T23 | Growing delay and attempt counters in Postgres (`PasswordServiceTest`), TOTP attempts and login throttling remain |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
 | V6.3.3 | 2 | Exception | T21, T22, T34 | MFA by default, a passkey with user verification counts as MFA. See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Planned | T23 | Every pathway goes through `AuthFlow`, the document has no undocumented entry |
@@ -263,14 +263,14 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V11.1.1 | 2 | Planned | T26 | `docs/security/crypto-inventory.md` holds the key policy and lifecycle |
 | V11.1.2 | 2 | Planned | T26 | The same document inventories keys, algorithms and certificates |
-| V11.2.1 | 2 | Partial | T18, T20, T27 | Tink, the JDK and KMS are merged, password, WebAuthn and SAML libraries remain |
-| V11.2.2 | 2 | Partial | T18, T26 | Ciphertexts carry a key version in the Tink prefix, password parameters and key rotation remain |
+| V11.2.1 | 2 | Partial | T20, T27 | Tink, the JDK, KMS and Bouncy Castle are merged, WebAuthn and SAML libraries remain |
+| V11.2.2 | 2 | Partial | T26 | Ciphertexts carry a key version in the Tink prefix, password hashes carry their parameters (`PasswordHasherTest`), key rotation remains |
 | V11.2.3 | 2 | Partial | T27 | AES-256 and HMAC-SHA-256 are merged, SAML keys need RSA-3072 or stronger |
 | V11.3.1 | 1 | Done | T7 | Only AES-GCM through Tink and KMS envelopes (`FieldCipherTest`) |
 | V11.3.2 | 1 | Done | T7 | Only AES-GCM (`FieldCipherTest`, `PlatformCipherTest`) |
 | V11.3.3 | 2 | Done | T7 | Authenticated encryption with AAD bound to the row and field (`FieldCipherTest`) |
 | V11.4.1 | 1 | Exception | T19, T27 | SHA-256 family everywhere except TOTP. See [Exceptions](#exceptions) |
-| V11.4.2 | 2 | Planned | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value |
+| V11.4.2 | 2 | Done | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value (`PasswordHasherTest`) |
 | V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
 | V11.5.1 | 2 | Partial | T19, T22, T24 | Key material and invitation tokens use `SecureRandom` (`InvitationTest`), other tokens need 128 bits and never a UUID |
@@ -330,7 +330,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.1.2 | 2 | Partial | T42 | The dependency graph reaches GitHub from CI, a release SBOM remains |
 | V15.1.3 | 2 | Planned | T23 | `docs/security/limits.md` lists expensive operations |
 | V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
-| V15.2.2 | 2 | Partial | T18, T23, T28 | Throttling is merged, hash semaphore, flow limits and a DEFLATE size limit remain |
+| V15.2.2 | 2 | Partial | T23, T28 | Throttling and the hash semaphore are merged (`HashLimitTest`), flow limits and a DEFLATE size limit remain |
 | V15.2.3 | 2 | Partial | T41 | Seed runs only in `local` (`LocalSeedTest`), production must never set that profile |
 | V15.3.1 | 1 | Partial | T23, T32, T34, T36 | Audiences own responses (`OpsApiTest`), each API adds its own |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |

@@ -7,6 +7,7 @@ archunit = "1.5.1"
 aws-sdk = "2.46.7"
 tink = "1.24.0"
 bucket4j = "8.21.0"
+bouncycastle = "1.86"
 
 [libraries]
 kotest-runner = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
@@ -33,6 +34,7 @@ bucket4j-lettuce = { module = "com.bucket4j:bucket4j_jdk17-lettuce", version.ref
 aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
 aws-sdk-sts = { module = "software.amazon.awssdk:sts", version.ref = "aws-sdk" }
 tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
+bouncycastle = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 flyway-core = { module = "org.flywaydb:flyway-core" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
