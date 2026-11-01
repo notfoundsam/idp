@@ -43,6 +43,8 @@ object ArchitectureRules {
             "UserProfiles" to listOf("identity"),
             "Invitations" to listOf("identity"),
             "PasswordCredentials" to listOf("identity"),
+            "TotpCredentials" to listOf("identity"),
+            "RecoveryCodes" to listOf("identity"),
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */

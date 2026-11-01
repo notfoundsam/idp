@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 19 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 24 |
 | Partial | Part of the control is merged, the listed tasks finish it | 49 |
-| Planned | The listed tasks build the control | 115 |
+| Planned | The listed tasks build the control | 110 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -74,7 +74,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.1 | 1 | Planned | T21, T23 | `AuthFlow` decides the next step, a client cannot skip one |
 | V2.3.2 | 2 | Planned | T23 | The limits from `docs/security/limits.md` are enforced |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
-| V2.3.4 | 2 | Partial | T19, T23 | Invitation tokens are consumed by a conditional delete (`IdentityServiceTest`), TOTP codes and flow steps remain |
+| V2.3.4 | 2 | Partial | T23 | Invitation tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps remain |
 | V2.4.1 | 2 | Partial | T23, T28, T40 | The throttle decorator is merged (`ThrottleTest`), message limits, SAML filter and WAF remain |
 
 ## V3 Web Frontend Security
@@ -151,7 +151,7 @@ SP metadata import is the only file upload.
 | V6.2.10 | 2 | Partial | T34 | A credential has no expiry (`PasswordCredential`), the test that the policy offers none remains |
 | V6.2.11 | 2 | Done | T18 | Context-specific words are refused (`PasswordPolicyTest`, `PasswordServiceTest`) |
 | V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
-| V6.3.1 | 1 | Partial | T19, T23 | Growing delay and attempt counters in Postgres (`PasswordServiceTest`), TOTP attempts and login throttling remain |
+| V6.3.1 | 1 | Partial | T23 | Growing delay and attempt counters in Postgres (`PasswordServiceTest`, `TotpServiceTest`), login throttling remains |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
 | V6.3.3 | 2 | Exception | T21, T22, T34 | MFA by default, a passkey with user verification counts as MFA. See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Planned | T23 | Every pathway goes through `AuthFlow`, the document has no undocumented entry |
@@ -159,11 +159,11 @@ SP metadata import is the only file upload.
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
 | V6.4.3 | 2 | Planned | T24 | A reset never opens a session, the next login still asks for the second factor |
 | V6.4.4 | 2 | Planned | T24, T34 | Lost factors are reset by the tenant admin, who also enrolled the user |
-| V6.5.1 | 2 | Planned | T19 | TOTP codes and recovery codes work once |
-| V6.5.2 | 2 | Planned | T19 | Recovery codes have at least 112 bits of entropy and are stored as SHA-256 |
-| V6.5.3 | 2 | Planned | T19 | Codes and seeds come from a CSPRNG |
-| V6.5.4 | 2 | Planned | T19 | Recovery codes exceed 20 bits of entropy |
-| V6.5.5 | 2 | Planned | T19 | TOTP step of 30 seconds, the tolerance is documented |
+| V6.5.1 | 2 | Done | T19 | TOTP codes and recovery codes work once (`TotpServiceTest`) |
+| V6.5.2 | 2 | Done | T19 | Recovery codes have 128 bits of entropy and are stored as SHA-256 (`RecoveryCodeTest`, `TotpServiceTest`) |
+| V6.5.3 | 2 | Done | T19 | Codes and seeds come from a CSPRNG (`RecoveryCodeTest`, `TotpCredentialTest`) |
+| V6.5.4 | 2 | Done | T19 | Recovery codes carry 128 bits of entropy (`RecoveryCodeTest`) |
+| V6.5.5 | 2 | Done | T19 | TOTP step of 30 seconds (`TotpCredentialTest`), the tolerance is in `docs/security/authentication.md` |
 | V6.6.1 | 2 | N/A | | No SMS or phone authentication |
 | V6.6.2 | 2 | N/A | | No out-of-band factor, mail links serve recovery only |
 | V6.6.3 | 2 | N/A | | No out-of-band factor |
@@ -269,11 +269,11 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V11.3.1 | 1 | Done | T7 | Only AES-GCM through Tink and KMS envelopes (`FieldCipherTest`) |
 | V11.3.2 | 1 | Done | T7 | Only AES-GCM (`FieldCipherTest`, `PlatformCipherTest`) |
 | V11.3.3 | 2 | Done | T7 | Authenticated encryption with AAD bound to the row and field (`FieldCipherTest`) |
-| V11.4.1 | 1 | Exception | T19, T27 | SHA-256 family everywhere except TOTP. See [Exceptions](#exceptions) |
+| V11.4.1 | 1 | Exception | T27 | SHA-256 family everywhere except TOTP (`TotpCredential`). See [Exceptions](#exceptions) |
 | V11.4.2 | 2 | Done | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value (`PasswordHasherTest`) |
 | V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
-| V11.5.1 | 2 | Partial | T19, T22, T24 | Key material and invitation tokens use `SecureRandom` (`InvitationTest`), other tokens need 128 bits and never a UUID |
+| V11.5.1 | 2 | Partial | T22, T24 | Key material, invitation tokens, TOTP secrets and recovery codes use `SecureRandom` (`InvitationTest`, `TotpCredentialTest`, `RecoveryCodeTest`), other tokens need 128 bits and never a UUID |
 | V11.6.1 | 2 | Exception | T20, T27 | RSA-PSS or ECDSA by default. See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
