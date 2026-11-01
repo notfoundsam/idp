@@ -8,6 +8,7 @@ dependencies {
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.jdbc)
+    implementation(libs.jackson.module.kotlin)
     implementation(project(":shared-kernel"))
     implementation(project(":modules:tenancy"))
     implementation(project(":modules:audit"))
@@ -19,4 +20,9 @@ dependencies {
 
 tasks.bootJar {
     archiveFileName = "ops.jar"
+}
+
+// OpsContractTest reads the contract, so Gradle must rerun it when the contract changes.
+tasks.test {
+    inputs.file(rootProject.file("../contracts/openapi/ops.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
 }

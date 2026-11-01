@@ -6,7 +6,6 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.FieldDecryptionException
-import idp.sharedkernel.crypto.KeyManagementUnavailableException
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.outbox.OutboxPublisher
@@ -28,7 +27,9 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import org.jooq.exception.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 
@@ -36,6 +37,7 @@ private const val BASE_DOMAIN = "idp.test"
 private const val CONTACT = "admin@acme.example"
 private const val MASK = "a***@acme.example"
 private const val KEK = "hcvault://tenant-key"
+private const val IP = "198.51.100.7"
 private val OPERATOR = Actor.Operator("alice")
 
 private class RecordingAudit : AuditLog {
@@ -232,12 +234,24 @@ class TenancyServiceTest :
                 }
             }
 
-            test("is masked at input, because ops cannot decrypt it") {
+            test("is masked at input, because ops cannot read it back") {
                 Platform().run {
                     val application = submit()
 
                     ops.application(application).shouldNotBeNull().contactMask shouldBe MASK
-                    shouldThrow<KeyManagementUnavailableException> { ops.contact(tenantOf(application)) }
+                    shouldThrow<DataAccessException> { ops.contact(tenantOf(application)) }.message shouldContain "permission denied"
+                }
+            }
+
+            test("survives an approval by ops, which cannot read the ciphertext it writes back") {
+                Platform().run {
+                    val application = submit()
+                    val stored = ciphertext(application)
+
+                    ops.approve(application, OPERATOR)
+
+                    ciphertext(application) shouldBe stored
+                    worker.contact(tenantOf(application)) shouldBe CONTACT
                 }
             }
 
@@ -532,6 +546,36 @@ class TenancyServiceTest :
 
                     actions() shouldBe before
                     events(tenant).shouldContainExactly(TenancyEvents.APPROVED)
+                }
+            }
+        }
+
+        context("operator address") {
+            test("reaches the record of every action") {
+                Platform().run {
+                    val service = ops.submitServiceTenant("Platform", CONTACT, OPERATOR, IP)
+                    val application = ops.submit(NewApplication("Acme", "acme", CONTACT), OPERATOR, IP)
+                    ops.approve(application, OPERATOR, IP)
+                    val tenant = tenantOf(application)
+                    worker.startProvisioning(tenant)
+                    worker.recordProvisioningStep(tenant, "keys", KEK)
+                    worker.activate(tenant)
+                    ops.suspend(tenant, OPERATOR, IP)
+                    ops.resume(tenant, OPERATOR, IP)
+
+                    tenantOf(service).shouldNotBeNull()
+                    audit.changes.map { it.ip }.shouldContainExactly(List(5) { IP })
+                }
+            }
+
+            test("is absent when the action came from no address") {
+                Platform().run {
+                    submit()
+
+                    audit.changes
+                        .single()
+                        .ip
+                        .shouldBeNull()
                 }
             }
         }

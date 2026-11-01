@@ -1,7 +1,5 @@
 package idp.ops
 
-import idp.sharedkernel.migration.TenantMigrationRunner
-import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.throttle.RateLimiter
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.maps.shouldBeEmpty
@@ -15,17 +13,7 @@ import java.net.http.HttpResponse
 
 class OpsApplicationTest :
     StringSpec({
-        val database = TestDatabase.create()
-        TenantMigrationRunner(database.owner()).migrateAll()
-        database.role("ops_runtime")
-        val arguments =
-            arrayOf(
-                "--server.port=0",
-                "--management.server.port=0",
-                "--DB_URL=${database.url}",
-                "--DB_USERNAME=ops_runtime",
-                "--DB_PASSWORD=ops_runtime",
-            )
+        val arguments = OpsEnvironment().arguments
 
         fun get(
             port: String?,

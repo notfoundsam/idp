@@ -1,6 +1,7 @@
 package idp.app.web
 
 import idp.sharedkernel.web.BusExceptionAdvice
+import idp.sharedkernel.web.ClientIpFilter
 import idp.sharedkernel.web.ClientIpResolver
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean

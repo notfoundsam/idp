@@ -1,7 +1,5 @@
-package idp.app.web
+package idp.sharedkernel.web
 
-import idp.sharedkernel.web.ClientIp
-import idp.sharedkernel.web.ClientIpResolver
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse

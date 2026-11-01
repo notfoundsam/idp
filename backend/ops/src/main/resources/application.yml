@@ -6,6 +6,21 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+idp:
+  tenants:
+    base-domain: ${TENANTS_BASE_DOMAIN}
+  client-ip:
+    trusted-header: ${CLIENT_IP_HEADER:}
+  kms:
+    new-keys: ${KMS_NEW_KEYS}
+    platform-kek-uri: ${PLATFORM_KEK_URI}
+    openbao:
+      address: ${OPENBAO_ADDRESS:}
+      token: ${OPENBAO_TOKEN:}
+    aws:
+      region: ${KMS_AWS_REGION:}
+      key-policy: ${KMS_AWS_KEY_POLICY:}
+
 server:
   port: 8080
 

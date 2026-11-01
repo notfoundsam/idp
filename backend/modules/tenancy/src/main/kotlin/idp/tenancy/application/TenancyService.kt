@@ -5,6 +5,7 @@ import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.FieldCipher
+import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.outbox.NewEvent
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.tenant.PlatformTransaction
@@ -26,7 +27,7 @@ private const val RESUMED = "tenant.resumed"
 
 class TenancyNotFound(
     id: UUID,
-) : RuntimeException("No tenant or application $id")
+) : NotFound("No tenant or application $id")
 
 /** Not a data class: `toString` must not print the contact. */
 class NewApplication(
@@ -70,53 +71,58 @@ class TenancyService(
     fun submit(
         application: NewApplication,
         actor: Actor.Operator,
-    ): UUID = add(application.companyName, Subdomain.of(application.subdomain), application.contact, actor)
+        ip: String? = null,
+    ): UUID = add(application.companyName, Subdomain.of(application.subdomain), application.contact, actor, ip)
 
     /** The only way to a reserved name, so only the bootstrap of `ops` may call it. */
     fun submitServiceTenant(
         companyName: String,
         contact: String,
         actor: Actor.Operator,
-    ): UUID = add(companyName, Subdomain.serviceTenant(), contact, actor)
+        ip: String? = null,
+    ): UUID = add(companyName, Subdomain.serviceTenant(), contact, actor, ip)
 
     fun approve(
         applicationId: UUID,
         actor: Actor.Operator,
+        ip: String? = null,
     ) {
         transaction.execute { dsl ->
             val application = applications.find(dsl, applicationId) ?: throw TenancyNotFound(applicationId)
             val tenant = load(dsl, application.tenantId)
             application.approve()
             tenant.approve()
-            applications.save(dsl, application)
+            applications.saveStatus(dsl, application)
             val version = tenants.save(dsl, tenant)
             if (!tenants.addDomain(dsl, application.subdomain.host(baseDomain), tenant.id)) {
                 throw SubdomainTaken(application.subdomain.value)
             }
             publish(dsl, tenant, version, TenancyEvents.APPROVED)
-            audit.recordChange(AuditRecord(actor, APPROVED, AuditTarget.tenant(tenant.id)))
+            audit.recordChange(AuditRecord(actor, APPROVED, AuditTarget.tenant(tenant.id), ip))
         }
     }
 
     fun suspend(
         tenantId: UUID,
         actor: Actor.Operator,
+        ip: String? = null,
     ) {
         transaction.execute { dsl ->
             val tenant = load(dsl, tenantId).apply { suspend() }
             publish(dsl, tenant, tenants.save(dsl, tenant), TenancyEvents.SUSPENDED)
-            audit.recordChange(AuditRecord(actor, SUSPENDED, AuditTarget.tenant(tenant.id)))
+            audit.recordChange(AuditRecord(actor, SUSPENDED, AuditTarget.tenant(tenant.id), ip))
         }
     }
 
     fun resume(
         tenantId: UUID,
         actor: Actor.Operator,
+        ip: String? = null,
     ) {
         transaction.execute { dsl ->
             val tenant = load(dsl, tenantId).apply { resume() }
             tenants.save(dsl, tenant)
-            audit.recordChange(AuditRecord(actor, RESUMED, AuditTarget.tenant(tenant.id)))
+            audit.recordChange(AuditRecord(actor, RESUMED, AuditTarget.tenant(tenant.id), ip))
         }
     }
 
@@ -135,9 +141,9 @@ class TenancyService(
     fun activate(tenantId: UUID) {
         transaction.execute { dsl ->
             tenants.save(dsl, load(dsl, tenantId).apply { activate() })
-            val application = applications.findByTenant(dsl, tenantId) ?: throw TenancyNotFound(tenantId)
+            val application = applications.findWithContact(dsl, tenantId) ?: throw TenancyNotFound(tenantId)
             application.eraseContact()
-            applications.save(dsl, application)
+            applications.saveContact(dsl, application)
         }
     }
 
@@ -145,13 +151,14 @@ class TenancyService(
 
     fun application(id: UUID): TenantApplicationView? = transaction.execute { dsl -> applications.find(dsl, id)?.view() }
 
-    fun contact(tenantId: UUID): String? = transaction.execute { dsl -> applications.findByTenant(dsl, tenantId) }?.contact(contacts)
+    fun contact(tenantId: UUID): String? = transaction.execute { dsl -> applications.findWithContact(dsl, tenantId) }?.contact(contacts)
 
     private fun add(
         companyName: String,
         subdomain: Subdomain,
         contact: String,
         actor: Actor.Operator,
+        ip: String?,
     ): UUID {
         val tenant = Tenant.requested(UUID.randomUUID(), companyName)
         val application = TenantApplication.submitted(UUID.randomUUID(), tenant.id, companyName, subdomain, contact, contacts)
@@ -161,7 +168,7 @@ class TenancyService(
             }
             tenants.add(dsl, tenant)
             applications.add(dsl, application)
-            audit.recordChange(AuditRecord(actor, APPLICATION_SUBMITTED, AuditTarget.tenant(tenant.id)))
+            audit.recordChange(AuditRecord(actor, APPLICATION_SUBMITTED, AuditTarget.tenant(tenant.id), ip))
         }
         return application.id
     }

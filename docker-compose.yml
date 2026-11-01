@@ -218,9 +218,16 @@ services:
     <<: *java-service
     environment:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      # Stands in for SAML with a fixed operator. This is why the API stays inside compose.
+      SPRING_PROFILES_ACTIVE: local
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: ops_runtime
       DB_PASSWORD: ops_runtime
+      TENANTS_BASE_DOMAIN: idp.test
+      KMS_NEW_KEYS: hcvault
+      PLATFORM_KEK_URI: hcvault://transit/platform-contacts
+      OPENBAO_ADDRESS: http://openbao:8200
+      OPENBAO_TOKEN: local-ops-token
     volumes:
       - ./backend/ops/build/libs/ops.jar:/app/service.jar:ro
     ports:

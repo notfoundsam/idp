@@ -1,0 +1,215 @@
+openapi: 3.1.0
+info:
+  title: IdP operator API
+  version: 1.0.0
+  description: Operators manage tenants here and see no customer data.
+paths:
+  /api/applications:
+    post:
+      operationId: submitApplication
+      summary: Enter an application on behalf of a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitApplicationRequest"
+      responses:
+        "201":
+          description: The application is waiting for approval
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
+  /api/applications/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApplication
+      summary: Read an application
+      responses:
+        "200":
+          description: The application, with the contact masked until the tenant is active and erased after that
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/applications/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: approveApplication
+      summary: Approve an application, which starts provisioning
+      responses:
+        "204":
+          description: Approved
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
+  /api/tenants/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getTenant
+      summary: Read a tenant
+      responses:
+        "200":
+          description: The tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/tenants/{id}/suspend:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: suspendTenant
+      summary: Suspend an active tenant
+      responses:
+        "204":
+          description: Suspended
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
+  /api/tenants/{id}/resume:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: resumeTenant
+      summary: Resume a suspended tenant
+      responses:
+        "204":
+          description: Resumed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: The request is malformed
+    Unauthorized:
+      description: The request has no principal
+    Forbidden:
+      description: The role of the principal does not allow this action
+    NotFound:
+      description: No such tenant or application
+    Conflict:
+      description: Someone changed the same record first, so the action can be repeated
+    RuleViolated:
+      description: The action breaks a domain rule, for example the subdomain is taken
+  schemas:
+    SubmitApplicationRequest:
+      type: object
+      additionalProperties: false
+      required: [companyName, subdomain, contact]
+      properties:
+        companyName:
+          type: string
+        subdomain:
+          type: string
+        contact:
+          type: string
+          format: email
+          maxLength: 254
+    ApplicationCreated:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    Application:
+      type: object
+      additionalProperties: false
+      required: [id, tenantId, companyName, subdomain, contactMask, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        subdomain:
+          type: string
+        contactMask:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [SUBMITTED, APPROVED]
+    Tenant:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, provisioningStep]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [REQUESTED, APPROVED, PROVISIONING, ACTIVE, SUSPENDED, OFFBOARDING, DELETED]
+        provisioningStep:
+          type: [string, "null"]

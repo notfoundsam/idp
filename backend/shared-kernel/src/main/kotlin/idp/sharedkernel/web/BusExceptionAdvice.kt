@@ -1,5 +1,8 @@
 package idp.sharedkernel.web
 
+import idp.sharedkernel.domain.DomainRuleViolation
+import idp.sharedkernel.domain.NotFound
+import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.security.AccessDeniedException
 import idp.sharedkernel.throttle.TooManyRequestsException
 import org.springframework.http.HttpHeaders
@@ -22,6 +25,16 @@ class BusExceptionAdvice {
     @ExceptionHandler
     fun accessDenied(failure: AccessDeniedException): ResponseEntity<Void> =
         ResponseEntity.status(if (failure.authenticated) HttpStatus.FORBIDDEN else HttpStatus.UNAUTHORIZED).build()
+
+    @ExceptionHandler
+    fun notFound(failure: NotFound): ResponseEntity<Void> = ResponseEntity.notFound().build()
+
+    @ExceptionHandler
+    fun versionConflict(failure: VersionConflictException): ResponseEntity<Void> = ResponseEntity.status(HttpStatus.CONFLICT).build()
+
+    /** Status alone: exception texts can carry personal data. */
+    @ExceptionHandler
+    fun domainRule(failure: DomainRuleViolation): ResponseEntity<Void> = ResponseEntity.unprocessableEntity().build()
 
     private fun secondsUp(failure: TooManyRequestsException): Long =
         maxOf(1, (failure.retryAfter.toMillis() + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND)
