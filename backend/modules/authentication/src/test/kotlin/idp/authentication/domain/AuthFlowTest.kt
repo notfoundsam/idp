@@ -21,6 +21,8 @@ private val TTL: Duration = Duration.ofMinutes(15)
 private val RELAXED = TenantPolicy(mfaForUsers = false)
 private val PASSKEY_ONLY = TenantPolicy(passkeyRequired = true)
 private val SECOND_FACTORS = setOf(TOTP, PASSKEY, RECOVERY_CODE)
+private val LOGIN = "sealed login".toByteArray()
+private val SESSION: UUID = UUID.randomUUID()
 
 private fun user(
     vararg enrolled: AuthFactor,
@@ -34,6 +36,11 @@ private fun flow(
 ) = AuthFlow.start(UUID.randomUUID(), policy, requirements, RETURN_URL, prior, MOMENT, TTL)
 
 private fun AuthFlow.step() = step(MOMENT)
+
+private fun AuthFlow.identify(
+    user: FlowUser?,
+    now: Instant,
+) = identify(user, LOGIN, now)
 
 private fun AuthFlow.signIn(user: FlowUser) =
     apply {
@@ -192,7 +199,7 @@ class AuthFlowTest :
             }
 
             test("must belong to the user of the session") {
-                val session = PriorAuthentication(user(PASSKEY), setOf(PASSWORD))
+                val session = PriorAuthentication(SESSION, user(PASSKEY), setOf(PASSWORD))
                 val flow = flow(requirements = SpRequirements(Assurance.PASSKEY), prior = session)
 
                 shouldThrow<PasskeyNotAccepted> { flow.passkeyPassed(user(PASSKEY), MOMENT) }
@@ -257,33 +264,33 @@ class AuthFlowTest :
 
         context("a session") {
             test("that is enough completes the flow at once") {
-                val session = PriorAuthentication(user(TOTP), setOf(PASSWORD, TOTP))
+                val session = PriorAuthentication(SESSION, user(TOTP), setOf(PASSWORD, TOTP))
 
                 flow(prior = session).step() shouldBe FlowStep.Complete
             }
 
             test("with the password asks only for the second factor") {
-                val session = PriorAuthentication(user(TOTP), setOf(PASSWORD))
+                val session = PriorAuthentication(SESSION, user(TOTP), setOf(PASSWORD))
 
                 flow(requirements = SpRequirements(Assurance.MULTI_FACTOR), prior = session).step() shouldBe
                     FlowStep.SecondFactor(setOf(TOTP, RECOVERY_CODE))
             }
 
             test("with two factors asks only for the passkey") {
-                val session = PriorAuthentication(user(TOTP, PASSKEY), setOf(PASSWORD, TOTP))
+                val session = PriorAuthentication(SESSION, user(TOTP, PASSKEY), setOf(PASSWORD, TOTP))
 
                 flow(requirements = SpRequirements(Assurance.PASSKEY), prior = session).step() shouldBe
                     FlowStep.SecondFactor(setOf(PASSKEY))
             }
 
             test("that became too weak for a stricter policy asks for the missing step") {
-                val session = PriorAuthentication(user(), setOf(PASSWORD))
+                val session = PriorAuthentication(SESSION, user(), setOf(PASSWORD))
 
                 flow(prior = session).step() shouldBe FlowStep.EnrollMfa(setOf(TOTP, PASSKEY))
             }
 
             test("keeps its factors when the missing one is passed") {
-                val session = PriorAuthentication(user(TOTP), setOf(PASSWORD))
+                val session = PriorAuthentication(SESSION, user(TOTP), setOf(PASSWORD))
                 val flow = flow(prior = session)
 
                 flow.totpPassed(MOMENT)
@@ -293,12 +300,32 @@ class AuthFlowTest :
             }
 
             test("counts for nothing when the SP asks for a fresh login") {
-                val session = PriorAuthentication(user(TOTP), setOf(PASSWORD, TOTP))
+                val session = PriorAuthentication(SESSION, user(TOTP), setOf(PASSWORD, TOTP))
                 val flow = flow(requirements = SpRequirements(freshLogin = true), prior = session)
 
                 flow.step() shouldBe FlowStep.Identify
                 flow.userId.shouldBeNull()
                 flow.proved shouldBe emptySet()
+            }
+
+            test("is continued by a flow that takes over its factors") {
+                val session = PriorAuthentication(SESSION, user(TOTP), setOf(PASSWORD))
+                val flow = flow(prior = session)
+
+                flow.sessionId shouldBe SESSION
+                flow.continuesSession shouldBe true
+            }
+
+            test("is only replaced by a fresh login") {
+                val session = PriorAuthentication(SESSION, user(TOTP), setOf(PASSWORD, TOTP))
+                val flow = flow(requirements = SpRequirements(freshLogin = true), prior = session)
+
+                flow.sessionId shouldBe SESSION
+                flow.continuesSession shouldBe false
+            }
+
+            test("is not there for a flow without one") {
+                flow().continuesSession shouldBe false
             }
         }
 

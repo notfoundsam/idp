@@ -1,7 +1,10 @@
 package idp.worker
 
 import idp.audit.application.AuditService
+import idp.authentication.application.AuthenticationService
 import idp.identity.application.IdentityService
+import idp.identity.application.PasskeyService
+import idp.identity.application.TotpService
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.KeyHierarchy
@@ -15,6 +18,7 @@ import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.tenancy.application.TenancyService
 import idp.worker.handlers.InvitationMailHandler
+import idp.worker.handlers.TenantSuspendedHandler
 import idp.worker.mail.MailDispatcher
 import idp.worker.mail.MailRecipients
 import idp.worker.mail.MailTemplates
@@ -78,6 +82,24 @@ class WorkerConfiguration {
 
     @Bean
     fun passkeyChallengeCleanup(identity: IdentityService): TenantCleanup = identity.passkeyChallengeCleanup
+
+    /** `worker` starts no flow. The two credential services are here only because the service reads factors through them. */
+    @Bean
+    fun authenticationService(
+        transaction: TenantTransaction,
+        keys: KeyHierarchy,
+        audit: AuditLog,
+        identity: IdentityService,
+    ) = AuthenticationService(transaction, keys, audit, identity, TotpService(transaction, keys, audit), PasskeyService(transaction, audit))
+
+    @Bean
+    fun flowCleanup(authentication: AuthenticationService): TenantCleanup = authentication.flowCleanup
+
+    @Bean
+    fun sessionCleanup(authentication: AuthenticationService): TenantCleanup = authentication.sessionCleanup
+
+    @Bean
+    fun tenantSuspendedHandler(authentication: AuthenticationService) = TenantSuspendedHandler(authentication)
 
     @Bean
     fun mailDispatcher(

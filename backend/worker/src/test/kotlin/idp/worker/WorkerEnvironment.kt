@@ -1,9 +1,14 @@
 package idp.worker
 
+import idp.audit.application.OperatorAuditService
+import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantMigrationRunner
+import idp.sharedkernel.outbox.OutboxPublisher
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
+import idp.tenancy.application.TenancyService
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 
@@ -39,4 +44,16 @@ class WorkerEnvironment {
             "--OPENBAO_TOKEN=${TestOpenBao.TOKEN}",
             "--idp.outbox.poll-interval=PT0.05S",
         )
+
+    /** The service as `ops` builds it: it writes its own audit and publishes to the outbox. */
+    fun operatorService(): TenancyService {
+        val platform = PlatformTransaction(database.pooled("ops_runtime"))
+        return TenancyService(
+            platform,
+            OperatorAuditService(platform),
+            OutboxPublisher(),
+            FieldCipher.platform(kms, platformKekUri),
+            BASE_DOMAIN,
+        )
+    }
 }

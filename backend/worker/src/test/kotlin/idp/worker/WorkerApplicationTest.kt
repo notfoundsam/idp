@@ -1,12 +1,8 @@
 package idp.worker
 
 import idp.audit.application.AuditService
-import idp.audit.application.OperatorAuditService
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
-import idp.sharedkernel.crypto.FieldCipher
-import idp.sharedkernel.outbox.OutboxPublisher
-import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.throttle.RateLimiter
@@ -30,17 +26,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import kotlin.time.Duration.Companion.seconds
-
-private fun WorkerEnvironment.operatorService(): TenancyService {
-    val platform = PlatformTransaction(database.pooled("ops_runtime"))
-    return TenancyService(
-        platform,
-        OperatorAuditService(platform),
-        OutboxPublisher(),
-        FieldCipher.platform(kms, platformKekUri),
-        BASE_DOMAIN,
-    )
-}
 
 class WorkerApplicationTest :
     StringSpec({
@@ -156,7 +141,7 @@ class WorkerApplicationTest :
             runApplication<WorkerApplication>(*isolated.arguments, "--idp.jobs.tick-interval=PT0.05S").use {
                 eventually(30.seconds) {
                     isolated.jdbc.queryForList("SELECT name FROM platform.scheduled_locks", String::class.java) shouldContainAll
-                        listOf("cleanup:outbox", "cleanup:processed-events", "cleanup:invitations")
+                        listOf("cleanup:outbox", "cleanup:processed-events", "cleanup:invitations", "cleanup:flows", "cleanup:sso-sessions")
                 }
             }
         }

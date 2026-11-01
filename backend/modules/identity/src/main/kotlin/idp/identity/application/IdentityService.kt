@@ -88,7 +88,7 @@ class IdentityService(
 
     val invitationCleanup: TenantCleanup = InvitationCleanup()
 
-    /** Lives here because `worker` has this service and no reason to hold a WebAuthn verifier. */
+    /** Lives here because `worker` has no use for `PasskeyService` of its own. */
     val passkeyChallengeCleanup: TenantCleanup = PasskeyChallengeCleanup()
 
     /** The event carries no token: its handler issues one and sends it in the same transaction. */

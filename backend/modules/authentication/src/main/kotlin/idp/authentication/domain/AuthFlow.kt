@@ -24,6 +24,7 @@ internal class FlowUser(
 )
 
 internal class PriorAuthentication(
+    val sessionId: UUID,
     val user: FlowUser,
     val factors: Set<AuthFactor>,
 )
@@ -36,42 +37,52 @@ internal class SpRequirements(
 /**
  * The next step is derived from what was proved, so no client can skip one. The caller checks credentials and reports the outcome
  * here. A login that matched nobody walks the same steps as any other, with [user] left null, and never gets past the password.
+ *
+ * [sessionId] is the session of the browser when the flow began. A flow that took over its factors depends on it, a fresh login only
+ * replaces it.
  */
 internal class AuthFlow(
     val id: UUID,
     user: FlowUser?,
-    loginEntered: Boolean,
+    login: ByteArray?,
     proved: Set<AuthFactor>,
     val policy: TenantPolicy,
     val requirements: SpRequirements,
     val returnUrl: String?,
     val expiresAt: Instant,
+    val sessionId: UUID? = null,
+    val version: Long = 0,
 ) {
     private var user = user
-    private var loginEntered = loginEntered
+
+    var login = login
+        private set
     var proved = proved
         private set
 
     val userId: UUID? get() = user?.id
+
+    val continuesSession: Boolean get() = sessionId != null && !requirements.freshLogin
 
     fun step(now: Instant): FlowStep {
         if (!now.isBefore(expiresAt)) throw FlowExpired()
         val user = user
         return when {
             user != null && proved.isNotEmpty() -> afterFirstFactor(user)
-            user != null || loginEntered -> FlowStep.Password
+            user != null || login != null -> FlowStep.Password
             else -> FlowStep.Identify
         }
     }
 
-    /** Pass null when the login matched nobody. */
+    /** Pass null when the login matched nobody. [login] is what was entered, already encrypted. */
     fun identify(
         user: FlowUser?,
+        login: ByteArray,
         now: Instant,
     ) {
         if (step(now) != FlowStep.Identify) throw StepNotAllowed()
         this.user = user
-        loginEntered = true
+        this.login = login
     }
 
     fun passwordPassed(now: Instant) {
@@ -153,7 +164,17 @@ internal class AuthFlow(
             ttl: Duration,
         ): AuthFlow {
             val session = prior.takeUnless { requirements.freshLogin }
-            return AuthFlow(id, session?.user, false, session?.factors.orEmpty(), policy, requirements, returnUrl, now.plus(ttl))
+            return AuthFlow(
+                id,
+                session?.user,
+                null,
+                session?.factors.orEmpty(),
+                policy,
+                requirements,
+                returnUrl,
+                now.plus(ttl),
+                prior?.sessionId,
+            )
         }
     }
 }
