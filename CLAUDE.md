@@ -29,6 +29,12 @@ A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for dec
 - Comments: default to none. Write one only for a non-obvious why.
 - Name repository fields after what they store: `users`, not `userRepository`.
 
+## Tests
+
+- Database tests start from `TestDatabase.migrated()`, a clone of a template migrated once per test JVM. `TestDatabase.create()` gives an empty database and is only for tests of the migrations themselves.
+- `database.tenantSchema()` hands out a migrated tenant schema from a pool, and the test adds its `platform.tenants` row. Every clone hands out the same ids, so nothing outside Postgres may be keyed by a pooled tenant: give OpenBao keys random names, and give a tenant a random id when Valkey counts limits for it.
+- Under load the Docker VM can stall for seconds, and its clock then lags the host. A test that sets a time with SQL `now()` and checks it in the JVM depends on two clocks, so it sets such times from the test's clock.
+
 ## Commands
 
 ```bash
