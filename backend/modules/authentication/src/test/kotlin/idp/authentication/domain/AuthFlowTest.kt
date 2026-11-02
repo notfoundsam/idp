@@ -105,6 +105,49 @@ class AuthFlowTest :
             }
         }
 
+        context("an invitation") {
+            test("is taken only at the first step") {
+                flow().takesInvitation(MOMENT) shouldBe true
+                flow().apply { identify(null, MOMENT) }.takesInvitation(MOMENT) shouldBe false
+                flow().signIn(user()).takesInvitation(MOMENT) shouldBe false
+            }
+
+            test("is refused by a flow that took over a session, which would hand it to another user") {
+                val session = PriorAuthentication(SESSION, user(), setOf(PASSWORD))
+
+                val flow = flow(TenantPolicy(mfaForUsers = false), prior = session)
+
+                shouldThrow<StepNotAllowed> { flow.invitationAccepted(user(), MOMENT) }
+            }
+
+            test("proves the password it set, so MFA comes next under the default policy") {
+                val user = user()
+                val flow = flow().apply { invitationAccepted(user, MOMENT) }
+
+                flow.userId shouldBe user.id
+                flow.proved shouldBe setOf(PASSWORD)
+                flow.step() shouldBe FlowStep.EnrollMfa(setOf(TOTP, PASSKEY))
+            }
+
+            test("finishes under a relaxed policy for a user") {
+                val flow = flow(RELAXED).apply { invitationAccepted(user(), MOMENT) }
+
+                flow.step() shouldBe FlowStep.Complete
+            }
+
+            test("does not excuse an admin under a relaxed policy") {
+                val flow = flow(RELAXED).apply { invitationAccepted(user(role = TENANT_ADMIN), MOMENT) }
+
+                flow.step() shouldBe FlowStep.EnrollMfa(setOf(TOTP, PASSKEY))
+            }
+
+            test("asks for a passkey where the tenant requires one") {
+                val flow = flow(PASSKEY_ONLY).apply { invitationAccepted(user(), MOMENT) }
+
+                flow.step() shouldBe FlowStep.EnrollMfa(setOf(PASSKEY))
+            }
+        }
+
         context("the default policy") {
             test("requires MFA of a user") {
                 flow().signIn(user(TOTP)).step() shouldBe FlowStep.SecondFactor(setOf(TOTP, RECOVERY_CODE))

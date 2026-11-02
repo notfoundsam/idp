@@ -72,9 +72,14 @@ private class Recipients(
     private val address: String? = ADDRESS,
 ) : MailRecipients {
     val asked = mutableListOf<UUID>()
+    val kinds = mutableListOf<MailAddress>()
 
-    override fun addressOf(userId: UUID): String? {
+    override fun addressOf(
+        userId: UUID,
+        which: MailAddress,
+    ): String? {
         asked += userId
+        kinds += which
         return address
     }
 }
@@ -249,6 +254,17 @@ class MailDispatcherTest :
                     recipients.asked.shouldContainExactly(userId)
                     mail.to.shouldContainExactly(ADDRESS)
                 }
+            }
+
+            test("is the current one unless the mail names another") {
+                val recipients = Recipients()
+
+                dispatcher(recipients).send(invitation())
+                dispatcher(recipients).send(
+                    Mail(UUID.randomUUID(), MailTemplate.EMAIL_CHANGED, mapOf("tenant" to "Acme"), MailAddress.PREVIOUS),
+                )
+
+                recipients.kinds.shouldContainExactly(MailAddress.CURRENT, MailAddress.PREVIOUS)
             }
 
             test("stays out of the event and the logs when a mail goes out") {

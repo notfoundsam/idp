@@ -158,11 +158,22 @@ class AuthenticationService(
             checkNotNull(flow.userId)
         }
 
+    /** Reserves the flow like [claimStep], before an invitation is checked and a password is hashed. */
+    fun claimInvitation(access: FlowAccess) {
+        claim(access) { flow, now -> flow.takesInvitation(now) }
+    }
+
     fun releaseStep(access: FlowAccess) {
         transaction.execute { dsl -> flows.release(dsl, access.id) }
     }
 
     fun passwordPassed(access: FlowAccess): FlowView = pass(access) { flow, now -> flow.passwordPassed(now) }
+
+    /** Joins the transaction that spent the invitation and stored the password, so a flow cannot move on from half of that. */
+    fun invitationAccepted(
+        access: FlowAccess,
+        userId: UUID,
+    ): FlowView = pass(access) { flow, now -> flow.invitationAccepted(flowUser(checkNotNull(identity.user(userId))), now) }
 
     fun totpPassed(access: FlowAccess): FlowView = pass(access) { flow, now -> flow.totpPassed(now) }
 
@@ -267,13 +278,17 @@ class AuthenticationService(
             Principal(Actor.User(user.id), Role(user.role.name), session.authenticatedAt)
         }
 
-    /** Joins the transaction of the caller, because a block or a reset that rolled back must leave the sessions alone. */
+    /**
+     * Joins the transaction of the caller, because a block or a reset that rolled back must leave the sessions alone. The logins in
+     * progress end too: a password proved before a reset must not open a session after it.
+     */
     fun revokeUserSessions(
         userId: UUID,
         actor: Actor,
         ip: String? = null,
     ) {
         transaction.join { dsl ->
+            flows.deleteOfUser(dsl, userId)
             val revoked = sessions.revokeOfUser(dsl, userId, clock.instant())
             audit.recordChange(AuditRecord(actor, SESSIONS_REVOKED_FOR_USER, AuditTarget.user(userId), ip, mapOf("sessions" to "$revoked")))
         }

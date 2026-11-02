@@ -134,6 +134,34 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/RuleViolated"
+  /api/tenants/{id}/admin-reinvite:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: reinviteAdmin
+      summary: Send a new admin invitation to an address the customer proved outside the system
+      description: >-
+        The tenant must be active. The address is sealed for `worker`, which alone can reach the tenant, so the answer says nothing
+        about whether the tenant knows it. A holder of that address starts over as an invited admin. See the runbook first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReinviteAdminRequest"
+      responses:
+        "202":
+          description: The request is on its way to `worker`
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
 components:
   parameters:
     Id:
@@ -166,6 +194,15 @@ components:
           type: string
         subdomain:
           type: string
+        contact:
+          type: string
+          format: email
+          maxLength: 254
+    ReinviteAdminRequest:
+      type: object
+      additionalProperties: false
+      required: [contact]
+      properties:
         contact:
           type: string
           format: email

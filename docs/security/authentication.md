@@ -23,8 +23,8 @@ Every session starts from a completed `AuthFlow`, and no other code opens one. T
 | Passkey with user verification | A device and a local check | Multi-factor, phishing-resistant |
 | Password alone | Something known | Single factor, only where a tenant relaxed MFA for the `USER` role |
 | Password, then enrolling a factor | Something known, then a new factor | Multi-factor from then on. Until then the password alone stands behind the enrollment |
-| Invitation | Access to the mailbox | Activates the account and opens no session. The user then logs in by the paths above |
-| Password reset, planned in T24 | Access to the mailbox | Replaces the password and opens no session. Other factors still apply |
+| Invitation and a new password | Access to the mailbox, then a password of one's choice | Single factor. The flow goes on as after a password, so MFA follows unless a tenant relaxed it for the `USER` role |
+| Password reset | Access to the mailbox | Replaces the password and opens no session. Other factors still apply |
 | Operator CLI | IAM permission to start the one-off container | Outside the tenant boundary, sees no customer data, leaves `platform.operator_audit` |
 
 ## Login API
@@ -36,6 +36,20 @@ A wrong credential, a running delay, an unknown login, a missing password, a blo
 A check reserves the flow first, with a lease in Postgres. A parallel request gets `409` before it spends an attempt or a one-time code, so a double click neither burns a code nor reports a wrong password. The lease ends by itself after 30 seconds if the check dies. It only decides who gives up: the version of the flow keeps the result correct without it.
 
 Enrolling during a login is offered only at the step that asks for it, and proving a factor never allows adding one. Enrollment hands out recovery codes, because a user who enrolls during a login may have no other way back.
+
+## Recovery
+
+Links in mail carry a token of 256 bits from `SecureRandom`. Only its SHA-256 is stored, it works once, and a new one replaces the old. An invitation lives for 72 hours, a password reset and an email change for one hour. The handler in `worker` issues the token, so it exists only in the mail. It stands in the URL fragment, which browsers keep out of requests, logs and `Referer`, and the page sends it in a request body. Any refused token goes to the audit journal as `recovery.token_refused` with its kind.
+
+An invitation is accepted on a flow, with the token and the first password in one call. The password is checked and hashed first, with no transaction open, and only then is the token spent, so a refused password keeps the invitation. A flow that took over a session does not take an invitation, so a browser with a live session starts one with `reauthenticate`.
+
+Asking for a password reset answers the same in every case. A login that matches nobody costs the same index lookup, one event and one audit row, and the event finds no user and ends there. Only an active user gets a mail, and it goes to the stored address, because the blind index folds spelling and another spelling of an address is not that mailbox.
+
+A reset spends the token, stores the password and revokes every session in one transaction. It also ends the logins in progress, so a password proved before the reset cannot open a session after it, and it cancels a waiting email change, because the session that asked for it may be the stolen one. It opens no session and clears no factor, so the next login asks for everything the account has.
+
+Changing the email needs a session whose full login is at most 10 minutes old. A flow that only continues a session does not count, so a client walks one with `reauthenticate`. The request stays sealed in `email_changes` until the new address confirms it, and an address that belongs to someone else is refused only there, so a request cannot probe who has an account. Confirming moves the address and its blind index and cancels a reset whose link went to the old address. The old address is kept in `email_change_notices` until the notice has gone out, for 7 days at most. Of two quick changes the first address gets the notice, because its owner is the one who may not have asked.
+
+A user who lost every factor has no way back alone: no recovery route removes or adds a factor. `IdentityService.resetMfa` removes TOTP, recovery codes and passkeys, and the tenant admin calls it after confirming who asks. An only admin who lost everything goes through the operator, see the [runbook](tenant-admin-recovery-runbook.md).
 
 ## Limits and lockout
 

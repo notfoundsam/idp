@@ -93,6 +93,24 @@ class OpsAccessBoundaryTest :
                 denied { runtime.update("UPDATE platform.tenant_applications SET contact_mask = NULL") }
             }
 
+            test("ops_runtime can leave the address of a new admin and cannot read one back") {
+                denied { runtime.queryForList("SELECT * FROM platform.admin_reinvites") }
+                denied { runtime.queryForList("SELECT contact_ciphertext FROM platform.admin_reinvites") }
+                denied { runtime.update("DELETE FROM platform.admin_reinvites") }
+                denied { runtime.update("UPDATE platform.admin_reinvites SET contact_ciphertext = NULL") }
+            }
+
+            test("the answer to a new invitation holds nothing, whatever the tenant knows of the address") {
+                val tenant = api.tenantOf(api.submit("reinvite"))
+                environment.sql.update("UPDATE platform.tenants SET status = 'ACTIVE', version = version + 1 WHERE id = ?", tenant)
+
+                val response = api.post("/api/tenants/$tenant/admin-reinvite", """{"contact":"$CONTACT"}""")
+
+                response.status shouldBe 202
+                response.body shouldBe ""
+                environment.audit().toString() shouldNotContain CONTACT
+            }
+
             test("the API answers with the mask and never with the contact") {
                 val id = api.submit("answer")
 

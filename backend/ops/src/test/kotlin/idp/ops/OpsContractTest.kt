@@ -81,6 +81,23 @@ class OpsContractTest :
             api.post("/api/tenants/$tenant/resume").conforms("POST", "/api/tenants/{id}/resume").status shouldBe 204
         }
 
+        test("a new invitation for an admin conforms") {
+            val reinvite = "/api/tenants/{id}/admin-reinvite"
+            val tenant = api.tenantOf(api.submit("reinvited"))
+            val body = """{"contact":"$CONTACT"}"""
+
+            contract.requestSchema("POST", reinvite)["properties"].asMap().keys shouldBe setOf("contact")
+            api.post("/api/tenants/$tenant/admin-reinvite", body).conforms("POST", reinvite).status shouldBe 422
+            environment.sql.update("UPDATE platform.tenants SET status = 'ACTIVE', version = version + 1 WHERE id = ?", tenant)
+            api.post("/api/tenants/$tenant/admin-reinvite", body).conforms("POST", reinvite).status shouldBe 202
+            api.post("/api/tenants/$tenant/admin-reinvite", "{}").conforms("POST", reinvite).status shouldBe 400
+            api
+                .post("/api/tenants/$tenant/admin-reinvite", """{"contact":"nonsense"}""")
+                .conforms("POST", reinvite)
+                .status shouldBe 422
+            api.post("/api/tenants/${UUID.randomUUID()}/admin-reinvite", body).conforms("POST", reinvite).status shouldBe 404
+        }
+
         test("every failure a client can cause is in the contract") {
             val unknown = UUID.randomUUID()
 

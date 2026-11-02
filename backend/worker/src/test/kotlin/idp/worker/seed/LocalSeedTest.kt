@@ -115,7 +115,7 @@ class LocalSeedTest :
                     runApplication<WorkerApplication>(*arguments, *mailServer).use { context ->
                         val sender = context.getBean(JavaMailSender::class.java)
 
-                        MailDispatcher(sender, { "ada@acme.test" }, MailTemplates(), "no-reply@idp.test")
+                        MailDispatcher(sender, { _, _ -> "ada@acme.test" }, MailTemplates(), "no-reply@idp.test")
                             .send(Mail(UUID.randomUUID(), MailTemplate.EMAIL_CHANGED, mapOf("tenant" to "Acme")))
 
                         mailpit.messages() shouldHaveSize 1

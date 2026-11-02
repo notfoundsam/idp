@@ -1,11 +1,14 @@
 package idp.app.login
 
+import idp.identity.application.IdentityService
+import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.testing.OpenApiContract
 import idp.sharedkernel.testing.asMap
 import idp.sharedkernel.testing.mappedOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.io.File
 import java.util.UUID
@@ -23,6 +26,11 @@ private const val CONFIRM_TOTP = "/api/flows/{id}/enrollment/totp/confirmation"
 private const val ENROLL_PASSKEY_OPTIONS = "/api/flows/{id}/enrollment/passkey/options"
 private const val ENROLL_PASSKEY = "/api/flows/{id}/enrollment/passkey"
 private const val COMPLETE = "/api/flows/{id}/complete"
+private const val INVITATION = "/api/flows/{id}/invitation"
+private const val PASSWORD_RESET = "/api/password-reset"
+private const val CONFIRM_RESET = "/api/password-reset/confirmation"
+private const val EMAIL_CHANGE = "/api/email-change"
+private const val CONFIRM_EMAIL = "/api/email-change/confirmation"
 private const val GET = "GET"
 private const val POST = "POST"
 
@@ -71,6 +79,63 @@ class FlowContractTest :
             requestFields(CONFIRM_TOTP) shouldBe setOf("code")
             requestFields(PASSKEY) shouldBe setOf("credentialId", "userHandle", "authenticatorData", "clientDataJson", "signature")
             requestFields(ENROLL_PASSKEY) shouldBe setOf("attestationObject", "clientDataJson")
+            requestFields(INVITATION) shouldBe setOf("token", "password")
+            requestFields(PASSWORD_RESET) shouldBe setOf("login")
+            requestFields(CONFIRM_RESET) shouldBe setOf("token", "password")
+            requestFields(EMAIL_CHANGE) shouldBe setOf("email")
+            requestFields(CONFIRM_EMAIL) shouldBe setOf("token")
+        }
+
+        test("accepting an invitation conforms, also when refused") {
+            val tenant = environment.globex
+            val identity = application.getBean(IdentityService::class.java)
+            val invited = tenant.acting { identity.invite("invited@acme.test", UserRole.USER, Actor.System) }
+            val token = tenant.acting { identity.issueInvitation(invited, Actor.System) }.shouldNotBeNull()
+            val browser = Browser(application, GLOBEX)
+            val flow = browser.startFlow()
+
+            browser.post(path(INVITATION, flow), invitationBody("made-up", PASSWORD)).conforms(POST, INVITATION).status shouldBe 422
+            browser.post(path(INVITATION, flow), invitationBody(token, "short")).conforms(POST, INVITATION).status shouldBe 422
+            browser.post(path(INVITATION, flow), "{}").conforms(POST, INVITATION).status shouldBe 400
+            val unknown = path(INVITATION, UUID.randomUUID())
+            browser.post(unknown, invitationBody(token, PASSWORD)).conforms(POST, INVITATION).status shouldBe 410
+            browser.post(path(INVITATION, flow), invitationBody(token, PASSWORD)).conforms(POST, INVITATION).status shouldBe 200
+            browser.post(path(INVITATION, flow), invitationBody(token, PASSWORD)).conforms(POST, INVITATION).status shouldBe 409
+        }
+
+        test("the whole path of a password reset conforms, also when refused") {
+            val tenant = environment.globex
+            val identity = application.getBean(IdentityService::class.java)
+            val owner = user("forgets")
+            val token = tenant.acting { identity.issuePasswordReset(owner, Actor.System) }.shouldNotBeNull()
+            val browser = Browser(application, GLOBEX)
+
+            browser.post(PASSWORD_RESET, loginBody("forgets@acme.test")).conforms(POST, PASSWORD_RESET).status shouldBe 202
+            browser.post(PASSWORD_RESET, loginBody("nobody@acme.test")).conforms(POST, PASSWORD_RESET).status shouldBe 202
+            browser.post(PASSWORD_RESET, "{}").conforms(POST, PASSWORD_RESET).status shouldBe 400
+            browser.post(CONFIRM_RESET, invitationBody("made-up", PASSWORD)).conforms(POST, CONFIRM_RESET).status shouldBe 422
+            browser.post(CONFIRM_RESET, invitationBody(token, "short")).conforms(POST, CONFIRM_RESET).status shouldBe 422
+            browser.post(CONFIRM_RESET, "{}").conforms(POST, CONFIRM_RESET).status shouldBe 400
+            browser.post(CONFIRM_RESET, invitationBody(token, WRONG_PASSWORD)).conforms(POST, CONFIRM_RESET).status shouldBe 204
+        }
+
+        test("the whole path of an email change conforms, also when refused") {
+            val tenant = environment.acme
+            val identity = application.getBean(IdentityService::class.java)
+            val owner = with(environment) { application.user("moves@acme.test", tenant, role = UserRole.USER) }
+            val browser = Browser(application).loggedIn("moves@acme.test")
+
+            Browser(application).post(EMAIL_CHANGE, emailBody("new@acme.test")).conforms(POST, EMAIL_CHANGE).status shouldBe 401
+            browser.post(EMAIL_CHANGE, "{}").conforms(POST, EMAIL_CHANGE).status shouldBe 400
+            browser.post(EMAIL_CHANGE, emailBody("nonsense")).conforms(POST, EMAIL_CHANGE).status shouldBe 422
+            browser.post(EMAIL_CHANGE, emailBody("new@acme.test")).conforms(POST, EMAIL_CHANGE).status shouldBe 202
+            val token = tenant.acting { identity.issueEmailChange(owner, Actor.System) }.shouldNotBeNull()
+            browser.post(CONFIRM_EMAIL, tokenBody("made-up")).conforms(POST, CONFIRM_EMAIL).status shouldBe 422
+            browser.post(CONFIRM_EMAIL, "{}").conforms(POST, CONFIRM_EMAIL).status shouldBe 400
+            browser.post(CONFIRM_EMAIL, tokenBody(token)).conforms(POST, CONFIRM_EMAIL).status shouldBe 204
+
+            environment.sql.update("UPDATE ${tenant.table("sso_sessions")} SET authenticated_at = now() - interval '1 hour'")
+            browser.post(EMAIL_CHANGE, emailBody("later@acme.test")).conforms(POST, EMAIL_CHANGE).status shouldBe 403
         }
 
         test("the whole path of a login with TOTP conforms") {

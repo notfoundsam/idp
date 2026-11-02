@@ -34,6 +34,26 @@ class UserTest :
             }
         }
 
+        context("a new invitation") {
+            test("takes any user back to an invited admin") {
+                listOf(INVITED, ACTIVE, BLOCKED).forEach { status ->
+                    val user = user(status, USER).apply { reinvite() }
+
+                    user.status shouldBe INVITED
+                    user.role shouldBe TENANT_ADMIN
+                }
+            }
+        }
+
+        context("the email") {
+            test("changes together with its index") {
+                val user = user().apply { changeEmail(byteArrayOf(3), byteArrayOf(4)) }
+
+                user.emailIndex shouldBe byteArrayOf(3)
+                user.emailCiphertext shouldBe byteArrayOf(4)
+            }
+        }
+
         context("statuses") {
             test("an active user can be blocked and unblocked") {
                 val user = user(ACTIVE)

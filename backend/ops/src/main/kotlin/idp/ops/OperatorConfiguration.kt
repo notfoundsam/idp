@@ -6,6 +6,7 @@ import idp.audience.operator.application.command.BootstrapServiceTenantHandler
 import idp.audience.operator.application.command.ResumeTenantHandler
 import idp.audience.operator.application.command.SubmitApplicationHandler
 import idp.audience.operator.application.command.SuspendTenantHandler
+import idp.audience.operator.application.command.reinvite.ReinviteAdminHandler
 import idp.audience.operator.application.query.GetApplicationHandler
 import idp.audience.operator.application.query.GetTenantHandler
 import idp.audience.operator.web.TenantOpsController
@@ -58,6 +59,9 @@ class OperatorConfiguration {
 
     @Bean
     fun resumeTenantHandler(tenancy: TenancyService) = ResumeTenantHandler(tenancy)
+
+    @Bean
+    fun reinviteAdminHandler(tenancy: TenancyService) = ReinviteAdminHandler(tenancy)
 
     @Bean
     fun bootstrapServiceTenantHandler(tenancy: TenancyService) = BootstrapServiceTenantHandler(tenancy)

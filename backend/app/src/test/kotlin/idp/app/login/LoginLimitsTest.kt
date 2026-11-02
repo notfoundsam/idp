@@ -18,6 +18,7 @@ private const val MAX_OPEN_FLOWS = 3
 private const val MAX_REQUEST_BYTES = 1024
 private const val ATTEMPTS_PER_MINUTE = 10
 private const val ATTEMPTS_BEFORE_DELAY = 4
+private const val MAILS_AN_HOUR = 5
 
 class LoginLimitsTest :
     FunSpec({
@@ -131,6 +132,17 @@ class LoginLimitsTest :
                 events.list shouldHaveSize 1
                 events.list.single().formattedMessage shouldContain "event=throttle.rejected"
                 events.list.single().formattedMessage shouldContain "SubmitPassword"
+            }
+
+            test("an address that asks for reset mails is stopped the same way for a login that matched nobody") {
+                val browser = Browser(application, GLOBEX)
+
+                repeat(MAILS_AN_HOUR) { browser.post("/api/password-reset", loginBody("anyone-$it@acme.test")).status shouldBe 202 }
+
+                val refused = browser.post("/api/password-reset", loginBody("anyone@acme.test"))
+
+                refused.status shouldBe 429
+                refused.header("Retry-After").shouldNotBeNull()
             }
         }
     })

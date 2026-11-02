@@ -59,6 +59,10 @@ internal class Tenant(
         move(PROVISIONING, to = ACTIVE)
     }
 
+    fun ensureActive() {
+        if (status != ACTIVE) throw ForbiddenTenantChange("A tenant in $status takes no new admin")
+    }
+
     fun suspend() = move(ACTIVE, to = SUSPENDED)
 
     fun resume() = move(SUSPENDED, to = ACTIVE)

@@ -25,6 +25,7 @@ data class ResolvedTenant(
     val id: UUID,
     val status: TenantStatus,
     val kekUri: String?,
+    val name: String,
 ) {
     fun context() = TenantContext(id, kekUri)
 }
@@ -51,11 +52,11 @@ class TenantResolver(
     private fun load(host: String): ResolvedTenant? =
         platform.execute { dsl ->
             dsl
-                .select(TENANTS.ID, TENANTS.STATUS, TENANTS.KEK_URI)
+                .select(TENANTS.ID, TENANTS.STATUS, TENANTS.KEK_URI, TENANTS.NAME)
                 .from(TENANT_DOMAINS)
                 .join(TENANTS)
                 .on(TENANTS.ID.eq(TENANT_DOMAINS.TENANT_ID))
                 .where(TENANT_DOMAINS.DOMAIN.eq(host))
-                .fetchOne { ResolvedTenant(it.value1(), TenantStatus.valueOf(it.value2()), it.value3()) }
+                .fetchOne { ResolvedTenant(it.value1(), TenantStatus.valueOf(it.value2()), it.value3(), it.value4()) }
         }
 }

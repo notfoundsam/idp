@@ -581,6 +581,92 @@ class TenancyServiceTest :
             }
         }
 
+        context("a new invitation for an admin") {
+            fun Platform.request(tenant: UUID): UUID {
+                ops.requestAdminReinvite(tenant, CONTACT, OPERATOR, IP)
+                return sql.queryForObject("SELECT id FROM platform.admin_reinvites WHERE tenant_id = ?", UUID::class.java, tenant)!!
+            }
+
+            test("seals the address with the KEK of the platform, and only worker opens it") {
+                Platform().run {
+                    val tenant = active()
+
+                    val reinvite = request(tenant)
+
+                    val stored =
+                        sql.queryForObject(
+                            "SELECT contact_ciphertext FROM platform.admin_reinvites WHERE id = ?",
+                            ByteArray::class.java,
+                            reinvite,
+                        )!!
+                    String(stored, Charsets.ISO_8859_1) shouldNotContain CONTACT
+                    worker.reinviteContact(reinvite) shouldBe CONTACT
+                    shouldThrow<RuntimeException> { ops.reinviteContact(reinvite) }
+                }
+            }
+
+            test("publishes an event with IDs alone") {
+                Platform().run {
+                    val tenant = active()
+
+                    val reinvite = request(tenant)
+
+                    val event =
+                        sql.queryForMap(
+                            "SELECT aggregate_id, tenant_id, payload::text AS payload FROM platform.outbox WHERE event_type = ?",
+                            TenancyEvents.ADMIN_REINVITE_REQUESTED,
+                        )
+                    event["aggregate_id"] shouldBe reinvite
+                    event["tenant_id"] shouldBe tenant
+                    event["payload"].toString() shouldNotContain CONTACT
+                }
+            }
+
+            test("is audited under the operator, without the address") {
+                Platform().run {
+                    val tenant = active()
+                    audit.changes.clear()
+
+                    request(tenant)
+
+                    val record = audit.changes.single()
+                    record.action shouldBe "tenant.admin_reinvite_requested"
+                    record.actor shouldBe OPERATOR
+                    record.target shouldBe AuditTarget.tenant(tenant)
+                    record.ip shouldBe IP
+                    record.details.shouldBe(emptyMap())
+                }
+            }
+
+            test("is refused for a tenant that is not active") {
+                Platform().run {
+                    val tenant = active()
+                    ops.suspend(tenant, OPERATOR)
+
+                    shouldThrow<ForbiddenTenantChange> { ops.requestAdminReinvite(tenant, CONTACT, OPERATOR) }
+                }
+            }
+
+            test("is refused for a missing tenant and for a contact that is no address") {
+                Platform().run {
+                    val tenant = active()
+
+                    shouldThrow<TenancyNotFound> { ops.requestAdminReinvite(UUID.randomUUID(), CONTACT, OPERATOR) }
+                    shouldThrow<InvalidApplication> { ops.requestAdminReinvite(tenant, "not an address", OPERATOR) }
+                }
+            }
+
+            test("is gone once worker erases it") {
+                Platform().run {
+                    val reinvite = request(active())
+
+                    worker.eraseReinvite(reinvite)
+
+                    worker.reinviteContact(reinvite).shouldBeNull()
+                }
+            }
+        }
+
         context("operator address") {
             test("reaches the record of every action") {
                 Platform().run {

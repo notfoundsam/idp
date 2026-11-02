@@ -13,6 +13,7 @@ class Mail(
     val userId: UUID,
     val template: MailTemplate,
     val variables: Map<String, String>,
+    val address: MailAddress = MailAddress.CURRENT,
 )
 
 /** Names only the type of the cause: SMTP errors quote the address, and `OutboxDispatcher` logs what it catches in full. */
@@ -32,7 +33,7 @@ class MailDispatcher(
     private val from: String,
 ) {
     fun send(mail: Mail) {
-        val address = recipients.addressOf(mail.userId)
+        val address = recipients.addressOf(mail.userId, mail.address)
         if (address == null) {
             log.info("Mail {} dropped: user {} has no address", mail.template, mail.userId)
             return

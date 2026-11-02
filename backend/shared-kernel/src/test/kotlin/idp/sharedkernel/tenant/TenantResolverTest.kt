@@ -53,7 +53,7 @@ class TenantResolverTest :
                 val id = tenant("acme.idp.test", kekUri = "hcvault://transit/acme")
 
                 resolver.resolve("acme.idp.test") shouldBe
-                    ResolvedTenant(id, TenantStatus.ACTIVE, "hcvault://transit/acme")
+                    ResolvedTenant(id, TenantStatus.ACTIVE, "hcvault://transit/acme", "tenant")
             }
         }
 

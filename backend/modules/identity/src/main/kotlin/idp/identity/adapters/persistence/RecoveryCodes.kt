@@ -10,13 +10,20 @@ internal class RecoveryCodes {
         userId: UUID,
         hashes: List<ByteArray>,
     ) {
-        dsl.deleteFrom(RECOVERY_CODES).where(RECOVERY_CODES.USER_ID.eq(userId)).execute()
+        delete(dsl, userId)
         dsl
             .batch(
                 hashes.map { hash ->
                     dsl.insertInto(RECOVERY_CODES).set(RECOVERY_CODES.USER_ID, userId).set(RECOVERY_CODES.CODE_HASH, hash)
                 },
             ).execute()
+    }
+
+    fun delete(
+        dsl: DSLContext,
+        userId: UUID,
+    ) {
+        dsl.deleteFrom(RECOVERY_CODES).where(RECOVERY_CODES.USER_ID.eq(userId)).execute()
     }
 
     /** One statement, so of two concurrent uses of a code only one finds its row. */

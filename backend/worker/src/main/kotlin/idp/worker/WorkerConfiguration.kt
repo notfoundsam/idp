@@ -17,8 +17,13 @@ import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.tenancy.application.TenancyService
+import idp.worker.handlers.EmailChangeMailHandler
+import idp.worker.handlers.EmailChangedMailHandler
 import idp.worker.handlers.InvitationMailHandler
+import idp.worker.handlers.PasswordResetMailHandler
+import idp.worker.handlers.ReinviteAdminHandler
 import idp.worker.handlers.TenantSuspendedHandler
+import idp.worker.mail.MailAddress
 import idp.worker.mail.MailDispatcher
 import idp.worker.mail.MailRecipients
 import idp.worker.mail.MailTemplates
@@ -81,6 +86,9 @@ class WorkerConfiguration {
     fun invitationCleanup(identity: IdentityService): TenantCleanup = identity.invitationCleanup
 
     @Bean
+    fun recoveryCleanup(identity: IdentityService): TenantCleanup = identity.recoveryCleanup
+
+    @Bean
     fun passkeyChallengeCleanup(identity: IdentityService): TenantCleanup = identity.passkeyChallengeCleanup
 
     /** `worker` starts no flow. The two credential services are here only because the service reads factors through them. */
@@ -106,7 +114,7 @@ class WorkerConfiguration {
         sender: JavaMailSender,
         identity: IdentityService,
         @Value("\${idp.mail.from}") from: String,
-    ) = MailDispatcher(sender, MailRecipients(identity::emailOf), MailTemplates(), from)
+    ) = MailDispatcher(sender, mailRecipients(identity), MailTemplates(), from)
 
     @Bean
     fun invitationMailHandler(
@@ -114,6 +122,35 @@ class WorkerConfiguration {
         tenancy: TenancyService,
         mail: MailDispatcher,
     ) = InvitationMailHandler(identity, tenancy, mail)
+
+    @Bean
+    fun passwordResetMailHandler(
+        identity: IdentityService,
+        tenancy: TenancyService,
+        mail: MailDispatcher,
+    ) = PasswordResetMailHandler(identity, tenancy, mail)
+
+    @Bean
+    fun emailChangeMailHandler(
+        identity: IdentityService,
+        tenancy: TenancyService,
+        mail: MailDispatcher,
+    ) = EmailChangeMailHandler(identity, tenancy, mail)
+
+    @Bean
+    fun emailChangedMailHandler(
+        identity: IdentityService,
+        tenancy: TenancyService,
+        mail: MailDispatcher,
+    ) = EmailChangedMailHandler(identity, tenancy, mail)
+
+    @Bean
+    fun reinviteAdminHandler(
+        tenancy: TenancyService,
+        identity: IdentityService,
+        authentication: AuthenticationService,
+        transaction: TenantTransaction,
+    ) = ReinviteAdminHandler(tenancy, identity, authentication, transaction)
 
     /** No pool and no bean: provisioning is rare, and a second `DataSource` bean would switch off the runtime one. */
     @Bean
@@ -129,4 +166,13 @@ class WorkerConfiguration {
         val provisioner = DriverManagerDataSource(url, username, password)
         return TenantProvisioningProcess(tenancy, TenantSchemaFactory(provisioner), TenantMigrationRunner(provisioner), kms, keys, identity)
     }
+
+    private fun mailRecipients(identity: IdentityService) =
+        MailRecipients { userId, which ->
+            when (which) {
+                MailAddress.CURRENT -> identity.emailOf(userId)
+                MailAddress.PENDING -> identity.pendingEmailOf(userId)
+                MailAddress.PREVIOUS -> identity.previousEmailOf(userId)
+            }
+        }
 }

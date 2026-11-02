@@ -591,6 +591,48 @@ class SessionsTest :
                 }
             }
 
+            context("an invitation") {
+                test("reserves the flow, so a double click spends no token") {
+                    val tenant = tenant()
+                    val flow = tenant.acting { startFlow() }
+
+                    tenant.acting { claimInvitation(flow) }
+
+                    shouldThrow<StepInProgress> { tenant.acting { claimInvitation(flow) } }
+                    tenant.acting { releaseStep(flow) }
+                    tenant.acting { claimInvitation(flow) }
+                }
+
+                test("is refused on a flow that already knows someone") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val flow = tenant.acting { identifiedFlow() }
+
+                    shouldThrow<StepNotAllowed> { tenant.acting { claimInvitation(flow) } }
+                }
+
+                test("takes a flow to the step of the policy") {
+                    val tenant = tenant(TenantPolicy())
+                    val user = tenant.user()
+                    val flow = tenant.acting { startFlow() }
+
+                    val view = TenantContext.with(tenant) { transaction.execute { service.invitationAccepted(flow, user) } }
+
+                    view.step shouldBe LoginStep.ENROLL_MFA
+                    view.factors shouldBe setOf(LoginFactor.TOTP, LoginFactor.PASSKEY)
+                }
+
+                test("completes a flow under a relaxed policy") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val flow = tenant.acting { startFlow() }
+
+                    val view = TenantContext.with(tenant) { transaction.execute { service.invitationAccepted(flow, user) } }
+
+                    view.step shouldBe LoginStep.COMPLETE
+                }
+            }
+
             context("a session") {
                 test("is stored only as the SHA-256 of its token") {
                     val tenant = tenant()
@@ -989,6 +1031,20 @@ class SessionsTest :
                     record.target shouldBe AuditTarget.user(user)
                     record.ip shouldBe IP
                     record.details shouldBe mapOf("sessions" to "2")
+                }
+
+                test("the sessions of a user ends the logins in progress, so a password proved before cannot open a session after") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    val flow = tenant.passwordFlow()
+                    val other = tenant.passwordFlow("grace.hopper@acme.test")
+
+                    TenantContext.with(tenant) { transaction.execute { service.revokeUserSessions(user, ADMIN) } }
+
+                    shouldThrow<FlowExpired> { tenant.acting { completeFlow(flow, IP, USER_AGENT) } }
+                    tenant.sessionRows(user).shouldBeEmpty()
+                    tenant.completed(other).isNotEmpty() shouldBe true
                 }
 
                 test("bumps the version, because it is a decision") {

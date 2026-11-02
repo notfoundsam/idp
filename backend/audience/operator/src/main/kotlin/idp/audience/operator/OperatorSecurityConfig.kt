@@ -5,6 +5,7 @@ import idp.audience.operator.application.command.BootstrapServiceTenant
 import idp.audience.operator.application.command.ResumeTenant
 import idp.audience.operator.application.command.SubmitApplication
 import idp.audience.operator.application.command.SuspendTenant
+import idp.audience.operator.application.command.reinvite.ReinviteAdmin
 import idp.audience.operator.application.query.GetApplication
 import idp.audience.operator.application.query.GetTenant
 import idp.sharedkernel.bus.Message
@@ -29,6 +30,7 @@ object OperatorSecurityConfig : SecurityConfig {
             ApproveApplication::class to MANAGE,
             SuspendTenant::class to MANAGE,
             ResumeTenant::class to MANAGE,
+            ReinviteAdmin::class to MANAGE,
             GetTenant::class to READ,
             GetApplication::class to READ,
             BootstrapServiceTenant::class to BOOTSTRAP,

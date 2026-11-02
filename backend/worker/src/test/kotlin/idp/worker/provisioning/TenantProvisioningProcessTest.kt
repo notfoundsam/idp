@@ -600,7 +600,7 @@ class TenantProvisioningProcessTest :
                         host = mailpit.host
                         port = mailpit.smtpPort
                     }
-                val mail = MailDispatcher(sender, MailRecipients(identity::emailOf), MailTemplates(), FROM)
+                val mail = MailDispatcher(sender, MailRecipients { userId, _ -> identity.emailOf(userId) }, MailTemplates(), FROM)
                 return OutboxDispatcher(
                     PlatformTransaction(worker),
                     IdempotentHandler(TenantTransaction(worker)),

@@ -14,6 +14,13 @@ internal class Totps {
         userId: UUID,
     ): TotpCredential? = dsl.selectFrom(TOTP_CREDENTIALS).where(TOTP_CREDENTIALS.USER_ID.eq(userId)).fetchOne(::toCredential)
 
+    fun delete(
+        dsl: DSLContext,
+        userId: UUID,
+    ) {
+        dsl.deleteFrom(TOTP_CREDENTIALS).where(TOTP_CREDENTIALS.USER_ID.eq(userId)).execute()
+    }
+
     /** One statement, so an enrollment cannot overwrite a secret confirmed a moment ago. False when one is confirmed. */
     fun begin(
         dsl: DSLContext,

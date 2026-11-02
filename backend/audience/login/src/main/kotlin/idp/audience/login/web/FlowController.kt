@@ -13,6 +13,7 @@ import idp.audience.login.application.command.SubmitPasskey
 import idp.audience.login.application.command.SubmitPassword
 import idp.audience.login.application.command.SubmitRecoveryCode
 import idp.audience.login.application.command.SubmitTotp
+import idp.audience.login.application.command.recovery.AcceptInvitation
 import idp.audience.login.application.query.GetFlow
 import idp.authentication.application.CsrfCookie
 import idp.authentication.application.FlowAccess
@@ -54,6 +55,12 @@ class LoginRequest(
 
 /** Not a data class: `toString` must not print the password. */
 class PasswordRequest(
+    val password: String,
+)
+
+/** Not a data class: `toString` must not print the token or the password. */
+class InvitationRequest(
+    val token: String,
     val password: String,
 )
 
@@ -165,6 +172,14 @@ class FlowController(
         @CookieValue(FlowCookie.NAME, required = false) browser: String?,
         @RequestBody request: PasswordRequest,
     ): FlowResponse = commands.dispatch(SubmitPassword(access(id, browser), request.password)).response()
+
+    @PostMapping("/{id}/invitation")
+    fun invitation(
+        @PathVariable id: UUID,
+        @CookieValue(FlowCookie.NAME, required = false) browser: String?,
+        @RequestBody request: InvitationRequest,
+        http: HttpServletRequest,
+    ): FlowResponse = commands.dispatch(AcceptInvitation(access(id, browser), request.token, request.password, http.serverName)).response()
 
     @PostMapping("/{id}/totp")
     fun totp(

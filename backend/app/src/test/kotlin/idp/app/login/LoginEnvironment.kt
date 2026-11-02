@@ -240,6 +240,15 @@ fun passwordBody(password: String) = """{"password":"$password"}"""
 
 fun codeBody(code: String) = """{"code":"$code"}"""
 
+fun tokenBody(token: String) = """{"token":"$token"}"""
+
+fun emailBody(email: String) = """{"email":"$email"}"""
+
+fun invitationBody(
+    token: String,
+    password: String,
+) = """{"token":"$token","password":"$password"}"""
+
 fun JsonNode.text(name: String): String = get(name).asString()
 
 fun JsonNode.strings(name: String): List<String> = get(name).values().map { it.asString() }
