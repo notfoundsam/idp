@@ -11,7 +11,7 @@ private const val LOCALSTACK_IMAGE = "localstack/localstack:4.14.0"
 
 private val localstack: GenericContainer<*> by lazy {
     GenericContainer(LOCALSTACK_IMAGE)
-        .withEnv("SERVICES", "kms,sts")
+        .withEnv("SERVICES", "kms,sts,s3")
         .withExposedPorts(LOCALSTACK_PORT)
         .waitingFor(Wait.forLogMessage(".*Ready\\.\\n", 1))
         .also { it.start() }

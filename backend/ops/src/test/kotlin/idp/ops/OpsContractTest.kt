@@ -98,6 +98,19 @@ class OpsContractTest :
             api.post("/api/tenants/${UUID.randomUUID()}/admin-reinvite", body).conforms("POST", reinvite).status shouldBe 404
         }
 
+        test("offboarding and its cancellation conform") {
+            val offboarding = "/api/tenants/{id}/offboarding"
+            val tenant = api.tenantOf(api.submit("offboarded"))
+
+            api.post("/api/tenants/$tenant/offboarding").conforms("POST", offboarding).status shouldBe 422
+            environment.sql.update("UPDATE platform.tenants SET status = 'SUSPENDED', version = version + 1 WHERE id = ?", tenant)
+            api.post("/api/tenants/$tenant/offboarding").conforms("POST", offboarding).status shouldBe 202
+            api.get("/api/tenants/$tenant").conforms("GET", "/api/tenants/{id}").status shouldBe 200
+            api.delete("/api/tenants/$tenant/offboarding").conforms("DELETE", offboarding).status shouldBe 204
+            api.delete("/api/tenants/$tenant/offboarding").conforms("DELETE", offboarding).status shouldBe 422
+            api.delete("/api/tenants/${UUID.randomUUID()}/offboarding").conforms("DELETE", offboarding).status shouldBe 404
+        }
+
         test("every failure a client can cause is in the contract") {
             val unknown = UUID.randomUUID()
 

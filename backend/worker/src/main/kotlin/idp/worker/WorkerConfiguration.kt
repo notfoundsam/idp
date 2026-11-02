@@ -10,6 +10,8 @@ import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.KeyManagementService
 import idp.sharedkernel.crypto.adapter.KeyManagementSettings
+import idp.sharedkernel.erasure.ErasureJournal
+import idp.sharedkernel.erasure.adapter.ErasureJournalSettings
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
@@ -19,6 +21,7 @@ import idp.sharedkernel.tenant.TenantTransaction
 import idp.tenancy.application.TenancyService
 import idp.worker.handlers.EmailChangeMailHandler
 import idp.worker.handlers.EmailChangedMailHandler
+import idp.worker.handlers.ErasureJournalHandler
 import idp.worker.handlers.InvitationMailHandler
 import idp.worker.handlers.PasswordResetMailHandler
 import idp.worker.handlers.ReinviteAdminHandler
@@ -27,6 +30,7 @@ import idp.worker.mail.MailAddress
 import idp.worker.mail.MailDispatcher
 import idp.worker.mail.MailRecipients
 import idp.worker.mail.MailTemplates
+import idp.worker.offboarding.TenantOffboardingProcess
 import idp.worker.provisioning.TenantProvisioningProcess
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
@@ -152,6 +156,16 @@ class WorkerConfiguration {
         transaction: TenantTransaction,
     ) = ReinviteAdminHandler(tenancy, identity, authentication, transaction)
 
+    @Bean
+    fun erasureJournal(
+        @Value("\${idp.erasures.s3.bucket}") bucket: String,
+        @Value("\${idp.erasures.s3.region}") region: String,
+        @Value("\${idp.erasures.file}") file: String,
+    ): ErasureJournal = ErasureJournalSettings(bucket, region, file).journal()
+
+    @Bean
+    fun erasureJournalHandler(journal: ErasureJournal) = ErasureJournalHandler(journal)
+
     /** No pool and no bean: provisioning is rare, and a second `DataSource` bean would switch off the runtime one. */
     @Bean
     fun tenantProvisioningProcess(
@@ -166,6 +180,17 @@ class WorkerConfiguration {
         val provisioner = DriverManagerDataSource(url, username, password)
         return TenantProvisioningProcess(tenancy, TenantSchemaFactory(provisioner), TenantMigrationRunner(provisioner), kms, keys, identity)
     }
+
+    /** Through the provisioner for the same reason as [tenantProvisioningProcess]: only `idp_owner` drops a schema and a role. */
+    @Bean
+    fun tenantOffboardingProcess(
+        tenancy: TenancyService,
+        kms: KeyManagementService,
+        journal: ErasureJournal,
+        @Value("\${idp.provisioner.url}") url: String,
+        @Value("\${idp.provisioner.username}") username: String,
+        @Value("\${idp.provisioner.password}") password: String,
+    ) = TenantOffboardingProcess(tenancy, TenantSchemaFactory(DriverManagerDataSource(url, username, password)), kms, journal)
 
     private fun mailRecipients(identity: IdentityService) =
         MailRecipients { userId, which ->

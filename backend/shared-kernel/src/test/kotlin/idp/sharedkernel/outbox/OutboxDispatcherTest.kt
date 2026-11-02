@@ -206,6 +206,20 @@ class OutboxDispatcherTest :
                 }
             }
 
+            test("an event with a time of its own waits until then") {
+                Outbox().run {
+                    val handler = Recording()
+                    val later = clock.instant().plus(Duration.ofDays(30))
+                    publish(a, event().copy(availableAt = later))
+
+                    dispatcher(handler).dispatch() shouldBe 0
+                    clock.offset += Duration.ofDays(30)
+                    dispatcher(handler).dispatch() shouldBe 1
+
+                    handler.seen shouldHaveSize 1
+                }
+            }
+
             test("worker_runtime reads the events of every tenant") {
                 Outbox().run {
                     publish(a)
@@ -539,6 +553,34 @@ class OutboxDispatcherTest :
                     handler.seen.single().tenantId shouldBe provisioning
                     contexts.single().shouldBeNull()
                     status() shouldBe "DONE"
+                }
+            }
+
+            test("an event of a deleted tenant finishes without its tenant handlers, and the platform ones still run") {
+                Outbox().run {
+                    publish(a)
+                    owner.update("""DROP SCHEMA "${TenantSchema(a).name}" CASCADE""")
+                    owner.update("UPDATE platform.tenants SET status = 'DELETED' WHERE id = '$a'")
+                    val tenant = Recording()
+                    val platform = Recording(scope = EventScope.PLATFORM, name = "platform")
+
+                    dispatcher(tenant, platform).dispatch()
+
+                    tenant.seen shouldHaveSize 0
+                    platform.seen shouldHaveSize 1
+                    status() shouldBe "DONE"
+                }
+            }
+
+            test("an event of a tenant whose schema went before its status is retried") {
+                Outbox().run {
+                    publish(a)
+                    owner.update("""DROP SCHEMA "${TenantSchema(a).name}" CASCADE""")
+
+                    dispatcher(Recording()).dispatch()
+
+                    status() shouldBe "PENDING"
+                    attempts() shouldBe "1"
                 }
             }
         }

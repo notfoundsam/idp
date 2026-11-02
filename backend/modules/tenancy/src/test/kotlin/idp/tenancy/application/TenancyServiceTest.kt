@@ -14,6 +14,7 @@ import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.tenant.TenantTransaction
+import idp.sharedkernel.testing.MovableClock
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
 import idp.tenancy.adapters.persistence.Tenants
@@ -33,6 +34,8 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.jooq.exception.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
+import java.sql.Timestamp
+import java.time.Duration
 import java.util.UUID
 
 private const val BASE_DOMAIN = "idp.test"
@@ -41,6 +44,7 @@ private const val MASK = "a***@acme.example"
 private const val KEK = "hcvault://tenant-key"
 private const val IP = "198.51.100.7"
 private val OPERATOR = Actor.Operator("alice")
+private val GRACE: Duration = Duration.ofDays(30)
 
 private class RecordingAudit : AuditLog {
     val changes = mutableListOf<AuditRecord>()
@@ -75,6 +79,7 @@ private class Platform {
     private val decryptOnly =
         TestOpenBao.tokenWithPolicy("decrypt-$name", """path "transit/decrypt/$name" { capabilities = ["update"] }""")
 
+    val clock = MovableClock()
     val opsTransaction = PlatformTransaction(database.pooled("ops_runtime"))
     val ops = service(opsTransaction, encryptOnly)
     val worker = service(PlatformTransaction(database.pooled("worker_runtime")), decryptOnly)
@@ -84,7 +89,7 @@ private class Platform {
         token: String,
     ): TenancyService {
         val contacts = FieldCipher.platform(OpenBaoKeyManagementService(TestOpenBao.address, token), kekUri)
-        return TenancyService(transaction, audit, OutboxPublisher(), contacts, BASE_DOMAIN)
+        return TenancyService(transaction, audit, OutboxPublisher(), contacts, BASE_DOMAIN, clock, GRACE)
     }
 
     fun submit(
@@ -688,6 +693,152 @@ class TenancyServiceTest :
                         .single()
                         .ip
                         .shouldBeNull()
+                }
+            }
+        }
+
+        context("offboarding") {
+            fun Platform.suspended(): UUID = active().also { ops.suspend(it, OPERATOR) }
+
+            fun Platform.offboarding(): UUID = suspended().also { ops.startOffboarding(it, OPERATOR) }
+
+            test("starts for a suspended tenant and ends the waiting period after the grace") {
+                Platform().run {
+                    val tenant = suspended()
+
+                    val after = ops.startOffboarding(tenant, OPERATOR)
+
+                    after shouldBe ops.tenant(tenant).shouldNotBeNull().offboardingAfter
+                    Duration.between(clock.instant(), after).toDays() shouldBe GRACE.toDays() - 1
+                    statusOf(tenant) shouldBe TenantStatus.OFFBOARDING
+                }
+            }
+
+            test("an active tenant is suspended first, because suspension revokes its sessions") {
+                Platform().run {
+                    val tenant = active()
+
+                    shouldThrow<ForbiddenTenantChange> { ops.startOffboarding(tenant, OPERATOR) }
+
+                    statusOf(tenant) shouldBe TenantStatus.ACTIVE
+                }
+            }
+
+            test("publishes an event that waits for the end of the period and carries the version it set") {
+                Platform().run {
+                    val tenant = suspended()
+
+                    val after = ops.startOffboarding(tenant, OPERATOR)
+
+                    val row =
+                        sql.queryForMap(
+                            "SELECT aggregate_version, available_at, tenant_id FROM platform.outbox WHERE event_type = ?",
+                            TenancyEvents.OFFBOARDING_STARTED,
+                        )
+                    row["aggregate_version"] shouldBe ops.tenant(tenant).shouldNotBeNull().version
+                    (row["available_at"] as Timestamp).toInstant() shouldBe after
+                    row["tenant_id"] shouldBe tenant
+                }
+            }
+
+            test("starting and cancelling are audited under the operator") {
+                Platform().run {
+                    val tenant = suspended()
+
+                    val after = ops.startOffboarding(tenant, OPERATOR, IP)
+                    ops.cancelOffboarding(tenant, OPERATOR, IP)
+
+                    audit.changes.takeLast(2).map { it.action } shouldBe
+                        listOf(TenancyEvents.OFFBOARDING_STARTED, "tenant.offboarding_cancelled")
+                    audit.changes.takeLast(2).forEach {
+                        it.actor shouldBe OPERATOR
+                        it.target shouldBe AuditTarget.tenant(tenant)
+                        it.ip shouldBe IP
+                    }
+                    audit.changes[audit.changes.size - 2].details shouldBe mapOf("after" to after.toString())
+                }
+            }
+
+            test("cancelling leaves the tenant suspended and forgets the period") {
+                Platform().run {
+                    val tenant = offboarding()
+
+                    ops.cancelOffboarding(tenant, OPERATOR)
+
+                    ops.tenant(tenant).shouldNotBeNull().run {
+                        status shouldBe TenantStatus.SUSPENDED
+                        offboardingAfter.shouldBeNull()
+                    }
+                }
+            }
+
+            test("a tenant that is not offboarding cannot be cancelled") {
+                Platform().run {
+                    val tenant = suspended()
+
+                    shouldThrow<ForbiddenTenantChange> { ops.cancelOffboarding(tenant, OPERATOR) }
+                }
+            }
+
+            test("worker cannot delete before the end of the period") {
+                Platform().run {
+                    val tenant = offboarding()
+
+                    shouldThrow<ForbiddenTenantChange> { worker.ensureOffboardingDue(tenant) }
+                    shouldThrow<ForbiddenTenantChange> { worker.delete(tenant) }
+
+                    statusOf(tenant) shouldBe TenantStatus.OFFBOARDING
+                }
+            }
+
+            test("worker deletes after the end of the period, and the KEK URI stays for the record") {
+                Platform().run {
+                    val tenant = offboarding()
+                    clock.offset = GRACE
+
+                    worker.ensureOffboardingDue(tenant)
+                    worker.delete(tenant)
+
+                    ops.tenant(tenant).shouldNotBeNull().run {
+                        status shouldBe TenantStatus.DELETED
+                        kekUri shouldBe KEK
+                    }
+                }
+            }
+
+            test("the subdomain stays taken by the deleted tenant") {
+                Platform().run {
+                    val tenant = offboarding()
+                    clock.offset = GRACE
+                    worker.delete(tenant)
+
+                    shouldThrow<SubdomainTaken> { submit("acme") }
+
+                    domainsOf(tenant).shouldContainExactly("acme.idp.test")
+                }
+            }
+
+            test("a deletion applied again turns a restored tenant of any status into DELETED") {
+                Platform().run {
+                    val tenant = active()
+
+                    worker.deleteAgain(tenant) shouldBe true
+
+                    statusOf(tenant) shouldBe TenantStatus.DELETED
+                }
+            }
+
+            test("a deletion applied again does nothing to a deleted or unknown tenant") {
+                Platform().run {
+                    val tenant = offboarding()
+                    clock.offset = GRACE
+                    worker.delete(tenant)
+                    val version = ops.tenant(tenant).shouldNotBeNull().version
+
+                    worker.deleteAgain(tenant) shouldBe false
+                    worker.deleteAgain(UUID.randomUUID()) shouldBe false
+
+                    ops.tenant(tenant).shouldNotBeNull().version shouldBe version
                 }
             }
         }

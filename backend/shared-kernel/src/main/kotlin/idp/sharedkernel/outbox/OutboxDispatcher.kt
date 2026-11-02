@@ -3,6 +3,7 @@ package idp.sharedkernel.outbox
 import idp.db.jooq.platform.tables.Outbox.OUTBOX
 import idp.db.jooq.platform.tables.Tenants.TENANTS
 import idp.sharedkernel.tenant.PlatformTransaction
+import idp.sharedkernel.tenant.TenantStatus
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import org.slf4j.LoggerFactory
@@ -20,6 +21,7 @@ private val log = LoggerFactory.getLogger(OutboxDispatcher::class.java)
 private data class Claim(
     val event: OutboxEvent,
     val kekUri: String?,
+    val tenantDeleted: Boolean,
 )
 
 /**
@@ -89,7 +91,7 @@ class OutboxDispatcher(
                 .where(due)
                 .asTable("ranked")
         return dsl
-            .select(*OUTBOX.fields(), TENANTS.KEK_URI)
+            .select(*OUTBOX.fields(), TENANTS.KEK_URI, TENANTS.STATUS)
             .from(OUTBOX)
             .join(ranked)
             .on(OUTBOX.ID.eq(ranked.field(OUTBOX.ID)))
@@ -116,6 +118,7 @@ class OutboxDispatcher(
                         json = row[OUTBOX.PAYLOAD]!!.data(),
                     ),
                     row[TENANTS.KEK_URI],
+                    row[TENANTS.STATUS] == TenantStatus.DELETED.name,
                 )
             }
     }
@@ -125,7 +128,7 @@ class OutboxDispatcher(
         val failure =
             runCatching {
                 EventCause.with(EventCause(event.correlationId, event.id)) {
-                    handlers[event.eventType].orEmpty().forEach { idempotent.deliver(event, claim.kekUri, it) }
+                    handlersOf(claim).forEach { idempotent.deliver(event, claim.kekUri, it) }
                 }
             }.exceptionOrNull()
         when {
@@ -139,6 +142,15 @@ class OutboxDispatcher(
                 settle(event, PENDING, now().plus(retryDelay.multipliedBy(1L shl (event.attempts - 1))))
             }
         }
+    }
+
+    /** A deleted tenant has no schema to run a tenant handler in, and nothing left for one to do. */
+    private fun handlersOf(claim: Claim): List<EventHandler> {
+        val all = handlers[claim.event.eventType].orEmpty()
+        if (!claim.tenantDeleted) return all
+        val (platform, skipped) = all.partition { it.scope == EventScope.PLATFORM }
+        skipped.forEach { log.info("Outbox event {} skips {}: its tenant is deleted", claim.event.id, it.name) }
+        return platform
     }
 
     /** Matches on `attempts`, so a worker that outlived its lease cannot overwrite the claim of the next one. */

@@ -722,6 +722,20 @@ class SessionsTest :
                     tenant.liveFor(token) shouldBe false
                 }
 
+                test("ends with the erasure of its user, together with the user's open flows (V7.4.2)") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val token = tenant.login()
+                    tenant.passwordFlow()
+
+                    TenantContext.with(tenant) { identity.eraseUser(user, ADMIN) }
+
+                    val schema = TenantSchema(tenant.tenantId).name
+                    tenant.liveFor(token) shouldBe false
+                    sql.queryForObject("""SELECT count(*) FROM "$schema".sso_sessions""", Int::class.java) shouldBe 0
+                    sql.queryForObject("""SELECT count(*) FROM "$schema".flows""", Int::class.java) shouldBe 0
+                }
+
                 test("is audited when it opens") {
                     val tenant = tenant()
                     val user = tenant.user()

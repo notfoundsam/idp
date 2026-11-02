@@ -9,6 +9,8 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.springframework.boot.runApplication
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 class OpsApiTest :
@@ -74,6 +76,44 @@ class OpsApiTest :
                 statusOf(tenant) shouldBe TenantStatus.ACTIVE.name
             }
 
+            test("a suspended tenant starts offboarding, waits for the period and is cancelled") {
+                val id = api.submit("offboarded")
+                api.post("/api/applications/$id/approve")
+                val tenant = api.tenantOf(id)
+                activate(tenant)
+                api.post("/api/tenants/$tenant/suspend")
+
+                val started = api.post("/api/tenants/$tenant/offboarding")
+
+                started.status shouldBe 202
+                val after = Instant.parse(started.json().get("deletionAfter").asString())
+                Duration.between(Instant.now(), after).toDays() shouldBe 29
+                api.get("/api/tenants/$tenant").json().run {
+                    get("status").asString() shouldBe TenantStatus.OFFBOARDING.name
+                    Instant.parse(get("offboardingAfter").asString()) shouldBe after
+                }
+                environment.events(tenant).last() shouldBe TenancyEvents.OFFBOARDING_STARTED
+
+                api.delete("/api/tenants/$tenant/offboarding").status shouldBe 204
+                statusOf(tenant) shouldBe TenantStatus.SUSPENDED.name
+                api
+                    .get("/api/tenants/$tenant")
+                    .json()
+                    .get("offboardingAfter")
+                    .isNull shouldBe true
+            }
+
+            test("an active tenant cannot start offboarding, and one that is not offboarding cannot cancel") {
+                val id = api.submit("still-active")
+                api.post("/api/applications/$id/approve")
+                val tenant = api.tenantOf(id)
+                activate(tenant)
+
+                api.post("/api/tenants/$tenant/offboarding").status shouldBe 422
+                api.delete("/api/tenants/$tenant/offboarding").status shouldBe 422
+                statusOf(tenant) shouldBe TenantStatus.ACTIVE.name
+            }
+
             test("a broken rule answers 422 and changes nothing") {
                 val id = api.submit("twice")
                 api.post("/api/applications/$id/approve")
@@ -121,6 +161,8 @@ class OpsApiTest :
                 api.post("/api/applications/$unknown/approve").status shouldBe 404
                 api.post("/api/tenants/$unknown/suspend").status shouldBe 404
                 api.post("/api/tenants/$unknown/resume").status shouldBe 404
+                api.post("/api/tenants/$unknown/offboarding").status shouldBe 404
+                api.delete("/api/tenants/$unknown/offboarding").status shouldBe 404
             }
 
             test("a malformed id answers 400") {
@@ -158,13 +200,16 @@ class OpsApiTest :
         }
 
         context("audit") {
-            test("submitting, approving, suspending and resuming each write a record") {
+            test("submitting, approving, suspending, resuming, offboarding and cancelling each write a record") {
                 val id = api.submit("audited")
                 api.post("/api/applications/$id/approve")
                 val tenant = api.tenantOf(id)
                 activate(tenant)
                 api.post("/api/tenants/$tenant/suspend")
                 api.post("/api/tenants/$tenant/resume")
+                api.post("/api/tenants/$tenant/suspend")
+                api.post("/api/tenants/$tenant/offboarding")
+                api.delete("/api/tenants/$tenant/offboarding")
 
                 val records = environment.audit()
 
@@ -173,6 +218,9 @@ class OpsApiTest :
                     "tenant.approved",
                     "tenant.suspended",
                     "tenant.resumed",
+                    "tenant.suspended",
+                    "tenant.offboarding_started",
+                    "tenant.offboarding_cancelled",
                 )
                 records.forEach {
                     it["actor"] shouldBe "local-operator"

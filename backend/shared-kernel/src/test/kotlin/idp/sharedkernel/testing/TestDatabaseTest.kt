@@ -2,6 +2,7 @@ package idp.sharedkernel.testing
 
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
+import idp.sharedkernel.migration.TenantSchemaFactory
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -97,6 +98,34 @@ class TestDatabaseTest :
             val sql = JdbcTemplate(owner)
             tenants.forEach { sql.update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'ACTIVE')", it) }
             runner.drift().shouldBeEmpty()
+        }
+
+        test("a backup keeps the data of its moment, even while PgBouncer holds connections") {
+            val database = TestDatabase.migrated()
+            val sql = JdbcTemplate(database.owner())
+            val before = UUID.randomUUID()
+            sql.update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'before', 'ACTIVE')", before)
+            JdbcTemplate(database.pooled("worker_runtime")).queryForList("SELECT id FROM platform.tenants")
+
+            val backup = database.backup()
+            sql.update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'after', 'ACTIVE')", UUID.randomUUID())
+
+            JdbcTemplate(backup.owner()).strings("SELECT id::text FROM platform.tenants") shouldContainExactlyInAnyOrderOf
+                listOf(before.toString())
+            JdbcTemplate(database.pooled("worker_runtime")).queryForList("SELECT id FROM platform.tenants").size shouldBe 2
+        }
+
+        test("a restored backup drops a tenant of its own once the lost database is gone") {
+            val database = TestDatabase.migrated()
+            val tenant = database.ownTenantSchema()
+            val backup = database.backup()
+
+            database.drop()
+            TenantSchemaFactory(backup.owner()).drop(tenant)
+
+            JdbcTemplate(backup.owner())
+                .strings("SELECT rolname FROM pg_roles WHERE rolname = '${TenantSchema(tenant).name}'")
+                .shouldBeEmpty()
         }
 
         test("an empty database gets a schema once the platform is migrated") {

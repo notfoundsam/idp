@@ -14,6 +14,7 @@ dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.aws.sdk.kms)
     implementation(libs.aws.sdk.sts)
+    implementation(libs.aws.sdk.s3)
     implementation(libs.tink)
     implementation(libs.lettuce.core)
     implementation(libs.bucket4j.lettuce)
@@ -43,7 +44,7 @@ tasks.test {
 }
 
 tasks.register<Test>("localStackTest") {
-    description = "Runs the KMS contract against LocalStack."
+    description = "Runs the KMS and erasure journal contracts against LocalStack."
     group = "verification"
     testClassesDirs =
         sourceSets.test

@@ -3,6 +3,8 @@ package idp.ops
 import idp.audience.operator.OperatorSecurityConfig
 import idp.audience.operator.application.command.ApproveApplicationHandler
 import idp.audience.operator.application.command.BootstrapServiceTenantHandler
+import idp.audience.operator.application.command.CancelOffboardingHandler
+import idp.audience.operator.application.command.OffboardTenantHandler
 import idp.audience.operator.application.command.ResumeTenantHandler
 import idp.audience.operator.application.command.SubmitApplicationHandler
 import idp.audience.operator.application.command.SuspendTenantHandler
@@ -23,6 +25,7 @@ import idp.tenancy.application.TenancyService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.time.Duration
 
 @Configuration(proxyBeanMethods = false)
 class OperatorConfiguration {
@@ -43,7 +46,15 @@ class OperatorConfiguration {
         kms: KeyManagementService,
         @Value("\${idp.kms.platform-kek-uri}") platformKekUri: String,
         @Value("\${idp.tenants.base-domain}") baseDomain: String,
-    ) = TenancyService(platform, audit, OutboxPublisher(), FieldCipher.platform(kms, platformKekUri), baseDomain)
+        @Value("\${idp.tenants.offboarding-grace}") offboardingGrace: Duration,
+    ) = TenancyService(
+        platform,
+        audit,
+        OutboxPublisher(),
+        FieldCipher.platform(kms, platformKekUri),
+        baseDomain,
+        offboardingGrace = offboardingGrace,
+    )
 
     @Bean
     fun operatorSecurityConfig(): SecurityConfig = OperatorSecurityConfig
@@ -59,6 +70,12 @@ class OperatorConfiguration {
 
     @Bean
     fun resumeTenantHandler(tenancy: TenancyService) = ResumeTenantHandler(tenancy)
+
+    @Bean
+    fun offboardTenantHandler(tenancy: TenancyService) = OffboardTenantHandler(tenancy)
+
+    @Bean
+    fun cancelOffboardingHandler(tenancy: TenancyService) = CancelOffboardingHandler(tenancy)
 
     @Bean
     fun reinviteAdminHandler(tenancy: TenancyService) = ReinviteAdminHandler(tenancy)

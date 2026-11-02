@@ -59,12 +59,24 @@ class TestDatabase private constructor(
      * Every clone hands out the same ids, so nothing outside this database may be keyed by them: a test
      * that keeps a tenant's data in OpenBao or Valkey for longer than itself needs its own names there.
      */
-    fun tenantSchema(): UUID =
-        pooledTenants.poll() ?: UUID.randomUUID().also { id ->
+    fun tenantSchema(): UUID = pooledTenants.poll() ?: ownTenantSchema()
+
+    /**
+     * A migrated tenant schema with an id of its own, for a test that drops the tenant. Its role belongs to the cluster, and
+     * Postgres keeps a role that a pooled schema of another clone still grants to.
+     */
+    fun ownTenantSchema(): UUID =
+        UUID.randomUUID().also { id ->
             val owner = owner()
             TenantSchemaFactory(owner).create(id)
             TenantMigrationRunner(owner).migrateTenant(id)
         }
+
+    /** The database is lost, as before a restore: its grants stop holding cluster roles. */
+    fun drop() {
+        val name = url.substringAfterLast('/')
+        superuser(postgres.jdbcUrl) { execute("DROP DATABASE $name WITH (FORCE)") }
+    }
 
     /** Passwords match dev-tools/pgbouncer/userlist.txt, which holds each role under its own name. */
     fun pooledUrl(): String {
@@ -82,6 +94,16 @@ class TestDatabase private constructor(
     }
 
     fun owner(): DataSource = role("idp_owner", password = "idp_owner")
+
+    /**
+     * A copy of this database as it is now, which a test restores later like a backup. A template takes no connections, so the
+     * ones PgBouncer keeps open go first, and it opens new ones on demand.
+     */
+    fun backup(): TestDatabase {
+        val name = url.substringAfterLast('/')
+        superuser(postgres.jdbcUrl) { execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$name'") }
+        return database(pooledTenants.toList()) { copy -> "CREATE DATABASE $copy OWNER idp_owner TEMPLATE $name" }
+    }
 
     /** Sets the role password as a superuser, because migrations never do that. */
     fun role(

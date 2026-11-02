@@ -9,6 +9,8 @@ import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
 import idp.tenancy.application.TenancyService
 import org.springframework.jdbc.core.JdbcTemplate
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.UUID
 
 const val BASE_DOMAIN = "idp.test"
@@ -20,6 +22,7 @@ class WorkerEnvironment {
     val jdbc = JdbcTemplate(owner)
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val platformKekUri = kms.createKey("platform-${UUID.randomUUID()}")
+    val erasureJournal: Path = Files.createTempDirectory("erasures").resolve("journal")
 
     init {
         database.role("worker_runtime")
@@ -41,6 +44,7 @@ class WorkerEnvironment {
             "--PLATFORM_KEK_URI=$platformKekUri",
             "--OPENBAO_ADDRESS=${TestOpenBao.address}",
             "--OPENBAO_TOKEN=${TestOpenBao.TOKEN}",
+            "--ERASURE_JOURNAL_FILE=$erasureJournal",
             "--idp.outbox.poll-interval=PT0.05S",
         )
 

@@ -1,13 +1,19 @@
 package idp.worker
 
 import idp.audit.application.AuditService
+import idp.identity.application.IdentityEvents
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
+import idp.sharedkernel.erasure.ErasureJournal
+import idp.sharedkernel.erasure.adapter.FileErasureJournal
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.throttle.RateLimiter
 import idp.tenancy.application.NewApplication
+import idp.tenancy.application.TenancyEvents
 import idp.tenancy.application.TenancyService
+import idp.worker.handlers.ErasureJournalHandler
+import idp.worker.offboarding.TenantOffboardingProcess
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
@@ -83,6 +89,21 @@ class WorkerApplicationTest :
 
         "new keys need a configured adapter" {
             shouldThrowAny { runApplication<WorkerApplication>(*arguments, "--KMS_NEW_KEYS=aws-kms") }
+        }
+
+        "worker does not start without an erasure journal" {
+            val withoutJournal = arguments.filterNot { it.startsWith("--ERASURE_JOURNAL_FILE=") }.toTypedArray()
+
+            shouldThrowAny { runApplication<WorkerApplication>(*withoutJournal) }.stackTraceToString() shouldContain
+                "The erasure journal needs either a bucket or a file"
+        }
+
+        "the offboarding and the user erasure listen to their events through the beans of worker" {
+            runApplication<WorkerApplication>(*arguments).use { context ->
+                context.getBean(TenantOffboardingProcess::class.java).eventType shouldBe TenancyEvents.OFFBOARDING_STARTED
+                context.getBean(ErasureJournalHandler::class.java).eventType shouldBe IdentityEvents.ERASED
+                context.getBean(ErasureJournal::class.java).shouldBeInstanceOf<FileErasureJournal>()
+            }
         }
 
         "an approved tenant becomes active through the outbox" {

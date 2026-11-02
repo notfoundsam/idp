@@ -10,3 +10,23 @@ spring:
     hikari:
       # Every parallel Flyway run takes two connections, and the schema lock takes one.
       maximum-pool-size: 12
+
+# Read only after a restore, with REAPPLY_ERASURES=true. A release needs none of it.
+idp:
+  erasures:
+    reapply: ${REAPPLY_ERASURES:false}
+    s3:
+      bucket: ${ERASURE_JOURNAL_BUCKET:}
+      region: ${ERASURE_JOURNAL_REGION:}
+    file: ${ERASURE_JOURNAL_FILE:}
+  tenants:
+    base-domain: ${TENANTS_BASE_DOMAIN}
+  kms:
+    new-keys: ${KMS_NEW_KEYS}
+    platform-kek-uri: ${PLATFORM_KEK_URI}
+    openbao:
+      address: ${OPENBAO_ADDRESS:}
+      token: ${OPENBAO_TOKEN:}
+    aws:
+      region: ${KMS_AWS_REGION:}
+      key-policy: ${KMS_AWS_KEY_POLICY:}

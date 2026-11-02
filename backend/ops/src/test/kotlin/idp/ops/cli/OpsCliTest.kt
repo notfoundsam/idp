@@ -28,6 +28,7 @@ import org.springframework.boot.WebApplicationType
 import org.springframework.boot.builder.SpringApplicationBuilder
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.sql.Timestamp
 import java.util.UUID
 
 private const val IAM_ACTOR = "arn:aws:sts::123456789012:assumed-role/ops-cli/alice"
@@ -90,6 +91,41 @@ class OpsCliTest :
                     it["actor"] shouldBe IAM_ACTOR
                     it["tenant_id"] shouldBe tenant
                 }
+            }
+
+            test("offboard prints the end of the waiting period, and cancel-offboarding takes the tenant back to suspended") {
+                val tenant = tenantOf(submit("leaving"))
+                sql.update("UPDATE platform.tenants SET status = 'SUSPENDED', version = version + 1 WHERE id = ?", tenant)
+                sql.update("DELETE FROM platform.operator_audit")
+
+                cli.run(listOf("offboard", tenant.toString())) shouldBe 0
+                val after =
+                    sql.queryForObject(
+                        "SELECT offboarding_after FROM platform.tenants WHERE id = ?",
+                        Timestamp::class.java,
+                        tenant,
+                    )!!
+                printed() shouldBe "offboarding $tenant, deletion after ${after.toInstant()}"
+                out.reset()
+
+                cli.run(listOf("tenant", tenant.toString())) shouldBe 0
+                printed() shouldContain "status=OFFBOARDING"
+                printed() shouldContain "offboardingAfter=${after.toInstant()}"
+
+                cli.run(listOf("cancel-offboarding", tenant.toString())) shouldBe 0
+                statusOf(tenant) shouldBe TenantStatus.SUSPENDED.name
+                environment.audit().map { it["action"] }.shouldContainExactly("tenant.offboarding_started", "tenant.offboarding_cancelled")
+                environment.audit().forEach { it["actor"] shouldBe IAM_ACTOR }
+            }
+
+            test("offboard is refused for an active tenant") {
+                val tenant = tenantOf(submit("staying"))
+                sql.update("UPDATE platform.tenants SET status = 'ACTIVE', version = version + 1 WHERE id = ?", tenant)
+
+                cli.run(listOf("offboard", tenant.toString())) shouldBe 1
+
+                err.toString().trim() shouldBe "refused: ForbiddenTenantChange"
+                statusOf(tenant) shouldBe TenantStatus.ACTIVE.name
             }
 
             test("reinvite seals the address, starts the event and prints neither the address nor anything of the tenant") {
@@ -172,6 +208,8 @@ class OpsCliTest :
                 listOf("approve", UUID.randomUUID().toString(), "extra"),
                 listOf("reinvite", UUID.randomUUID().toString()),
                 listOf("reinvite", "not-an-id", CONTACT),
+                listOf("offboard"),
+                listOf("cancel-offboarding", "not-an-id"),
             ).forEach { arguments ->
                 test("'${arguments.joinToString(" ")}' exits with 2 and prints the usage") {
                     cli.run(arguments) shouldBe 2

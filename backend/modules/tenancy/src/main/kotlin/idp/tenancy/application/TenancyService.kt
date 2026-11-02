@@ -20,12 +20,17 @@ import idp.tenancy.domain.SubdomainTaken
 import idp.tenancy.domain.Tenant
 import idp.tenancy.domain.TenantApplication
 import org.jooq.DSLContext
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 private const val APPLICATION_SUBMITTED = "tenant.application.submitted"
 private const val APPROVED = "tenant.approved"
 private const val SUSPENDED = "tenant.suspended"
 private const val RESUMED = "tenant.resumed"
+private const val OFFBOARDING_CANCELLED = "tenant.offboarding_cancelled"
 
 class TenancyNotFound(
     id: UUID,
@@ -45,6 +50,7 @@ data class TenantView(
     val version: Long,
     val provisioningStep: String?,
     val kekUri: String?,
+    val offboardingAfter: Instant?,
 )
 
 data class TenantApplicationView(
@@ -62,7 +68,7 @@ data class TenantSite(
 )
 
 /**
- * `ops` submits, approves and suspends. `worker` provisions and reads the contact.
+ * `ops` submits, approves, suspends and offboards. `worker` provisions, deletes and reads the contact.
  * Their KMS rights differ, so `contacts` only encrypts in `ops` and only decrypts in `worker`.
  */
 class TenancyService(
@@ -71,6 +77,8 @@ class TenancyService(
     private val outbox: OutboxPublisher,
     private val contacts: FieldCipher,
     private val baseDomain: String,
+    private val clock: Clock = Clock.systemUTC(),
+    private val offboardingGrace: Duration = Duration.ofDays(30),
 ) {
     private val tenants = Tenants()
     private val applications = TenantApplications()
@@ -133,6 +141,56 @@ class TenancyService(
             audit.recordChange(AuditRecord(actor, RESUMED, AuditTarget.tenant(tenant.id), ip))
         }
     }
+
+    /** Returns the end of the waiting period. Until then the operator can cancel and the data stays. */
+    fun startOffboarding(
+        tenantId: UUID,
+        actor: Actor.Operator,
+        ip: String? = null,
+    ): Instant {
+        val after = clock.instant().plus(offboardingGrace).truncatedTo(ChronoUnit.SECONDS)
+        transaction.execute { dsl ->
+            val tenant = load(dsl, tenantId).apply { startOffboarding(after) }
+            publish(dsl, tenant, tenants.save(dsl, tenant), TenancyEvents.OFFBOARDING_STARTED, availableAt = after)
+            val details = mapOf("after" to after.toString())
+            audit.recordChange(AuditRecord(actor, TenancyEvents.OFFBOARDING_STARTED, AuditTarget.tenant(tenant.id), ip, details))
+        }
+        return after
+    }
+
+    /** The waiting event stays in the outbox and finds a tenant of another version, so it does nothing. */
+    fun cancelOffboarding(
+        tenantId: UUID,
+        actor: Actor.Operator,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            val tenant = load(dsl, tenantId).apply { cancelOffboarding() }
+            tenants.save(dsl, tenant)
+            audit.recordChange(AuditRecord(actor, OFFBOARDING_CANCELLED, AuditTarget.tenant(tenant.id), ip))
+        }
+    }
+
+    /** `worker` asks before it destroys anything, because its clock may be behind the one that set the waiting period. */
+    fun ensureOffboardingDue(tenantId: UUID) {
+        transaction.execute { dsl -> load(dsl, tenantId).ensureOffboardingDue(clock.instant()) }
+    }
+
+    /**
+     * The last step of offboarding, after the KEK and the schema are gone. Not audited: the tenant's journal went with its schema,
+     * and the operator's decision is in `platform.operator_audit`.
+     */
+    fun delete(tenantId: UUID) {
+        transaction.execute { dsl -> tenants.save(dsl, load(dsl, tenantId).apply { delete(clock.instant()) }) }
+    }
+
+    /** False when the restored database has no such tenant or already knows it is deleted. */
+    fun deleteAgain(tenantId: UUID): Boolean =
+        transaction.execute { dsl ->
+            val tenant = tenants.find(dsl, tenantId)?.takeIf { it.status != TenantStatus.DELETED } ?: return@execute false
+            tenants.save(dsl, tenant.apply { deleteAgain() })
+            true
+        }
 
     /** The operator names an address and learns nothing of the tenant: whether it holds that address stays inside `worker`. */
     fun requestAdminReinvite(
@@ -226,13 +284,14 @@ class TenancyService(
         tenant: Tenant,
         version: Long,
         type: String,
+        availableAt: Instant? = null,
     ) {
         TenantContext.with(TenantContext(tenant.id, tenant.kekUri)) {
-            outbox.publish(dsl, NewEvent(TenancyEvents.AGGREGATE, tenant.id, version, type))
+            outbox.publish(dsl, NewEvent(TenancyEvents.AGGREGATE, tenant.id, version, type, availableAt = availableAt))
         }
     }
 
-    private fun Tenant.view() = TenantView(id, name, status, version, provisioningStep, kekUri)
+    private fun Tenant.view() = TenantView(id, name, status, version, provisioningStep, kekUri, offboardingAfter)
 
     private fun TenantApplication.view() = TenantApplicationView(id, tenantId, companyName, subdomain.value, contactMask, status.name)
 }

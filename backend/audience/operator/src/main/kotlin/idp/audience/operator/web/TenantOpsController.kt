@@ -1,6 +1,8 @@
 package idp.audience.operator.web
 
 import idp.audience.operator.application.command.ApproveApplication
+import idp.audience.operator.application.command.CancelOffboarding
+import idp.audience.operator.application.command.OffboardTenant
 import idp.audience.operator.application.command.ResumeTenant
 import idp.audience.operator.application.command.SubmitApplication
 import idp.audience.operator.application.command.SuspendTenant
@@ -12,6 +14,7 @@ import idp.audience.operator.application.query.TenantResponse
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
 import java.util.UUID
 
 /** Not a data class: `toString` must not print the contact. */
@@ -35,6 +39,10 @@ class ReinviteAdminRequest(
 
 data class ApplicationCreatedResponse(
     val id: UUID,
+)
+
+data class OffboardingResponse(
+    val deletionAfter: Instant,
 )
 
 @RestController
@@ -76,6 +84,18 @@ class TenantOpsController(
     fun resume(
         @PathVariable id: UUID,
     ) = commands.dispatch(ResumeTenant(id))
+
+    @PostMapping("/tenants/{id}/offboarding")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    fun offboard(
+        @PathVariable id: UUID,
+    ) = OffboardingResponse(commands.dispatch(OffboardTenant(id)))
+
+    @DeleteMapping("/tenants/{id}/offboarding")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun cancelOffboarding(
+        @PathVariable id: UUID,
+    ) = commands.dispatch(CancelOffboarding(id))
 
     /** Answers the same whether the tenant knows the address or not: the operator sees nothing of it. */
     @PostMapping("/tenants/{id}/admin-reinvite")
