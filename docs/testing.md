@@ -1,0 +1,60 @@
+# Testing
+
+How the project tests its code and with which tools. A change that adds a tool or a new kind of test updates this file.
+
+## Layers
+
+| Layer | What runs | Example |
+|---|---|---|
+| Domain | Plain Kotlin, no Spring and no database | `modules/identity/src/test/.../domain/UserTest.kt` |
+| Application services | The service against a real Postgres, ports outside the database replaced by hand-written fakes | `IdentityServiceTest`, `SessionsTest` |
+| HTTP | The real application on a random port, called over HTTP | `app/src/test/.../login/FlowApiTest.kt` |
+| API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `OpsContractTest` |
+| Architecture | Module boundaries and the build graph | `architecture-tests` |
+| KMS and erasure journal | The AWS adapters against LocalStack | `*LocalStackTest` in `shared-kernel` |
+| Frontend | Unit tests | `frontend/packages/api-client` |
+
+## Tools
+
+- **Kotest** with `FunSpec` (`StringSpec` in a few specs) and `kotest-assertions`, on the JUnit Platform.
+- **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit and LocalStack. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs.
+- **ArchUnit** for architecture rules.
+- **Vitest** for the frontend.
+- **oasdiff** in CI for breaking changes in the API contracts.
+
+Not used: MockMvc, the Spring test context, Mockito and MockK.
+
+## Rules
+
+- **Failure cases.** Every change ships with tests for its failure cases, not only the happy path.
+- **Names.** A test name is a sentence about behaviour, such as `"accepting an invitation conforms, also when refused"`.
+- **No mocking library.** A port outside the database gets a small fake in the test, such as `RecordingAudit` or `RecordingKms`.
+- **Real HTTP.** A spec starts the application with `SpringApplication(...).run("--server.port=0")` once and closes it in `afterSpec`. Requests go through `java.net.http.HttpClient`, so they pass the real Tomcat, filter chain, cookies and headers. See `LoginEnvironment`, `OpsEnvironment` and `WorkerEnvironment`.
+- **Tenant by Host.** `app` tests set the `Host` header to choose a tenant. `app/build.gradle.kts` allows it with `jdk.httpclient.allowRestrictedHeaders=host`.
+- **Isolation.** A tenant isolation test uses at least two tenants.
+- **Time.** Code takes a `Clock`, and tests move it with `MovableClock`.
+- **Architecture rules.** Each rule has a fixture with a violation in `architecture-tests/src/test/kotlin/archfixtures`, and a new table needs an entry in `tableOwners`.
+- **API contract.** A contract test built on `OpenApiContract` fails when the controllers and the contract list different operations, so a new endpoint needs its contract first. Responses, refusals included, are checked against the contract's schemas.
+
+## Database
+
+`TestDatabase` in the `shared-kernel` test fixtures runs one Postgres and one PgBouncer per test JVM. Roles are cluster-wide, so each test gets its own database:
+
+- `TestDatabase.migrated()` clones a database with the current migrations. Most tests start here, because a clone costs a tenth of migrating.
+- `TestDatabase.create()` gives an empty database, for tests of the migrations.
+- `tenantSchema()` hands out a migrated tenant schema that `platform.tenants` does not know yet. The test adds the row. Clones hand out the same tenant ids, so a test that keeps tenant data in OpenBao or Valkey names it on its own.
+- `pooled(role)` connects through PgBouncer with the configuration from `dev-tools`, as the application does.
+
+## Commands
+
+```bash
+make test                                  # backend and frontend
+cd backend && ./gradlew check              # backend tests, ktlint, architecture rules
+cd backend && ./gradlew :app:test --tests 'idp.app.login.FlowApiTest'
+cd backend && ./gradlew :shared-kernel:localStackTest
+make test-frontend                         # runs in Docker
+```
+
+`./gradlew test` leaves out `*LocalStackTest`, which runs as its own CI job.
+
+An environment variable reaches the test JVM only with `--no-configuration-cache`. With the cache on, Gradle reuses the stored environment and the new value is silently ignored.
