@@ -7,6 +7,7 @@ import idp.sharedkernel.outbox.OutboxDispatcher
 import idp.sharedkernel.outbox.ProcessedEventsCleanup
 import idp.sharedkernel.scheduling.JobLocks
 import idp.sharedkernel.scheduling.JobScheduler
+import idp.sharedkernel.scheduling.ScheduledJob
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.scheduling.TenantCleanupJob
 import idp.sharedkernel.scheduling.TenantJobRunner
@@ -40,10 +41,11 @@ class ScheduleConfiguration {
         platform: PlatformTransaction,
         transaction: TenantTransaction,
         cleanups: ObjectProvider<TenantCleanup>,
+        others: ObjectProvider<ScheduledJob>,
     ): JobScheduler {
         val tenants = TenantJobRunner(platform, transaction)
         val jobs = listOf(OutboxCleanupJob(platform)) + cleanups.orderedStream().toList().map { TenantCleanupJob(it, tenants) }
-        return JobScheduler(jobs, JobLocks(platform))
+        return JobScheduler(jobs + others.orderedStream().toList(), JobLocks(platform))
     }
 }
 

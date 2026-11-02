@@ -35,7 +35,7 @@ class TenantOffboardingProcess(
         tenancy.ensureOffboardingDue(id)
         // First, so a backup restored after any of the next steps does not bring the tenant back.
         journal.record(Erasure.Tenant(id))
-        tenant.kekUri?.let(kms::destroy)
+        tenant.keks.forEach(kms::destroy)
         schemas.drop(id)
         tenancy.delete(id)
     }

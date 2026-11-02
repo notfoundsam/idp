@@ -188,6 +188,74 @@ class TenantTest :
             }
         }
 
+        context("KEK move") {
+            val next = "aws-kms://next"
+
+            listOf(ACTIVE, SUSPENDED).forEach { status ->
+                test("a tenant in $status takes a new KEK and keeps the current one as previous") {
+                    val tenant = tenant(status).apply { replaceKek(next) }
+
+                    tenant.kekUri shouldBe next
+                    tenant.previousKekUri shouldBe KEK
+                    tenant.previousKekDestroyAfter.shouldBeNull()
+                }
+            }
+
+            TenantStatus.entries.filter { it != ACTIVE && it != SUSPENDED }.forEach { status ->
+                test("a tenant in $status keeps its KEK") {
+                    val tenant = tenant(status)
+
+                    shouldThrow<ForbiddenTenantChange> { tenant.replaceKek(next) }
+
+                    tenant.kekUri shouldBe KEK
+                }
+            }
+
+            test("a tenant without a KEK has nothing to move") {
+                shouldThrow<ForbiddenTenantChange> { tenant(ACTIVE, kekUri = null).replaceKek(next) }
+            }
+
+            test("the same KEK is no move") {
+                shouldThrow<ForbiddenTenantChange> { tenant(ACTIVE).replaceKek(KEK) }
+            }
+
+            test("a second move waits until the previous KEK is gone") {
+                val tenant = tenant(ACTIVE).apply { replaceKek(next) }
+
+                shouldThrow<ForbiddenTenantChange> { tenant.replaceKek("aws-kms://third") }
+
+                tenant.kekUri shouldBe next
+                tenant.previousKekUri shouldBe KEK
+            }
+
+            test("a repeated rewrap keeps the first destruction time") {
+                val tenant = tenant(ACTIVE).apply { replaceKek(next) }
+
+                tenant.recordRewrap(AFTER)
+                tenant.recordRewrap(AFTER.plusSeconds(3600))
+
+                tenant.previousKekDestroyAfter shouldBe AFTER
+            }
+
+            test("a rewrap needs a move") {
+                shouldThrow<ForbiddenTenantChange> { tenant(ACTIVE).recordRewrap(AFTER) }
+            }
+
+            test("the previous KEK is forgotten only after its destruction time") {
+                val tenant = tenant(ACTIVE).apply { replaceKek(next) }
+                shouldThrow<ForbiddenTenantChange> { tenant.forgetPreviousKek(AFTER) }
+                tenant.recordRewrap(AFTER)
+
+                shouldThrow<ForbiddenTenantChange> { tenant.forgetPreviousKek(AFTER.minusSeconds(1)) }
+                tenant.previousKekUri shouldBe KEK
+
+                tenant.forgetPreviousKek(AFTER)
+                tenant.previousKekUri.shouldBeNull()
+                tenant.previousKekDestroyAfter.shouldBeNull()
+                tenant.kekUri shouldBe next
+            }
+        }
+
         context("subdomain") {
             listOf("acme", "a", "a1", "acme-corp", "1acme", "a".repeat(63)).forEach { value ->
                 test("'$value' is valid") {

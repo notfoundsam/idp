@@ -40,8 +40,18 @@ class AwsKeyManagementServiceLocalStackTest :
                 kms = ::aws,
                 unknownKey = { "aws-kms://arn:aws:kms:$REGION:000000000000:key/${UUID.randomUUID()}" },
                 unreachable = { aws(URI("http://127.0.0.1:1")) },
+                rotate = { key -> admin().rotateKeyOnDemand { it.keyId(key.removePrefix("aws-kms://")) } },
             ),
         )
+
+        test("a new key rotates itself once a year") {
+            val key = aws().createKey("tenant-${UUID.randomUUID()}")
+
+            val status = admin().getKeyRotationStatus { it.keyId(key.removePrefix("aws-kms://")) }
+
+            status.keyRotationEnabled() shouldBe true
+            status.rotationPeriodInDays() shouldBe 365
+        }
 
         test("a key URI holds the key ARN") {
             aws().createKey("tenant-${UUID.randomUUID()}") shouldStartWith "aws-kms://arn:aws:kms:$REGION:"

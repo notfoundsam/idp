@@ -17,10 +17,21 @@ fun keyManagementServiceContract(
     kms: () -> KeyManagementService,
     unknownKey: () -> String,
     unreachable: () -> KeyManagementService,
+    rotate: (String) -> Unit,
 ) = funSpec {
     test("wrapped material unwraps to the same bytes") {
         val key = kms().createKey(alias())
 
+        kms().unwrap(key, kms().wrap(key, MATERIAL)) shouldBe MATERIAL
+    }
+
+    test("material wrapped before a rotation unwraps after it under the same URI") {
+        val key = kms().createKey(alias())
+        val wrapped = kms().wrap(key, MATERIAL)
+
+        rotate(key)
+
+        kms().unwrap(key, wrapped) shouldBe MATERIAL
         kms().unwrap(key, kms().wrap(key, MATERIAL)) shouldBe MATERIAL
     }
 

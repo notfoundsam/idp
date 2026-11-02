@@ -130,7 +130,7 @@ private class Provisioning {
     private val opsTransaction = PlatformTransaction(database.pooled("ops_runtime"))
     val ops = TenancyService(opsTransaction, OperatorAuditService(opsTransaction), publisher, contacts, BASE_DOMAIN)
     private val tenantTransaction = TenantTransaction(worker)
-    private val keys = KeyHierarchy(kms, tenantTransaction, Duration.ofMinutes(1))
+    private val keys = KeyHierarchy(kms, tenantTransaction, PlatformTransaction(worker), Duration.ofMinutes(1))
     private val audit = FailingAudit(AuditService(tenantTransaction, keys))
     val identity = IdentityService(tenantTransaction, keys, audit, publisher)
 

@@ -41,6 +41,7 @@ bao token lookup "$TOKEN" >/dev/null 2>&1 || bao token create -id="$TOKEN" -poli
 bao secrets list | grep -q '^transit/' || bao secrets enable transit >/dev/null
 # Terraform creates this KEK in production, because it belongs to no tenant.
 bao write -f transit/keys/platform-contacts >/dev/null
+bao write transit/keys/platform-contacts/config auto_rotate_period=8760h >/dev/null
 
 # `ops` stores contacts and never reads them, so its token stops at `Encrypt` as its IAM role does in production.
 bao policy write ops - >/dev/null <<'RULES'

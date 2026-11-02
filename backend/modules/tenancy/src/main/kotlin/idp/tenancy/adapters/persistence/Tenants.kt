@@ -2,6 +2,7 @@ package idp.tenancy.adapters.persistence
 
 import idp.db.jooq.platform.tables.TenantDomains.TENANT_DOMAINS
 import idp.db.jooq.platform.tables.Tenants.TENANTS
+import idp.db.jooq.platform.tables.records.TenantsRecord
 import idp.sharedkernel.persistence.VersionedUpdate
 import idp.sharedkernel.tenant.TenantStatus
 import idp.tenancy.domain.Tenant
@@ -27,18 +28,30 @@ internal class Tenants {
     fun find(
         dsl: DSLContext,
         id: UUID,
-    ): Tenant? =
-        dsl.selectFrom(TENANTS).where(TENANTS.ID.eq(id)).fetchOne { row ->
-            Tenant(
-                row.id!!,
-                row.name!!,
-                TenantStatus.valueOf(row.status!!),
-                row.version!!,
-                row.provisioningStep,
-                row.kekUri,
-                row.offboardingAfter?.toInstant(),
-            )
-        }
+    ): Tenant? = dsl.selectFrom(TENANTS).where(TENANTS.ID.eq(id)).fetchOne(::tenant)
+
+    fun withKek(
+        dsl: DSLContext,
+        statuses: Collection<TenantStatus>,
+    ): List<Tenant> =
+        dsl
+            .selectFrom(TENANTS)
+            .where(TENANTS.STATUS.`in`(statuses.map { it.name }), TENANTS.KEK_URI.isNotNull)
+            .orderBy(TENANTS.ID)
+            .fetch(::tenant)
+
+    private fun tenant(row: TenantsRecord) =
+        Tenant(
+            row.id!!,
+            row.name!!,
+            TenantStatus.valueOf(row.status!!),
+            row.version!!,
+            row.provisioningStep,
+            row.kekUri,
+            row.offboardingAfter?.toInstant(),
+            row.previousKekUri,
+            row.previousKekDestroyAfter?.toInstant(),
+        )
 
     fun save(
         dsl: DSLContext,
@@ -53,6 +66,8 @@ internal class Tenants {
                 TENANTS.PROVISIONING_STEP to tenant.provisioningStep,
                 TENANTS.KEK_URI to tenant.kekUri,
                 TENANTS.OFFBOARDING_AFTER to tenant.offboardingAfter?.atOffset(ZoneOffset.UTC),
+                TENANTS.PREVIOUS_KEK_URI to tenant.previousKekUri,
+                TENANTS.PREVIOUS_KEK_DESTROY_AFTER to tenant.previousKekDestroyAfter?.atOffset(ZoneOffset.UTC),
             ),
         )
 

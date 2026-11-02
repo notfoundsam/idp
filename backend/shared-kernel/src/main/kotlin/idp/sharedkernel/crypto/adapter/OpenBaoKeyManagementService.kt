@@ -26,6 +26,9 @@ private const val NOT_FOUND = 404
 private val TIMEOUT: Duration = Duration.ofSeconds(5)
 private val MISSING_KEY = Regex("not found|no existing key")
 
+/** Old versions keep decrypting, so a rotation needs no rewrap. */
+private const val ROTATION = "8760h"
+
 class OpenBaoKeyManagementService(
     private val address: URI,
     private val token: String,
@@ -35,7 +38,7 @@ class OpenBaoKeyManagementService(
 
     override fun createKey(alias: String): String {
         val name = requireKeyAlias(alias)
-        call("POST", "keys/$name", kekUri = URI_PREFIX + name, body = mapOf("type" to "aes256-gcm96"))
+        call("POST", "keys/$name", kekUri = URI_PREFIX + name, body = mapOf("type" to "aes256-gcm96", "auto_rotate_period" to ROTATION))
         return URI_PREFIX + name
     }
 

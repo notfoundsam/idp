@@ -41,7 +41,7 @@ class BusDenialTest :
         val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
         val runtime = database.pooled("app_runtime")
         val transaction = TenantTransaction(runtime)
-        val keys = KeyHierarchy(kms, transaction, Duration.ofMinutes(1))
+        val keys = KeyHierarchy(kms, transaction, PlatformTransaction(runtime), Duration.ofMinutes(1))
         val audit = AuditService(transaction, keys)
         val id = database.tenantSchema()
         JdbcTemplate(database.owner()).update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'ACTIVE')", id)

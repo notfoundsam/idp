@@ -109,7 +109,7 @@ private class Erasures {
     val ops = TenancyService(opsTransaction, OperatorAuditService(opsTransaction), publisher, contacts, BASE_DOMAIN, clock, GRACE)
     val tenancy = TenancyService(PlatformTransaction(worker), UnusedAudit, publisher, contacts, BASE_DOMAIN, clock)
     private val tenantTransaction = TenantTransaction(worker)
-    val keys = KeyHierarchy(kms, tenantTransaction, Duration.ofMinutes(1))
+    val keys = KeyHierarchy(kms, tenantTransaction, PlatformTransaction(worker), Duration.ofMinutes(1))
     val identity = IdentityService(tenantTransaction, keys, AuditService(tenantTransaction, keys), publisher)
 
     fun process() = TenantOffboardingProcess(tenancy, TenantSchemaFactory(schemas), kms, journal)
@@ -270,6 +270,22 @@ class ErasureTest :
                     schemaExists(tenant) shouldBe false
                     roleExists(tenant) shouldBe false
                     journal.entries().shouldContainExactly(Erasure.Tenant(tenant))
+                }
+            }
+
+            test("destroys the previous KEK of a tenant that moved, because backups still open with it") {
+                Erasures().run {
+                    val tenant = offboarding()
+                    val kek = view(tenant).kekUri.shouldNotBeNull()
+                    val previous = kms.createKey("tenant-${UUID.randomUUID()}")
+                    sql.update("UPDATE platform.tenants SET previous_kek_uri = ? WHERE id = ?", previous, tenant)
+
+                    clock.offset = GRACE
+                    drain()
+
+                    view(tenant).status shouldBe TenantStatus.DELETED
+                    kms.destroyed.shouldContainExactly(kek, previous)
+                    shouldThrow<KeyNotFoundException> { kms.wrap(previous, ByteArray(32)) }
                 }
             }
 

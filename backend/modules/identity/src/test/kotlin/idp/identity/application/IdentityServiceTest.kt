@@ -23,6 +23,7 @@ import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserRole.TENANT_ADMIN
 import idp.sharedkernel.security.UserRole.USER
 import idp.sharedkernel.security.UserStatus
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.MovableClock
@@ -85,7 +86,7 @@ private class Identity {
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val runtime = database.pooled("worker_runtime")
     val transaction = TenantTransaction(runtime)
-    val keys = KeyHierarchy(kms, transaction, KEY_CACHE_TTL)
+    val keys = KeyHierarchy(kms, transaction, PlatformTransaction(runtime), KEY_CACHE_TTL)
     val audit = RecordingAudit()
     val clock = MovableClock()
     val service = IdentityService(transaction, keys, audit, OutboxPublisher(), clock, TTL)

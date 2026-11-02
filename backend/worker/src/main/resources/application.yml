@@ -43,6 +43,8 @@ idp:
     new-keys: ${KMS_NEW_KEYS}
     platform-kek-uri: ${PLATFORM_KEK_URI}
     key-cache-ttl: 5m
+    # Backups are kept 30 days, and a KEK replaced by a move still opens the ones taken before it.
+    previous-kek-retention: 35d
     openbao:
       address: ${OPENBAO_ADDRESS:}
       token: ${OPENBAO_TOKEN:}

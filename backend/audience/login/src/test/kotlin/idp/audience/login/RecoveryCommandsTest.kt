@@ -82,7 +82,7 @@ private class Commands {
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val dataSource = database.pooled("app_runtime")
     val transaction = TenantTransaction(dataSource)
-    val keys = KeyHierarchy(kms, transaction, KEY_CACHE_TTL)
+    val keys = KeyHierarchy(kms, transaction, PlatformTransaction(dataSource), KEY_CACHE_TTL)
     val audit = AuditOnPurpose()
     val identity = IdentityService(transaction, keys, audit, OutboxPublisher())
     val passwords = PasswordService(transaction, identity, audit)

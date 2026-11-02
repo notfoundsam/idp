@@ -8,11 +8,11 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 60 |
-| Partial | Part of the control is merged, the listed tasks finish it | 59 |
-| Planned | The listed tasks build the control | 64 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 62 |
+| Partial | Part of the control is merged, the listed tasks finish it | 58 |
+| Planned | The listed tasks build the control | 62 |
 | N/A | The feature does not exist, the note says why | 67 |
-| Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
+| Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
 `T17` is the issue titled `Task 17: ...`. The application reaches Level 2 when no row is Partial or Planned.
 
@@ -27,6 +27,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V11.6.1 | `rsa-sha256` (RSASSA-PKCS1-v1_5) signs SAML messages for a Service Provider that accepts nothing else | Appendix C disallows this scheme, but many SAML products support no other | The default is an approved scheme. The legacy scheme is an explicit per-SP setting, is audited, and never uses SHA-1 |
 | V11.6.1 | Passkeys may verify `RS256` signatures | Some platform authenticators offer only this algorithm | Verification only, the application never creates such signatures |
 | V11.4.1 | TOTP uses HMAC-SHA-1 | RFC 6238 authenticator apps implement this function. Appendix C lists it as legacy, not disallowed | TOTP only, every other use of SHA-1 is refused |
+| V11.2.2 | The tenant key and the keys below it are not replaced in place | Rotating them means wrapping every user key again and computing the blind index again, which is outside the first version | KEKs above them rotate in the KMS and move between KMS. A compromised tenant key is replaced as the [runbook](key-compromise-runbook.md) says, and `tenant_keys.version` leaves room for a second key |
 | V6.3.3 | A tenant may relax MFA for the `USER` role | Customers decide this for their own workforce | MFA is on by default and cannot be relaxed for `TENANT_ADMIN`. Relaxing is audited, and a tenant that does so falls outside this Level 2 claim |
 
 ## V1 Encoding and Sanitization
@@ -261,10 +262,10 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V11.1.1 | 2 | Planned | T26 | `docs/security/crypto-inventory.md` holds the key policy and lifecycle |
-| V11.1.2 | 2 | Planned | T26 | The same document inventories keys, algorithms and certificates |
+| V11.1.1 | 2 | Done | T26 | [crypto-inventory.md](crypto-inventory.md) holds the key policy and lifecycle after NIST SP 800-57, and the [runbook](key-compromise-runbook.md) covers a compromise. Rotation and moves of KEKs are tested (`KeyRotationJobsTest`, `KeyManagementServiceContract`) |
+| V11.1.2 | 2 | Done | T26 | The same document inventories keys, algorithms and certificates and where each may be used. SAML keys and certificates join it in T27 |
 | V11.2.1 | 2 | Partial | T27 | Tink, the JDK, KMS, Bouncy Castle and WebAuthn4J are merged, SAML libraries remain |
-| V11.2.2 | 2 | Partial | T26 | Ciphertexts carry a key version in the Tink prefix, password hashes carry their parameters (`PasswordHasherTest`), key rotation remains |
+| V11.2.2 | 2 | Exception | T26 | Ciphertexts carry a key version in the Tink prefix, password hashes carry their parameters (`PasswordHasherTest`), and [crypto-inventory.md](crypto-inventory.md) describes replacing an algorithm. KEKs rotate in the KMS and move to another KMS without encrypting data again (`KeyRotationJobsTest`). See [Exceptions](#exceptions) for the tenant key |
 | V11.2.3 | 2 | Partial | T27 | AES-256 and HMAC-SHA-256 are merged, SAML keys need RSA-3072 or stronger |
 | V11.3.1 | 1 | Done | T7 | Only AES-GCM through Tink and KMS envelopes (`FieldCipherTest`) |
 | V11.3.2 | 1 | Done | T7 | Only AES-GCM (`FieldCipherTest`, `PlatformCipherTest`) |

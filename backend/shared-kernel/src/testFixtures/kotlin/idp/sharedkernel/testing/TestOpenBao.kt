@@ -26,6 +26,23 @@ object TestOpenBao {
 
     val address: URI by lazy { URI("http://${openbao.host}:${openbao.getMappedPort(OPENBAO_PORT)}") }
 
+    /** What OpenBao does on its own schedule: a new version encrypts, the old ones still decrypt. */
+    fun rotate(kekUri: String) {
+        val rotation = openbao.execInContainer("bao", "write", "-f", "transit/keys/${keyName(kekUri)}/rotate")
+        check(rotation.exitCode == 0) { rotation.stderr }
+    }
+
+    fun keyField(
+        kekUri: String,
+        field: String,
+    ): String {
+        val read = openbao.execInContainer("bao", "read", "-field=$field", "transit/keys/${keyName(kekUri)}")
+        check(read.exitCode == 0) { read.stderr }
+        return read.stdout.trim()
+    }
+
+    private fun keyName(kekUri: String): String = kekUri.substringAfterLast('/')
+
     fun tokenWithPolicy(
         name: String,
         rules: String,
