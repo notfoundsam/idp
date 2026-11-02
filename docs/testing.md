@@ -10,6 +10,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | Application services | The service against a real Postgres, ports outside the database replaced by hand-written fakes | `IdentityServiceTest`, `SessionsTest` |
 | HTTP | The real application on a random port, called over HTTP | `app/src/test/.../login/FlowApiTest.kt` |
 | API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `OpsContractTest` |
+| Telemetry | The real application with spans kept in memory | `app/src/test/.../web/TracingTest.kt` |
 | Architecture | Module boundaries and the build graph | `architecture-tests` |
 | KMS and erasure journal | The AWS adapters against LocalStack | `*LocalStackTest` in `shared-kernel` |
 | Frontend | Unit tests | `frontend/packages/api-client` |
@@ -19,6 +20,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **Kotest** with `FunSpec` (`StringSpec` in a few specs) and `kotest-assertions`, on the JUnit Platform.
 - **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit and LocalStack. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs.
 - **ArchUnit** for architecture rules.
+- **OpenTelemetry SDK testing** for `InMemorySpanExporter`.
 - **Vitest** for the frontend.
 - **oasdiff** in CI for breaking changes in the API contracts.
 
@@ -34,6 +36,7 @@ Not used: MockMvc, the Spring test context, Mockito and MockK.
 - **Isolation.** A tenant isolation test uses at least two tenants.
 - **Time.** Code takes a `Clock`, and tests move it with `MovableClock`.
 - **Architecture rules.** Each rule has a fixture with a violation in `architecture-tests/src/test/kotlin/archfixtures`, and a new table needs an entry in `tableOwners`.
+- **Spans.** The services export nothing without an OTLP endpoint, so tests send nothing out. A test that reads spans passes a bean class with an `InMemorySpanExporter` as an extra source, sets `management.tracing.sampling.probability=1.0`, and flushes `SdkTracerProvider` before reading. The class has no `@Configuration`, or the component scan of every other spec in the module would pick it up.
 - **API contract.** A contract test built on `OpenApiContract` fails when the controllers and the contract list different operations, so a new endpoint needs its contract first. Responses, refusals included, are checked against the contract's schemas.
 
 ## Database

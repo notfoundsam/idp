@@ -16,6 +16,7 @@ kotest-assertions = { module = "io.kotest:kotest-assertions-core", version.ref =
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
 spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-opentelemetry = { module = "org.springframework.boot:spring-boot-starter-opentelemetry" }
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-web = { module = "org.springframework:spring-web" }
 spring-webmvc = { module = "org.springframework:spring-webmvc" }
@@ -32,6 +33,7 @@ snakeyaml = { module = "org.yaml:snakeyaml" }
 slf4j-api = { module = "org.slf4j:slf4j-api" }
 logback-classic = { module = "ch.qos.logback:logback-classic" }
 micrometer-core = { module = "io.micrometer:micrometer-core" }
+micrometer-registry-otlp = { module = "io.micrometer:micrometer-registry-otlp" }
 lettuce-core = { module = "io.lettuce:lettuce-core" }
 bucket4j-lettuce = { module = "com.bucket4j:bucket4j_jdk17-lettuce", version.ref = "bucket4j" }
 aws-sdk-kms = { module = "software.amazon.awssdk:kms", version.ref = "aws-sdk" }
@@ -48,6 +50,7 @@ jooq = { module = "org.jooq:jooq" }
 jooq-codegen = { module = "org.jooq:jooq-codegen" }
 postgresql = { module = "org.postgresql:postgresql" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

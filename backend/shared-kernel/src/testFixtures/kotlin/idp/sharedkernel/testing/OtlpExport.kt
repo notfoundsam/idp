@@ -1,0 +1,9 @@
+package idp.sharedkernel.testing
+
+/** What Spring Boot sets from `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER=otlp`, aimed at a closed port. */
+val OTLP_EXPORT =
+    arrayOf(
+        "--management.opentelemetry.tracing.export.otlp.endpoint=http://127.0.0.1:1/v1/traces",
+        "--management.otlp.metrics.export.url=http://127.0.0.1:1/v1/metrics",
+        "--management.otlp.metrics.export.enabled=true",
+    )

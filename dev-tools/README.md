@@ -5,6 +5,7 @@ The host needs Docker, also for compiling the backend, a JVM to run Gradle, and 
 ```bash
 make install   # /etc/hosts entries (asks for sudo), certificates, dependencies, jars
 make up        # builds the jars, starts everything, opens the dashboard
+make up-observability  # the same with Grafana LGTM, see Observability
 make smoke     # checks every service
 make stop      # stops containers and keeps data
 make clean     # removes containers and data
@@ -22,6 +23,7 @@ After a backend change run `make jars`, then `docker compose restart app`.
 | https://sp.idp.test/simplesaml/ | SimpleSAMLphp, test Service Provider (`admin` / `admin`) |
 | https://ops.idp.test | `ops` |
 | https://acme.idp.test, https://globex.idp.test | Tenants, `/api` and `/saml` go to `app` |
+| http://localhost:3000 | Grafana, only after `make up-observability` |
 
 Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0.1:5432`.
 
@@ -54,6 +56,35 @@ docker compose run --rm --no-deps ops java -jar /app/service.jar cli
 ```
 
 Without an operation it prints the usage. It exits with 1 when an operation is refused and with 2 on wrong arguments.
+
+## Observability
+
+`app`, `worker` and `ops` send traces and metrics over OTLP only when they get `OTEL_EXPORTER_OTLP_ENDPOINT`, and metrics also need `OTEL_METRICS_EXPORTER=otlp`. Spring Boot maps these OpenTelemetry variables to its own properties. `make up` passes neither, so the services export nothing. Compose passes them on from the shell, so a shell that sets them for something else sends telemetry there.
+
+`make up-observability` starts `grafana/otel-lgtm` under the `observability` profile and points the services at it. Every local request is sampled. Grafana with Tempo, Prometheus and Loki opens at http://localhost:3000 as `admin` / `admin`, and the data stays in the `idp-lgtm` volume. Logs do not reach Loki yet.
+
+A request span carries `tenant_id`. In Tempo, search with TraceQL, for example `{ resource.service.name = "app" && span.tenant_id = "<id>" }`. Metrics take about a minute to appear, because they are pushed once a minute.
+
+LGTM takes about 730 MiB when idle and about 790 MiB after a few hundred requests, while `app`, `worker` and `ops` take 330 to 410 MiB each. Measured on 2026-11-02 with `docker stats`.
+
+`make stop` and `make clean` include LGTM. `make up` alone leaves a running LGTM as it is.
+
+### Grafana for Claude Code
+
+[mcp-grafana](https://github.com/grafana/mcp-grafana) lets Claude Code query traces, metrics and logs. It is added in the local scope, so it stays in `~/.claude.json` for this checkout and its token never reaches the repository.
+
+1. In Grafana open Administration → Users and access → Service accounts, add one with the `Viewer` role and create a token for it.
+2. Add the server with the token:
+
+   ```bash
+   claude mcp add --scope local grafana -e GRAFANA_SERVICE_ACCOUNT_TOKEN=<token> \
+     -- docker run --rm -i --network idp_default \
+       -e GRAFANA_URL=http://lgtm:3000 -e GRAFANA_SERVICE_ACCOUNT_TOKEN \
+       grafana/mcp-grafana:2.1.1 -t stdio \
+       --enabled-tools=prometheus,loki,tempo --disable-write --usage-stats=disabled
+   ```
+
+`--enabled-tools` leaves only the Prometheus, Loki and Tempo tools, and `--disable-write` drops every tool that changes Grafana. A `Viewer` token could not change anything either. The data sources have the UIDs `prometheus`, `loki` and `tempo`. The server runs in the compose network, so it works only while LGTM runs.
 
 ## Secrets
 

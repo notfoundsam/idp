@@ -39,3 +39,9 @@ management:
     web:
       exposure:
         include: health
+  # Spring Boot maps OTEL_EXPORTER_OTLP_ENDPOINT to the trace exporter, which stays off without it.
+  # Metrics would go to localhost by default, so they wait for OTEL_METRICS_EXPORTER=otlp.
+  otlp:
+    metrics:
+      export:
+        enabled: false

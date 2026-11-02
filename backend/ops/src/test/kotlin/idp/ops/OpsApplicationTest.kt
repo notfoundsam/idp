@@ -1,10 +1,14 @@
 package idp.ops
 
+import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.throttle.RateLimiter
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.maps.shouldBeEmpty
+import io.kotest.matchers.maps.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.micrometer.registry.otlp.OtlpMeterRegistry
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import org.springframework.boot.runApplication
 import java.net.URI
 import java.net.http.HttpClient
@@ -50,6 +54,17 @@ class OpsApplicationTest :
         "ops creates no Valkey adapter" {
             runApplication<OpsApplication>(*arguments).use { context ->
                 context.getBeansOfType(RateLimiter::class.java).shouldBeEmpty()
+            }
+        }
+
+        "traces and metrics leave only for an OTLP endpoint" {
+            runApplication<OpsApplication>(*arguments).use { context ->
+                context.getBeansOfType(SpanExporter::class.java).shouldBeEmpty()
+                context.getBeansOfType(OtlpMeterRegistry::class.java).shouldBeEmpty()
+            }
+            runApplication<OpsApplication>(*arguments, *OTLP_EXPORT).use { context ->
+                context.getBeansOfType(SpanExporter::class.java).shouldNotBeEmpty()
+                context.getBeansOfType(OtlpMeterRegistry::class.java).shouldNotBeEmpty()
             }
         }
     })

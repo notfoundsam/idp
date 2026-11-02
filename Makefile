@@ -1,7 +1,7 @@
 FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 
-.PHONY: install up stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend lint frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend lint frontend-install
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -9,11 +9,16 @@ up: jars
 	docker compose up -d --wait --wait-timeout 180
 	@command -v open >/dev/null && open https://dashboard.idp.test || xdg-open https://dashboard.idp.test || true
 
+up-observability: export COMPOSE_PROFILES = observability
+up-observability: export OTEL_EXPORTER_OTLP_ENDPOINT = http://lgtm:4318
+up-observability: export OTEL_METRICS_EXPORTER = otlp
+up-observability: up
+
 stop:
-	docker compose stop
+	docker compose --profile '*' stop
 
 clean:
-	docker compose down -v
+	docker compose --profile '*' down -v
 
 cleanup:
 	./dev-tools/cleanup.sh
