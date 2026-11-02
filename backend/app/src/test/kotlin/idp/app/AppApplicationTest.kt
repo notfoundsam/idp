@@ -4,13 +4,18 @@ import idp.audit.application.AuditService
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
+import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.testing.TestDatabase
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.maps.shouldBeEmpty
+import io.kotest.matchers.maps.shouldNotBeEmpty
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.micrometer.registry.otlp.OtlpMeterRegistry
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import org.springframework.boot.runApplication
 import java.net.URI
 import java.net.http.HttpClient
@@ -76,5 +81,16 @@ class AppApplicationTest :
 
         "new keys need a configured adapter" {
             shouldThrowAny { runApplication<AppApplication>(*arguments, "--KMS_NEW_KEYS=aws-kms") }
+        }
+
+        "traces and metrics leave only for an OTLP endpoint" {
+            runApplication<AppApplication>(*arguments).use { context ->
+                context.getBeansOfType(SpanExporter::class.java).shouldBeEmpty()
+                context.getBeansOfType(OtlpMeterRegistry::class.java).shouldBeEmpty()
+            }
+            runApplication<AppApplication>(*arguments, *OTLP_EXPORT).use { context ->
+                context.getBeansOfType(SpanExporter::class.java).shouldNotBeEmpty()
+                context.getBeansOfType(OtlpMeterRegistry::class.java).shouldNotBeEmpty()
+            }
         }
     })

@@ -85,6 +85,20 @@ health() {
   docker compose exec -T "$1" curl -fs http://localhost:8081/actuator/health | grep -q '"status":"UP"'
 }
 
+lgtm_running() {
+  [ -n "$(docker compose --profile '*' ps -q --status running lgtm 2>/dev/null)" ]
+}
+
+# Spans leave in batches every five seconds, and the checks above have just sent the requests.
+traces_reach_tempo() {
+  for _ in $(seq 1 15); do
+    docker compose --profile '*' exec -T lgtm curl -s -G http://127.0.0.1:3200/api/search \
+      --data-urlencode "q={ resource.service.name = \"$1\" }" | grep -q '"traceID"' && return
+    sleep 1
+  done
+  return 1
+}
+
 wait_for_routes
 
 check "http redirects to https" http_redirects
@@ -105,5 +119,11 @@ check "ops token cannot decrypt" ops_encrypts_only
 check "app health" health app
 check "worker health" health worker
 check "ops health" health ops
+
+if lgtm_running; then
+  check "app traces reach Tempo" traces_reach_tempo app
+  check "worker traces reach Tempo" traces_reach_tempo worker
+  check "ops traces reach Tempo" traces_reach_tempo ops
+fi
 
 exit "$failed"

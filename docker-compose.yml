@@ -19,6 +19,12 @@ x-java-service: &java-service
     mail:
       condition: service_started
 
+# Without a value Compose takes them from `make up-observability` or leaves them out, and the services then export nothing.
+x-otel-environment: &otel-environment
+  OTEL_EXPORTER_OTLP_ENDPOINT:
+  OTEL_METRICS_EXPORTER:
+  OTEL_TRACES_SAMPLER: parentbased_always_on
+
 services:
   traefik:
     image: traefik:v3.7.17
@@ -182,6 +188,7 @@ services:
   app:
     <<: *java-service
     environment:
+      <<: *otel-environment
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
       # Without server-side prepared statements, because PgBouncer shares connections between clients.
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
@@ -208,6 +215,7 @@ services:
   worker:
     <<: *java-service
     environment:
+      <<: *otel-environment
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
       SPRING_PROFILES_ACTIVE: local
       # Without server-side prepared statements, because PgBouncer shares connections between clients.
@@ -246,6 +254,7 @@ services:
   ops:
     <<: *java-service
     environment:
+      <<: *otel-environment
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
       # Stands in for SAML with a fixed operator. This is why the API stays inside compose.
       SPRING_PROFILES_ACTIVE: local
@@ -267,6 +276,15 @@ services:
       - traefik.http.routers.ops.priority=100
       - traefik.http.services.ops.loadbalancer.server.port=8080
 
+  # Grafana with Tempo, Prometheus and Loki behind one OTLP endpoint. It takes a lot of memory, so it runs only on request.
+  lgtm:
+    image: grafana/otel-lgtm:0.38.0
+    profiles: [observability]
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - idp-lgtm:/data
+
   frontend:
     image: node:24.22.2-alpine
     profiles: [tools]
@@ -282,5 +300,6 @@ volumes:
   idp-postgres:
   idp-openbao:
   idp-erasures:
+  idp-lgtm:
   idp-frontend-node-modules:
   idp-corepack-cache:

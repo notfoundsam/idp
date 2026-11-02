@@ -350,7 +350,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V16.2.2 | 2 | Partial | T38 | Audit stores instants, logs need UTC |
 | V16.2.3 | 2 | Planned | T38 | Logs go only to the listed destinations |
 | V16.2.4 | 2 | Planned | T38 | Structured JSON logs |
-| V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), `NoPiiInLogsTest` covers the rest |
+| V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), request spans carry the tenant ID but no email, password or SAML message (`TracingTest`), `NoPiiInLogsTest` covers the rest |
 | V16.3.1 | 2 | Done | T23 | Successful and failed logins with the factor type (`FlowApiTest`) |
 | V16.3.2 | 2 | Partial | T28, T29 | Bus denials are audited (`BusDenialTest`), SAML denials remain |
 | V16.3.3 | 2 | Partial | T28, T38 | Denials are audited and a throttle refusal reaches the log of security events (`ThrottleTest`, `LoginLimitsTest`), refused SAML messages remain |

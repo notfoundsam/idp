@@ -30,7 +30,7 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 - Stored only in a form that cannot log anyone in: Argon2id for passwords, SHA-256 for tokens and recovery codes, the TOTP secret encrypted with the user key. Passkeys keep only the public key.
 - Tokens are single use and short lived: invitations 72 hours, reset and email change 1 hour, flows 15 minutes, sessions at most the absolute timeout of the policy. Cleanup jobs delete what has expired.
 - A token travels in a URL fragment or a request body, never in a query string.
-- Never logged and never in an audit record, not even as a hash.
+- Never logged, never in a trace and never in an audit record, not even as a hash.
 
 ### Personal data
 
@@ -38,7 +38,7 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 - Email lookup goes through a blind index, an HMAC under a key derived from the tenant key.
 - An audit record keeps the IP and details under the key of the actor, so erasing a user also erases what they left in the journal, but not what others did to them.
 - Erasing a user deletes the row and the user key at once. Copies in backups become unreadable with the key and expire with the backups after 30 days. The erasure journal brings the erasure back after a restore, see [restore-runbook.md](restore-runbook.md).
-- Never in logs, events, exception messages or metrics. Logs and events carry IDs only.
+- Never in logs, events, exception messages, metrics or traces. Logs, events and traces carry IDs only.
 - Reached only inside the transaction of its tenant, under the role of that tenant. `ops` cannot reach it.
 
 ### Customer configuration
@@ -56,7 +56,7 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 ### Identifiers
 
 - Random UUIDs, never reused. A user who comes back by the same address gets a new ID, so an SP cannot mistake them for the erased account.
-- Free to appear in logs, events, metrics and the erasure journal.
+- Free to appear in logs, events, metrics, traces and the erasure journal.
 - The erasure journal keeps them for the backup retention plus a margin, under Object Lock.
 
 ## Deleting a tenant

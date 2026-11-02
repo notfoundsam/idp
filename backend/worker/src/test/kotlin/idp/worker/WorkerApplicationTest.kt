@@ -7,6 +7,7 @@ import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.erasure.ErasureJournal
 import idp.sharedkernel.erasure.adapter.FileErasureJournal
 import idp.sharedkernel.tenant.TenantStatus
+import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.throttle.RateLimiter
 import idp.tenancy.application.NewApplication
@@ -20,10 +21,13 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.maps.shouldBeEmpty
+import io.kotest.matchers.maps.shouldNotBeEmpty
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.micrometer.registry.otlp.OtlpMeterRegistry
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import org.springframework.boot.runApplication
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.mail.javamail.JavaMailSenderImpl
@@ -78,6 +82,17 @@ class WorkerApplicationTest :
         "worker creates no Valkey adapter" {
             runApplication<WorkerApplication>(*arguments).use { context ->
                 context.getBeansOfType(RateLimiter::class.java).shouldBeEmpty()
+            }
+        }
+
+        "traces and metrics leave only for an OTLP endpoint" {
+            runApplication<WorkerApplication>(*arguments).use { context ->
+                context.getBeansOfType(SpanExporter::class.java).shouldBeEmpty()
+                context.getBeansOfType(OtlpMeterRegistry::class.java).shouldBeEmpty()
+            }
+            runApplication<WorkerApplication>(*arguments, *OTLP_EXPORT).use { context ->
+                context.getBeansOfType(SpanExporter::class.java).shouldNotBeEmpty()
+                context.getBeansOfType(OtlpMeterRegistry::class.java).shouldNotBeEmpty()
             }
         }
 
