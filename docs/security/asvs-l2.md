@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 33 |
-| Partial | Part of the control is merged, the listed tasks finish it | 55 |
-| Planned | The listed tasks build the control | 95 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 55 |
+| Partial | Part of the control is merged, the listed tasks finish it | 57 |
+| Planned | The listed tasks build the control | 71 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -33,11 +33,11 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V1.1.1 | 2 | Planned | T23, T28 | Input is decoded once, before validation, including SAML base64 and DEFLATE |
+| V1.1.1 | 2 | Partial | T28 | JSON and base64url are decoded once, before validation (`FlowApiTest`), SAML base64 and DEFLATE remain |
 | V1.1.2 | 2 | Partial | T29, T31 | Encoding at the sink: mail templates and jOOQ are merged, SAML form and SPA remain |
 | V1.2.1 | 1 | Partial | T29, T31 | HTML mail is escaped (`MailTemplatesTest`), SAML form and SPA remain |
 | V1.2.2 | 1 | Planned | T24, T27 | ACS URLs are `https` only, mail links are built from the tenant host |
-| V1.2.3 | 1 | Planned | T23, T31 | JSON comes only from the serializer, no JavaScript is built dynamically |
+| V1.2.3 | 1 | Partial | T31 | JSON comes only from the serializer (`FlowContractTest`), the frontend remains |
 | V1.2.4 | 1 | Done | T4, T5 | jOOQ binds every value, DDL identifiers derive only from a tenant UUID (`TenantIsolationTest`) |
 | V1.2.5 | 1 | N/A | | The application starts no OS processes |
 | V1.2.6 | 2 | N/A | | No LDAP |
@@ -67,35 +67,35 @@ A change that adds, removes or weakens a control updates its row in the same pul
 |---|---|---|---|---|
 | V2.1.1 | 1 | Planned | T36 | `docs/security/input-validation.md` and the OpenAPI contracts define input rules |
 | V2.1.2 | 2 | Planned | T36 | The same document covers combined data items |
-| V2.1.3 | 2 | Planned | T23 | `docs/security/limits.md` lists per-user and global limits |
-| V2.2.1 | 1 | Partial | T23, T32, T34, T36 | Domain types validate on the server (`TenantTest`), each API adds its inputs |
-| V2.2.2 | 1 | Partial | T23, T32, T34, T36 | Validation lives in the domain and the audience, client checks are convenience only |
+| V2.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists per-user and global limits |
+| V2.2.1 | 1 | Partial | T32, T34, T36 | Domain types validate on the server (`TenantTest`), the login API refuses malformed input (`FlowApiTest`), each API adds its inputs |
+| V2.2.2 | 1 | Partial | T32, T34, T36 | Validation lives in the domain and the audience, client checks are convenience only |
 | V2.2.3 | 2 | Planned | T34, T36 | Policy and SP settings are checked as a combination |
-| V2.3.1 | 1 | Partial | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API remains |
-| V2.3.2 | 2 | Planned | T23 | The limits from `docs/security/limits.md` are enforced |
+| V2.3.1 | 1 | Done | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API cannot skip one (`FlowApiTest`) |
+| V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
-| V2.3.4 | 2 | Partial | T23 | Invitation tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps remain |
-| V2.4.1 | 2 | Partial | T23, T28, T40 | The throttle decorator is merged (`ThrottleTest`), message limits, SAML filter and WAF remain |
+| V2.3.4 | 2 | Done | T23 | Invitation tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
+| V2.4.1 | 2 | Partial | T28, T40 | The throttle decorator and the limits of the login are merged (`ThrottleTest`, `LoginLimitsTest`), SAML filter and WAF remain |
 
 ## V3 Web Frontend Security
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V3.2.1 | 1 | Planned | T23, T29 | The API answers JSON with `nosniff` and a closed CSP, uploaded files are never served |
+| V3.2.1 | 1 | Partial | T29 | The API answers JSON with `nosniff` and a closed CSP (`ResponseHeadersTest`, `OpsApiTest`), the SAML form remains. Uploaded files are never served |
 | V3.2.2 | 1 | Planned | T31 | Vue interpolation only, a lint rule forbids `v-html` |
-| V3.3.1 | 1 | Partial | T23 | The session cookie is `Secure` (`SessionCookieTest`), the other cookies remain |
-| V3.3.2 | 2 | Partial | T23 | The session cookie is `SameSite=Lax` (`SessionCookieTest`), a stated value on every other cookie remains |
-| V3.3.3 | 2 | Partial | T23 | The session cookie uses `__Host-` (`SessionCookieTest`), the other cookies remain |
+| V3.3.1 | 1 | Done | T23 | Every cookie is `Secure` (`ResponseHeadersTest`) |
+| V3.3.2 | 2 | Done | T23 | The session cookie is `SameSite=Lax`, the flow and CSRF cookies `SameSite=Strict` (`SessionCookieTest`, `FlowCookieTest`, `CsrfCookieTest`, `ResponseHeadersTest`) |
+| V3.3.3 | 2 | Done | T23 | Every cookie uses `__Host-` (`ResponseHeadersTest`) |
 | V3.3.4 | 2 | Done | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` (`SessionCookieTest`) |
-| V3.4.1 | 1 | Planned | T23, T31, T40 | HSTS with one year and `includeSubDomains` on every response |
-| V3.4.2 | 1 | Planned | T23 | The API is same-origin and sends no CORS headers |
-| V3.4.3 | 2 | Planned | T23, T29, T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'`, nonce on the SAML form |
-| V3.4.4 | 2 | Planned | T23, T31, T40 | `nosniff` on every response |
-| V3.4.5 | 2 | Planned | T23, T31, T40 | `Referrer-Policy` on every response |
-| V3.4.6 | 2 | Planned | T23, T31, T40 | `frame-ancestors 'none'` on every response |
-| V3.5.1 | 1 | Planned | T23 | Anti-forgery token on sensitive API calls |
+| V3.4.1 | 1 | Partial | T31, T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.2 | 1 | Done | T23 | The API is same-origin and sends no CORS headers (`ResponseHeadersTest`) |
+| V3.4.3 | 2 | Partial | T29, T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`), nonce on the SAML form and static files remain |
+| V3.4.4 | 2 | Partial | T31, T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.5 | 2 | Partial | T31, T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.6 | 2 | Partial | T31, T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.5.1 | 1 | Done | T23 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`) |
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
-| V3.5.3 | 1 | Planned | T23, T29, T34 | State changes use unsafe methods, the SAML resume `GET` is bound to the browser and consumed once |
+| V3.5.3 | 1 | Partial | T29, T34 | State changes of the login use `POST` (`FlowContractTest`), the SAML resume `GET` and the admin API remain |
 | V3.5.4 | 2 | Partial | T30, T40 | Each tenant has its own host (`TenantFilterTest`), `ops` is separate. Login and console form one application |
 | V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
 | V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
@@ -105,7 +105,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Planned | T23, T27, T29, T31 | Every body has a matching `Content-Type` with a charset |
+| V4.1.1 | 1 | Partial | T27, T29, T31 | Every JSON body names its charset (`ResponseHeadersTest`, `OpsApiTest`), XML and HTML remain |
 | V4.1.2 | 2 | Planned | T40 | Only `/login/*` and `/console/*` redirect to HTTPS, `/api/*` and `/saml/*` refuse plain HTTP |
 | V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
 | V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
@@ -136,9 +136,9 @@ SP metadata import is the only file upload.
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V6.1.1 | 1 | Planned | T23 | `docs/security/authentication.md` covers rate limits and malicious lockout |
-| V6.1.2 | 2 | Partial | T23 | Context-specific words are refused (`PasswordPolicyTest`), the document that lists them remains |
-| V6.1.3 | 2 | Planned | T23 | The same document lists every pathway with its strength |
+| V6.1.1 | 1 | Done | T23 | `docs/security/authentication.md` covers rate limits and malicious lockout |
+| V6.1.2 | 2 | Done | T23 | Context-specific words are refused (`PasswordPolicyTest`) and listed in the same document |
+| V6.1.3 | 2 | Done | T23 | The same document lists every pathway with its strength |
 | V6.2.1 | 1 | Partial | T31, T33 | At least 8 characters (`PasswordPolicyTest`), the UI hint for 15 remains |
 | V6.2.2 | 1 | Planned | T32 | Users change their password in the account area |
 | V6.2.3 | 1 | Planned | T32 | The change requires the current password |
@@ -151,10 +151,10 @@ SP metadata import is the only file upload.
 | V6.2.10 | 2 | Partial | T34 | A credential has no expiry (`PasswordCredential`), the test that the policy offers none remains |
 | V6.2.11 | 2 | Done | T18 | Context-specific words are refused (`PasswordPolicyTest`, `PasswordServiceTest`) |
 | V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
-| V6.3.1 | 1 | Partial | T23 | Growing delay and attempt counters in Postgres (`PasswordServiceTest`, `TotpServiceTest`), login throttling remains |
+| V6.3.1 | 1 | Done | T23 | Growing delay and attempt counters in Postgres, which hold without the throttle (`PasswordServiceTest`, `TotpServiceTest`, `LoginLimitsTest`), and limits by address and tenant (`LoginLimitsTest`, `LoginThrottleConfigTest`) |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
 | V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`), its relaxing remains. See [Exceptions](#exceptions) |
-| V6.3.4 | 2 | Planned | T23 | Every pathway goes through `AuthFlow`, the document has no undocumented entry |
+| V6.3.4 | 2 | Done | T23 | Every session starts from `AuthFlow`, and `docs/security/authentication.md` lists every pathway |
 | V6.4.1 | 1 | Partial | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), setting the first password remains |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
 | V6.4.3 | 2 | Planned | T24 | A reset never opens a session, the next login still asks for the second factor |
@@ -190,7 +190,7 @@ SP metadata import is the only file upload.
 | V7.4.3 | 2 | Planned | T24, T32 | A factor change offers ending other sessions, a reset ends them |
 | V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
-| V7.5.1 | 2 | Planned | T23, T24, T32 | Email and factor changes require fresh authentication |
+| V7.5.1 | 2 | Partial | T24, T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), the email and factor messages remain |
 | V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
 | V7.6.1 | 2 | Planned | T29, T30 | SP session bounds are stated in the assertion and follow the document |
 | V7.6.2 | 2 | Planned | T28, T29 | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed |
@@ -201,7 +201,7 @@ SP metadata import is the only file upload.
 |---|---|---|---|---|
 | V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
 | V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
-| V8.2.1 | 1 | Partial | T23, T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`), each audience adds its rules |
+| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`, each other audience adds its rules |
 | V8.2.2 | 1 | Planned | T32, T34, T36 | Handlers take the user from the context and check ownership |
 | V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
 | V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), each audience adds its rules |
@@ -305,7 +305,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
 | V13.4.2 | 2 | Partial | T41 | JDWP exists only in local compose, production task definitions must prove it |
 | V13.4.3 | 2 | Planned | T31, T40 | No listing in nginx or S3 |
-| V13.4.4 | 2 | Planned | T23 | `TRACE` is refused, with a test |
+| V13.4.4 | 2 | Done | T23 | `TRACE` is refused (`ResponseHeadersTest`, `OpsApiTest`) |
 | V13.4.5 | 2 | Partial | T41 | Management port exposes only health (`AppApplicationTest`), it must stay private |
 
 ## V14 Data Protection
@@ -319,7 +319,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
 | V14.2.4 | 2 | Partial | T25, T38 | Field encryption, audit, users and sessions are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`), logs remain |
 | V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
-| V14.3.2 | 2 | Planned | T23 | `Cache-Control: no-store` on all `/api/*` |
+| V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
 | V14.3.3 | 2 | Planned | T31 | Nothing sensitive in browser storage |
 
 ## V15 Secure Coding and Architecture
@@ -328,17 +328,17 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V15.1.1 | 1 | Planned | T42 | `docs/security/dependencies.md` defines remediation time frames |
 | V15.1.2 | 2 | Partial | T42 | The dependency graph reaches GitHub from CI, a release SBOM remains |
-| V15.1.3 | 2 | Planned | T23 | `docs/security/limits.md` lists expensive operations |
+| V15.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists expensive operations |
 | V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
-| V15.2.2 | 2 | Partial | T23, T28 | Throttling and the hash semaphore are merged (`HashLimitTest`), flow limits and a DEFLATE size limit remain |
+| V15.2.2 | 2 | Partial | T28 | Throttling, the hash semaphore and the limits on flows and request size are merged (`HashLimitTest`, `LoginLimitsTest`), a DEFLATE size limit remains |
 | V15.2.3 | 2 | Partial | T41 | Seed runs only in `local` (`LocalSeedTest`), production must never set that profile |
-| V15.3.1 | 1 | Partial | T23, T32, T34, T36 | Audiences own responses (`OpsApiTest`), each API adds its own |
+| V15.3.1 | 1 | Partial | T32, T34, T36 | Audiences own responses (`OpsApiTest`, `FlowContractTest`), each API adds its own |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
-| V15.3.3 | 2 | Planned | T23 | Commands list their fields, unknown fields are refused |
+| V15.3.3 | 2 | Done | T23 | Requests list their fields, unknown fields are refused (`FlowApiTest`, `OpsApiTest`) |
 | V15.3.4 | 2 | Partial | T40, T41 | One trusted header (`ClientIpTest`), the edge must set it |
 | V15.3.5 | 2 | Partial | T31 | Kotlin is statically typed, the frontend needs strict TypeScript and `eqeqeq` |
 | V15.3.6 | 2 | Planned | T31 | `Map` and `Set` for keyed data, enforced by lint |
-| V15.3.7 | 2 | Planned | T23, T28 | Each value has one declared source, repeated SAML parameters are refused |
+| V15.3.7 | 2 | Partial | T28 | Each value of the API has one declared source (`FlowApiTest`), repeated SAML parameters remain |
 
 ## V16 Security Logging and Error Handling
 
@@ -350,16 +350,16 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V16.2.3 | 2 | Planned | T38 | Logs go only to the listed destinations |
 | V16.2.4 | 2 | Planned | T38 | Structured JSON logs |
 | V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), `NoPiiInLogsTest` covers the rest |
-| V16.3.1 | 2 | Planned | T23 | Successful and failed logins with the factor type |
+| V16.3.1 | 2 | Done | T23 | Successful and failed logins with the factor type (`FlowApiTest`) |
 | V16.3.2 | 2 | Partial | T28, T29 | Bus denials are audited (`BusDenialTest`), SAML denials remain |
-| V16.3.3 | 2 | Partial | T23, T28, T38 | Denials are audited, throttling and refused SAML messages remain |
+| V16.3.3 | 2 | Partial | T28, T38 | Denials are audited and a throttle refusal reaches the log of security events (`ThrottleTest`, `LoginLimitsTest`), refused SAML messages remain |
 | V16.3.4 | 2 | Planned | T38 | Unexpected errors and backend TLS failures are logged and alerted |
 | V16.4.1 | 2 | Planned | T38 | The JSON encoder escapes log content |
 | V16.4.2 | 2 | Partial | T41 | Audit is append-only (`AuditTest`), log storage remains |
 | V16.4.3 | 2 | Planned | T38, T41 | Logs leave the services through the collector for a separate store |
-| V16.5.1 | 2 | Partial | T23 | `BusExceptionAdvice` answers refusals without a body, this and unexpected errors need a test |
-| V16.5.2 | 2 | Partial | T23 | Valkey and KMS failures are handled (`ThrottleTest`, `KeyHierarchyTest`), database failure remains |
-| V16.5.3 | 2 | Partial | T23 | The bus denies on a missing rule (`BusDecoratorsTest`), the API needs a fail-closed test |
+| V16.5.1 | 2 | Done | T23 | `BusExceptionAdvice` answers refusals without a body, an unexpected error answers in general terms (`FailureResponsesTest`) |
+| V16.5.2 | 2 | Done | T23 | Valkey, KMS and database failures are handled (`ThrottleTest`, `KeyHierarchyTest`, `FailureResponsesTest`) |
+| V16.5.3 | 2 | Done | T23 | The bus denies on a missing rule (`BusDecoratorsTest`), a failed step proves nothing and opens no session (`FailureResponsesTest`) |
 
 ## V17 WebRTC
 

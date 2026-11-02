@@ -9,6 +9,7 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.net.URI
 import java.net.http.HttpClient
+import java.net.http.HttpHeaders
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.UUID
@@ -63,8 +64,11 @@ class OpsEnvironment {
 class OpsResponse(
     val status: Int,
     val body: String,
+    private val headers: HttpHeaders,
 ) {
     fun json(): JsonNode = JsonMapper().readTree(body)
+
+    fun header(name: String): String? = headers.firstValue(name).orElse(null)
 }
 
 class OpsClient(
@@ -73,6 +77,8 @@ class OpsClient(
     private val http = HttpClient.newHttpClient()
 
     fun get(path: String) = send(HttpRequest.newBuilder(uri(path)).GET())
+
+    fun trace(path: String) = send(HttpRequest.newBuilder(uri(path)).method("TRACE", HttpRequest.BodyPublishers.noBody()))
 
     fun post(
         path: String,
@@ -99,6 +105,6 @@ class OpsClient(
 
     private fun send(request: HttpRequest.Builder): OpsResponse {
         val response = http.send(request.build(), HttpResponse.BodyHandlers.ofString())
-        return OpsResponse(response.statusCode(), response.body())
+        return OpsResponse(response.statusCode(), response.body(), response.headers())
     }
 }

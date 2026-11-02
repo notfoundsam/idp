@@ -4,15 +4,20 @@ import idp.authentication.domain.AuthFactor.PASSKEY
 import idp.authentication.domain.AuthFactor.PASSWORD
 import idp.authentication.domain.AuthFactor.RECOVERY_CODE
 import idp.authentication.domain.AuthFactor.TOTP
+import idp.sharedkernel.domain.Conflict
 import idp.sharedkernel.domain.DomainRuleViolation
+import idp.sharedkernel.domain.Expired
 import idp.sharedkernel.security.UserRole
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
-class FlowExpired : DomainRuleViolation("The login has expired")
+class FlowExpired : Expired("The login has expired")
 
-class StepNotAllowed : DomainRuleViolation("This step is not allowed now")
+class StepNotAllowed : Conflict("This step is not allowed now")
+
+/** Another request is checking a credential on this flow. */
+class StepInProgress : Conflict("This step is already being checked")
 
 /** The same answer whether the entered login exists or not: a passkey of one's own must not probe the logins of others. */
 class PasskeyNotAccepted : DomainRuleViolation("The passkey is not valid")
@@ -74,6 +79,24 @@ internal class AuthFlow(
         }
     }
 
+    /** Asked before a credential is checked, so a request for the wrong step costs no hash and spends no attempt. */
+    fun accepts(
+        factor: AuthFactor,
+        now: Instant,
+    ): Boolean =
+        when (val step = step(now)) {
+            FlowStep.Identify -> factor == PASSKEY
+            FlowStep.Password -> factor == PASSWORD || factor == PASSKEY
+            is FlowStep.SecondFactor -> factor in step.factors
+            is FlowStep.EnrollMfa, FlowStep.Complete -> false
+        }
+
+    /** Separate from [accepts]: offering a factor as proof must never let someone add one. */
+    fun enrolls(
+        factor: AuthFactor,
+        now: Instant,
+    ): Boolean = (step(now) as? FlowStep.EnrollMfa)?.let { factor in it.factors } == true
+
     /** Pass null when the login matched nobody. [login] is what was entered, already encrypted. */
     fun identify(
         user: FlowUser?,
@@ -95,10 +118,8 @@ internal class AuthFlow(
         owner: FlowUser,
         now: Instant,
     ) {
-        val step = step(now)
-        val offered = step == FlowStep.Identify || step == FlowStep.Password || step is FlowStep.SecondFactor && PASSKEY in step.factors
-        if (!offered) throw StepNotAllowed()
-        if (step != FlowStep.Identify && user?.id != owner.id) throw PasskeyNotAccepted()
+        if (!accepts(PASSKEY, now)) throw StepNotAllowed()
+        if (step(now) != FlowStep.Identify && user?.id != owner.id) throw PasskeyNotAccepted()
         user = owner
         proved += PASSKEY
     }
@@ -112,8 +133,7 @@ internal class AuthFlow(
         factor: AuthFactor,
         now: Instant,
     ) {
-        val step = step(now)
-        if (step !is FlowStep.EnrollMfa || factor !in step.factors) throw StepNotAllowed()
+        if (!enrolls(factor, now)) throw StepNotAllowed()
         proved += factor
         user = user?.run { FlowUser(id, role, enrolled + factor) }
     }
@@ -122,8 +142,7 @@ internal class AuthFlow(
         factor: AuthFactor,
         now: Instant,
     ) {
-        val step = step(now)
-        if (step !is FlowStep.SecondFactor || factor !in step.factors) throw StepNotAllowed()
+        if (step(now) !is FlowStep.SecondFactor || !accepts(factor, now)) throw StepNotAllowed()
         proved += factor
     }
 

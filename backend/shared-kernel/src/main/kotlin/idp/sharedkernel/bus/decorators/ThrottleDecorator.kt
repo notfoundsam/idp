@@ -1,6 +1,7 @@
 package idp.sharedkernel.bus.decorators
 
 import idp.sharedkernel.bus.Message
+import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.throttle.RateDecision
 import idp.sharedkernel.throttle.RateLimiter
 import idp.sharedkernel.throttle.ThrottleConfig
@@ -8,7 +9,10 @@ import idp.sharedkernel.throttle.ThrottleKeys
 import idp.sharedkernel.throttle.ThrottleLimit
 import idp.sharedkernel.throttle.ThrottleRule
 import idp.sharedkernel.throttle.TooManyRequestsException
+import org.slf4j.LoggerFactory
 import kotlin.reflect.KClass
+
+private val securityEvents = LoggerFactory.getLogger("idp.security")
 
 class ThrottleDecorator(
     configs: List<ThrottleConfig>,
@@ -24,14 +28,25 @@ class ThrottleDecorator(
             all + config.rules
         }
 
-    /** Stops at the first refusal, so a blocked IP cannot spend the bucket of its whole tenant. */
+    /**
+     * Stops at the first refusal, so a blocked IP cannot spend the bucket of its whole tenant. A refusal goes to the log and not to the
+     * audit journal: a row per refusal would turn the flood this stops into writes on Postgres.
+     */
     override fun <R> around(
         message: Message<R>,
         next: () -> R,
     ): R {
         rules[message::class].orEmpty().ifEmpty { defaultRules }.forEach { rule ->
             val decision = limiter.acquire(keys.key(message.javaClass.name, rule.dimension), rule.limit)
-            if (decision is RateDecision.Rejected) throw TooManyRequestsException(decision.retryAfter)
+            if (decision is RateDecision.Rejected) {
+                securityEvents.warn(
+                    "event=throttle.rejected message={} dimension={} tenant={}",
+                    message.javaClass.name,
+                    rule.dimension,
+                    TenantContext.current().tenantId,
+                )
+                throw TooManyRequestsException(decision.retryAfter)
+            }
         }
         return next()
     }

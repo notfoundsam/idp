@@ -1,9 +1,12 @@
 package idp.sharedkernel.web
 
+import idp.sharedkernel.domain.Conflict
 import idp.sharedkernel.domain.DomainRuleViolation
+import idp.sharedkernel.domain.Expired
 import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.security.AccessDeniedException
+import idp.sharedkernel.security.ReauthenticationRequiredException
 import idp.sharedkernel.throttle.TooManyRequestsException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -26,11 +29,22 @@ class BusExceptionAdvice {
     fun accessDenied(failure: AccessDeniedException): ResponseEntity<Void> =
         ResponseEntity.status(if (failure.authenticated) HttpStatus.FORBIDDEN else HttpStatus.UNAUTHORIZED).build()
 
+    /** The only refusal with a body: 403 alone cannot tell a client that logging in again would help. */
+    @ExceptionHandler
+    fun reauthenticationRequired(failure: ReauthenticationRequiredException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.FORBIDDEN).body(mapOf("error" to "reauthentication_required"))
+
     @ExceptionHandler
     fun notFound(failure: NotFound): ResponseEntity<Void> = ResponseEntity.notFound().build()
 
     @ExceptionHandler
     fun versionConflict(failure: VersionConflictException): ResponseEntity<Void> = ResponseEntity.status(HttpStatus.CONFLICT).build()
+
+    @ExceptionHandler
+    fun conflict(failure: Conflict): ResponseEntity<Void> = ResponseEntity.status(HttpStatus.CONFLICT).build()
+
+    @ExceptionHandler
+    fun expired(failure: Expired): ResponseEntity<Void> = ResponseEntity.status(HttpStatus.GONE).build()
 
     /** Status alone: exception texts can carry personal data. */
     @ExceptionHandler

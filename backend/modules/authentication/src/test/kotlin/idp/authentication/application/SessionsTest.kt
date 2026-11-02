@@ -4,6 +4,7 @@ import idp.authentication.adapters.persistence.TenantPolicies
 import idp.authentication.domain.AuthFactor
 import idp.authentication.domain.FlowExpired
 import idp.authentication.domain.FlowStep
+import idp.authentication.domain.StepInProgress
 import idp.authentication.domain.StepNotAllowed
 import idp.authentication.domain.TenantPolicy
 import idp.identity.application.IdentityService
@@ -23,7 +24,6 @@ import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.persistence.VersionConflictException
-import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.Role
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.tenant.TenantContext
@@ -31,6 +31,7 @@ import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.MovableClock
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
+import idp.sharedkernel.throttle.TooManyRequestsException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -59,6 +60,7 @@ private val ADMIN = Actor.User(UUID.randomUUID())
 private val KEY_CACHE_TTL: Duration = Duration.ofMinutes(1)
 private val LAST_SEEN_INTERVAL: Duration = Duration.ofMinutes(1)
 private val FLOW_TTL: Duration = Duration.ofMinutes(15)
+private val STEP_LEASE: Duration = Duration.ofSeconds(30)
 private val RELAXED = TenantPolicy(mfaForUsers = false)
 
 private class SessionAudit : AuditLog {
@@ -82,7 +84,9 @@ private class SessionsFixture {
     val audit = SessionAudit()
     val identity = IdentityService(transaction, keys, audit, OutboxPublisher(), clock)
     val policies = TenantPolicies()
-    val service =
+    val service = capped(Int.MAX_VALUE)
+
+    fun capped(maxOpenFlows: Int) =
         AuthenticationService(
             transaction,
             keys,
@@ -94,7 +98,12 @@ private class SessionsFixture {
             FLOW_TTL,
             LAST_SEEN_INTERVAL,
             MAX_SESSIONS,
+            maxOpenFlows,
+            STEP_LEASE,
         )
+
+    /** Where a flow stands once a login is entered. */
+    fun AuthenticationService.identifiedFlow(): FlowAccess = startFlow().also { identify(it, EMAIL) }
 
     fun newTenant(): TenantContext {
         val id = UUID.randomUUID()
@@ -144,7 +153,7 @@ private class SessionsFixture {
         email: String = EMAIL,
         continuation: FlowContinuation? = null,
         session: String? = null,
-    ): UUID =
+    ): FlowAccess =
         acting {
             startFlow(continuation, session).also { flow ->
                 identify(flow, email)
@@ -158,10 +167,10 @@ private class SessionsFixture {
         session: String? = null,
     ): String = completed(passwordFlow(email, continuation, session))
 
-    fun TenantContext.completed(flow: UUID): String = acting { completeFlow(flow, IP, USER_AGENT) }.session.shouldNotBeNull().token
+    fun TenantContext.completed(flow: FlowAccess): String = acting { completeFlow(flow, IP, USER_AGENT) }.session.shouldNotBeNull().token
 
     /** Takes over the session and passes the TOTP it lacks, so the user needs a confirmed one first. */
-    fun TenantContext.steppedUp(token: String): UUID =
+    fun TenantContext.steppedUp(token: String): FlowAccess =
         acting { startFlow(sessionToken = token).also { flow -> onFlow(flow) { current, now -> current.totpPassed(now) } } }
 
     fun TenantContext.table(name: String) = "\"${TenantSchema(tenantId).name}\".$name"
@@ -177,7 +186,8 @@ private class SessionsFixture {
     fun TenantContext.sessionRows(user: UUID): List<Map<String, Any?>> =
         sql.queryForList("SELECT * FROM ${table("sso_sessions")} WHERE user_id = ?", user)
 
-    fun TenantContext.flowRow(flow: UUID): Map<String, Any?> = sql.queryForMap("SELECT * FROM ${table("flows")} WHERE id = ?", flow)
+    fun TenantContext.flowRow(flow: FlowAccess): Map<String, Any?> =
+        sql.queryForMap("SELECT * FROM ${table("flows")} WHERE id = ?", flow.id)
 
     fun TenantContext.flowCount(): Int = sql.queryForObject("SELECT count(*) FROM ${table("flows")}", Int::class.java)!!
 
@@ -317,7 +327,7 @@ class SessionsTest :
                     String(sealed, Charsets.ISO_8859_1).contains(EMAIL) shouldBe false
 
                     val cipher = TenantContext.with(tenant) { keys.derivedCipher(DerivedKey.FLOW) }
-                    cipher.decrypt(sealed, FieldContext("flows.login_ciphertext", flow)).decodeToString() shouldBe EMAIL
+                    cipher.decrypt(sealed, FieldContext("flows.login_ciphertext", flow.id)).decodeToString() shouldBe EMAIL
                     val elsewhere = FieldContext("flows.login_ciphertext", UUID.randomUUID())
                     shouldThrow<FieldDecryptionException> { cipher.decrypt(sealed, elsewhere) }
                 }
@@ -330,7 +340,7 @@ class SessionsTest :
                     shouldThrow<VersionConflictException> {
                         tenant.acting {
                             onFlow(flow) { current, now ->
-                                sql.update("UPDATE ${tenant.table("flows")} SET version = version + 1 WHERE id = ?", flow)
+                                sql.update("UPDATE ${tenant.table("flows")} SET version = version + 1 WHERE id = ?", flow.id)
                                 current.passwordPassed(now)
                             }
                         }
@@ -380,7 +390,165 @@ class SessionsTest :
                     advance(FLOW_TTL)
 
                     shouldThrow<FlowExpired> { tenant.acting { completeFlow(flow, IP, USER_AGENT) } }
-                    shouldThrow<FlowExpired> { tenant.acting { completeFlow(UUID.randomUUID(), IP, USER_AGENT) } }
+                    shouldThrow<FlowExpired> { tenant.acting { completeFlow(FlowAccess(UUID.randomUUID(), "unknown"), IP, USER_AGENT) } }
+                }
+
+                test("opens only for the browser that began it") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val flow = tenant.acting { startFlow() }
+                    val elsewhere = FlowAccess(flow.id, "another browser")
+
+                    shouldThrow<FlowExpired> { tenant.acting { step(elsewhere) } }
+                    shouldThrow<FlowExpired> { tenant.acting { identify(elsewhere, EMAIL) } }
+                    shouldThrow<FlowExpired> { tenant.acting { claimStep(elsewhere, LoginFactor.PASSKEY) } }
+                    tenant.acting { step(flow) }.step shouldBe LoginStep.IDENTIFY
+                }
+
+                test("stores only the hash of the browser secret") {
+                    val tenant = tenant()
+                    val flow = tenant.acting { startFlow() }
+
+                    tenant.flowRow(flow)["browser_hash"] shouldBe sha256(flow.browserSecret)
+                }
+
+                test("keeps the secret a browser already holds, so its tabs do not cut each other off") {
+                    val tenant = tenant()
+                    val first = tenant.acting { startFlow() }
+                    val second = tenant.acting { startFlow(browserSecret = first.browserSecret) }
+
+                    second.browserSecret shouldBe first.browserSecret
+                    tenant.acting { step(first) }.step shouldBe LoginStep.IDENTIFY
+                    tenant.acting { step(second) }.step shouldBe LoginStep.IDENTIFY
+                }
+
+                test("reads the same step for a login that matched nobody as for a user") {
+                    val tenant = tenant()
+                    tenant.user()
+
+                    val known = tenant.acting { identify(startFlow(), EMAIL) }
+                    val unknown = tenant.acting { identify(startFlow(), "nobody@acme.test") }
+
+                    known.step shouldBe LoginStep.PASSWORD
+                    unknown.step shouldBe known.step
+                    unknown.factors shouldBe known.factors
+                }
+
+                test("names the second factors a user can choose from") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmTotp(user)
+
+                    val flow = tenant.acting { identifiedFlow() }
+
+                    tenant.acting { passwordPassed(flow) } shouldBe
+                        FlowView(flow.id, LoginStep.SECOND_FACTOR, setOf(LoginFactor.TOTP, LoginFactor.RECOVERY_CODE))
+                }
+
+                test("one check at a time: a second claim loses until the first is released") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val flow = tenant.acting { identifiedFlow() }
+
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }
+                    shouldThrow<StepInProgress> { tenant.acting { claimStep(flow, LoginFactor.PASSWORD) } }
+
+                    tenant.acting { releaseStep(flow) }
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }
+                }
+
+                test("a claim of a check that died ends with its lease") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val flow = tenant.acting { identifiedFlow() }
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }
+
+                    advance(STEP_LEASE)
+
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }
+                }
+
+                test("a claim of the wrong step costs nothing") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val flow = tenant.acting { startFlow() }
+
+                    shouldThrow<StepNotAllowed> { tenant.acting { claimStep(flow, LoginFactor.PASSWORD) } }
+
+                    tenant.flowRow(flow)["step_lease_until"].shouldBeNull()
+                }
+
+                test("a claim names the user and whether that user may log in") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val flow = tenant.acting { identifiedFlow() }
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }.run {
+                        userId shouldBe user
+                        active shouldBe true
+                    }
+                    tenant.acting { releaseStep(flow) }
+
+                    TenantContext.with(tenant) { identity.block(user, ADMIN) }
+
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }.active shouldBe false
+                }
+
+                test("a claim for a login that matched nobody names no one") {
+                    val tenant = tenant()
+                    val flow = tenant.acting { startFlow().also { identify(it, "nobody@acme.test") } }
+
+                    tenant.acting { claimStep(flow, LoginFactor.PASSWORD) }.run {
+                        userId.shouldBeNull()
+                        active shouldBe false
+                    }
+                }
+
+                test("an enrollment is claimed only where the policy asks for one") {
+                    val tenant = tenant(TenantPolicy())
+                    val user = tenant.user()
+                    val flow = tenant.passwordFlow()
+
+                    tenant.acting { claimEnrollment(flow, LoginFactor.TOTP) } shouldBe user
+                    tenant.acting { enrollingUser(flow, LoginFactor.PASSKEY) } shouldBe user
+
+                    val other = tenant(TenantPolicy())
+                    val own = other.user()
+                    other.confirmTotp(own)
+                    val stepping = other.passwordFlow()
+                    shouldThrow<StepNotAllowed> { other.acting { enrollingUser(stepping, LoginFactor.PASSKEY) } }
+                    shouldThrow<StepNotAllowed> { other.acting { claimEnrollment(stepping, LoginFactor.PASSKEY) } }
+                }
+
+                test("a passkey of a blocked user opens nothing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val flow = tenant.acting { startFlow() }
+                    TenantContext.with(tenant) { identity.block(user, ADMIN) }
+
+                    tenant.acting { passkeyPassed(flow, user) }.shouldBeNull()
+                }
+
+                test("a passkey of someone else opens nothing, the same as no user at all") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val other = tenant.user("grace.hopper@acme.test")
+                    val flow = tenant.acting { identifiedFlow() }
+
+                    tenant.acting { passkeyPassed(flow, other) }.shouldBeNull()
+                    tenant.acting { passkeyPassed(flow, UUID.randomUUID()) }.shouldBeNull()
+                }
+
+                test("refuses beyond the limit of open flows, per tenant, and expired ones do not count") {
+                    val limited = capped(2)
+                    val tenant = tenant()
+                    val other = tenant()
+                    repeat(2) { TenantContext.with(tenant) { limited.startFlow() } }
+
+                    shouldThrow<TooManyRequestsException> { TenantContext.with(tenant) { limited.startFlow() } }
+                    TenantContext.with(other) { limited.startFlow() }
+
+                    advance(FLOW_TTL)
+                    TenantContext.with(tenant) { limited.startFlow() }
                 }
 
                 test("opens a session only when complete") {
@@ -465,7 +633,19 @@ class SessionsTest :
                     val tenant = tenant()
                     val user = tenant.user()
 
-                    tenant.acting { resolveSession(tenant.login()) } shouldBe Principal(Actor.User(user), Role(UserRole.USER.name))
+                    tenant.acting { resolveSession(tenant.login()) }.shouldNotBeNull().run {
+                        actor shouldBe Actor.User(user)
+                        role shouldBe Role(UserRole.USER.name)
+                    }
+                }
+
+                test("carries the time of the login, which sensitive actions compare with the clock") {
+                    val tenant = tenant()
+                    tenant.user()
+                    val token = tenant.login()
+
+                    tenant.acting { resolveSession(token) }.shouldNotBeNull().authenticatedAt shouldBe
+                        (tenant.sessionRow(token)["authenticated_at"] as Timestamp).toInstant()
                 }
 
                 test("does not resolve from a made-up token") {
@@ -492,7 +672,7 @@ class SessionsTest :
 
                     TenantContext.with(tenant) { identity.changeRole(user, UserRole.TENANT_ADMIN, ADMIN) }
 
-                    tenant.acting { resolveSession(token) } shouldBe Principal(Actor.User(user), Role(UserRole.TENANT_ADMIN.name))
+                    tenant.acting { resolveSession(token) }.shouldNotBeNull().role shouldBe Role(UserRole.TENANT_ADMIN.name)
                 }
 
                 test("does not resolve for a blocked user") {
@@ -849,13 +1029,13 @@ class SessionsTest :
                     val tenant = tenant()
                     val kept = tenant.acting { startFlow() }
                     val expired = tenant.acting { startFlow() }
-                    sql.update("UPDATE ${tenant.table("flows")} SET expires_at = now() - interval '1 second' WHERE id = ?", expired)
+                    sql.update("UPDATE ${tenant.table("flows")} SET expires_at = now() - interval '1 second' WHERE id = ?", expired.id)
 
                     TenantContext.with(tenant) {
                         transaction.execute { service.flowCleanup.delete(it, clock.instant().atOffset(ZoneOffset.UTC)) }
                     }
 
-                    sql.queryForList("SELECT id FROM ${tenant.table("flows")}", UUID::class.java).shouldContainExactly(kept)
+                    sql.queryForList("SELECT id FROM ${tenant.table("flows")}", UUID::class.java).shouldContainExactly(kept.id)
                 }
 
                 test("removes revoked and timed out sessions and keeps live ones") {

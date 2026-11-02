@@ -5,6 +5,12 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  servlet:
+    encoding:
+      force-response: true
 
 idp:
   tenants:

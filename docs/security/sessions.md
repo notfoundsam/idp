@@ -29,6 +29,22 @@ The token travels only in the `__Host-session` cookie, marked `Secure`, `HttpOnl
 
 A completed login issues a new token and a new session ID, and the previous token of that browser stops working. That covers a fresh login and a step-up that proves a new factor. A flow that proves nothing new leaves the session as it is, so two SPs opening in parallel tabs do not invalidate each other.
 
+## Forged requests
+
+A request that changes something in a live session must carry the CSRF token in `X-CSRF-Token`. The token is an HMAC of a fixed word, keyed by the session token. It therefore needs no storage and no key of its own, survives a restart of `app`, and ends with the session. It reveals nothing about the session, and nobody can compute it without the cookie.
+
+The token reaches the page in the `__Host-csrf` cookie, which is `Secure` and `SameSite=Strict` and deliberately not `HttpOnly`, because the page has to read it. Comparing the header with the session rather than with the cookie means a planted cookie would prove nothing.
+
+`SameSite` alone is not enough: tenants are subdomains of one site, so a request from a neighbouring tenant counts as same-site.
+
+A browser without a live session needs no token, and a dead session cookie does not count as one, so it never stands between a user and the login. Such a browser has nothing a forged request could reach. A flow needs its id, which another site cannot read, and the `__Host-flow` cookie, which is `SameSite=Strict`.
+
+## Dangerous actions
+
+A message can demand a recent login, and `SecurityDecorator` then compares the login time of the session with the clock. Older than 10 minutes, the request gets `403` with `reauthentication_required`, and the refusal is audited. The client starts a flow with `reauthenticate`, which ignores the session and asks for every factor again. That issues a new session with a new login time.
+
+A flow that continues a session does not count: it keeps the login time, so it cannot refresh it. A principal that did not log in here never counts as fresh.
+
 ## Concurrent sessions
 
 A user holds at most 10 live sessions, roughly one per browser and device. A login beyond that revokes the session seen longest ago and notes this in the `session.opened` audit record. The new login always succeeds, so nobody can lock a user out by filling the limit.

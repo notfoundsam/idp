@@ -1,5 +1,8 @@
 package idp.sharedkernel.throttle
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.audit.AuditRecord
@@ -41,6 +44,7 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import org.slf4j.LoggerFactory
 import org.springframework.jdbc.datasource.DelegatingDataSource
 import java.net.ServerSocket
 import java.sql.Connection
@@ -264,6 +268,29 @@ class ThrottleTest :
                 val refusing = SpyLimiter(refusal)
                 shouldThrow<TooManyRequestsException> { request { decorator(refusing, listOf(rules)).pass() } }
                 refusing.calls.map { it.second }.shouldContainExactly(first.limit)
+            }
+
+            test("a refusal reaches the log of security events with its message, dimension and tenant") {
+                val logger = LoggerFactory.getLogger("idp.security") as Logger
+                val appender = ListAppender<ILoggingEvent>().also { it.start() }
+                logger.addAppender(appender)
+                val rule = ThrottleRule(ThrottleLimit(1, MINUTE), ThrottleDimension.IP)
+                val refusing = SpyLimiter(RateDecision.Rejected(Duration.ofSeconds(5)))
+
+                try {
+                    shouldThrow<TooManyRequestsException> {
+                        request { decorator(refusing, listOf(config(Action::class to listOf(rule)))).pass() }
+                    }
+                } finally {
+                    logger.detachAppender(appender)
+                }
+
+                val line = appender.list.single().formattedMessage
+                line shouldContain "event=throttle.rejected"
+                line shouldContain Action::class.java.name
+                line shouldContain "dimension=IP"
+                line shouldContain TENANT.tenantId.toString()
+                line shouldNotContain ADDRESS
             }
 
             test("two configs cannot limit one message") {

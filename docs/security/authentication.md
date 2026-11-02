@@ -12,6 +12,45 @@ A user with no second factor enrolls one right after the password when MFA is re
 
 A flow can start from a session and then asks only for what is missing. A demand for a fresh login makes the session count for nothing. The role, the factors and the policy are read again at every step, so a tighter policy or a new factor reaches a login in progress. See [sessions.md](sessions.md) for what a completed flow opens.
 
+## Ways in
+
+Every session starts from a completed `AuthFlow`, and no other code opens one. The operator CLI opens none at all.
+
+| Way in | What it proves | Strength |
+|---|---|---|
+| Password and TOTP | Something known, something held | Multi-factor |
+| Password and recovery code | Something known, a code saved once | Multi-factor, weaker in practice because a saved code can be copied |
+| Passkey with user verification | A device and a local check | Multi-factor, phishing-resistant |
+| Password alone | Something known | Single factor, only where a tenant relaxed MFA for the `USER` role |
+| Password, then enrolling a factor | Something known, then a new factor | Multi-factor from then on. Until then the password alone stands behind the enrollment |
+| Invitation | Access to the mailbox | Activates the account and opens no session. The user then logs in by the paths above |
+| Password reset, planned in T24 | Access to the mailbox | Replaces the password and opens no session. Other factors still apply |
+| Operator CLI | IAM permission to start the one-off container | Outside the tenant boundary, sees no customer data, leaves `platform.operator_audit` |
+
+## Login API
+
+A flow lives in the URL and is bound to its browser by the `__Host-flow` cookie. Only the SHA-256 of the secret in that cookie is stored, as part of the key the flow is looked up by, so another browser finds no flow at all and reads the same as for an expired one. Tabs of one browser share the secret and keep separate flows.
+
+A wrong credential, a running delay, an unknown login, a missing password, a blocked user and an invited user all give the same `422` with no body. An unknown login walks the same steps, costs the same database reads and one Argon2id hash, because `PasswordService.verify` hashes in every case. The status of the user is checked after the hash, so it does not show in the timing. Each refusal goes to the audit journal as `login.failed` with the factor, and with the user as the target when one is known. The entered login is not recorded, since people type passwords into that field.
+
+A check reserves the flow first, with a lease in Postgres. A parallel request gets `409` before it spends an attempt or a one-time code, so a double click neither burns a code nor reports a wrong password. The lease ends by itself after 30 seconds if the check dies. It only decides who gives up: the version of the flow keeps the result correct without it.
+
+Enrolling during a login is offered only at the step that asks for it, and proving a factor never allows adding one. Enrollment hands out recovery codes, because a user who enrolls during a login may have no other way back.
+
+## Limits and lockout
+
+An attacker who only wants to lock a user out can keep the delay of an account running by guessing once in every window. The delay stops at 15 minutes, so the owner can still log in between guesses, and it applies to passwords and TOTP but not to passkeys or recovery codes. Only the limits by address and by tenant stand against this, see [ADR-003](../adr/003-password-hashing.md). No account is ever locked outright, because a lock would hand this attack a guaranteed result.
+
+An attacker who wants to shut a whole tenant out needs its bucket of 1,000 attempts a minute. That is a hundred addresses at the full rate, so the bucket is far above what a single address can spend, and each refused address spends nothing of it. [limits.md](limits.md) lists every limit.
+
+## Context words
+
+A password may not contain these words, compared in lowercase. Words under three characters are ignored.
+
+- the product name, which is `idp` until the product has a name of its own
+- the subdomain and the name of the tenant
+- the part of the email before `@`
+
 ## Passkeys
 
 Passkeys follow WebAuthn through WebAuthn4J. They are discoverable, so a login starts before anyone is known and no response tells whether an account exists.

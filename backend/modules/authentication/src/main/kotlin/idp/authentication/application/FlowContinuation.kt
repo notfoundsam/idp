@@ -3,9 +3,12 @@ package idp.authentication.application
 import idp.authentication.domain.Assurance
 import idp.authentication.domain.SpRequirements
 
-/** What the caller demands of a login and where the browser goes after it. The URL stays opaque, so nothing here knows SAML. */
+/**
+ * What the caller demands of a login and where the browser goes after it. The URL stays opaque, so nothing here knows SAML. A browser
+ * never names it: that would be an open redirect, so a login of its own has none.
+ */
 class FlowContinuation(
-    val returnUrl: String,
+    val returnUrl: String? = null,
     val requiresMultiFactor: Boolean = false,
     val requiresPasskey: Boolean = false,
     val requiresFreshLogin: Boolean = false,

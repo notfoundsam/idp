@@ -50,6 +50,61 @@ private fun AuthFlow.signIn(user: FlowUser) =
 
 class AuthFlowTest :
     FunSpec({
+        context("what a step accepts") {
+            test("the first step takes a passkey and no secret") {
+                flow().accepts(PASSKEY, MOMENT) shouldBe true
+                flow().accepts(PASSWORD, MOMENT) shouldBe false
+                flow().accepts(TOTP, MOMENT) shouldBe false
+            }
+
+            test("the password step takes a password or a passkey, also after a login that matched nobody") {
+                val flow = flow().apply { identify(null, MOMENT) }
+
+                flow.accepts(PASSWORD, MOMENT) shouldBe true
+                flow.accepts(PASSKEY, MOMENT) shouldBe true
+                flow.accepts(TOTP, MOMENT) shouldBe false
+            }
+
+            test("the second factor step takes what it offers") {
+                val flow = flow().signIn(user(TOTP))
+
+                flow.accepts(TOTP, MOMENT) shouldBe true
+                flow.accepts(RECOVERY_CODE, MOMENT) shouldBe true
+                flow.accepts(PASSKEY, MOMENT) shouldBe false
+                flow.accepts(PASSWORD, MOMENT) shouldBe false
+            }
+
+            test("a finished flow takes nothing") {
+                val flow = flow(TenantPolicy(mfaForUsers = false)).signIn(user())
+
+                AuthFactor.entries.forEach { flow.accepts(it, MOMENT) shouldBe false }
+            }
+
+            test("an expired flow fails instead of answering") {
+                shouldThrow<FlowExpired> { flow().accepts(PASSKEY, MOMENT.plus(TTL)) }
+            }
+        }
+
+        context("what a flow lets a user enroll") {
+            test("a user without a factor enrolls what the step offers") {
+                val flow = flow().signIn(user())
+
+                flow.enrolls(TOTP, MOMENT) shouldBe true
+                flow.enrolls(PASSKEY, MOMENT) shouldBe true
+                flow.enrolls(RECOVERY_CODE, MOMENT) shouldBe false
+            }
+
+            test("a user who has a factor enrolls nothing, so a stolen password adds none") {
+                flow().signIn(user(TOTP)).enrolls(PASSKEY, MOMENT) shouldBe false
+                flow().signIn(user(PASSKEY)).enrolls(PASSKEY, MOMENT) shouldBe false
+            }
+
+            test("nobody enrolls before the password") {
+                flow().enrolls(TOTP, MOMENT) shouldBe false
+                flow().apply { identify(user(), MOMENT) }.enrolls(TOTP, MOMENT) shouldBe false
+            }
+        }
+
         context("the default policy") {
             test("requires MFA of a user") {
                 flow().signIn(user(TOTP)).step() shouldBe FlowStep.SecondFactor(setOf(TOTP, RECOVERY_CODE))
