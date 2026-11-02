@@ -3,7 +3,6 @@ package idp.worker
 import idp.audit.application.OperatorAuditService
 import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.testing.TestDatabase
@@ -16,8 +15,8 @@ const val BASE_DOMAIN = "idp.test"
 
 /** A migrated database of its own and everything `worker` needs to start on it. */
 class WorkerEnvironment {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val jdbc = JdbcTemplate(owner)
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val platformKekUri = kms.createKey("platform-${UUID.randomUUID()}")

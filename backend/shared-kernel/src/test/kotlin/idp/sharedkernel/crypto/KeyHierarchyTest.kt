@@ -5,9 +5,7 @@ import com.google.crypto.tink.InsecureSecretKeyAccess
 import com.google.crypto.tink.TinkProtoKeysetFormat
 import com.google.crypto.tink.aead.AeadConfig2026
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantContextRequired
@@ -72,26 +70,19 @@ private class ObservedKms(
 }
 
 private class Hierarchy {
-    val database = TestDatabase.create()
+    val database = TestDatabase.migrated()
     val owner = database.owner()
     val nanos = AtomicLong()
     val kms = ObservedKms(OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN))
-
-    init {
-        TenantMigrationRunner(owner).migrateAll()
-    }
-
     val runtime = database.role("app_runtime")
     val keys = newKeys()
 
     fun newKeys() = KeyHierarchy(kms, TenantTransaction(runtime), TTL, Ticker(nanos::get))
 
     fun tenant(): TenantContext {
-        val id = UUID.randomUUID()
+        val id = database.tenantSchema()
         owner.update("INSERT INTO platform.tenants (id, name, status) VALUES ('$id', 'tenant', 'ACTIVE')")
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
-        val context = TenantContext(id, kms.createKey("tenant-$id"))
+        val context = TenantContext(id, kms.createKey("tenant-${UUID.randomUUID()}"))
         TenantContext.with(context) { keys.createTenantKey() }
         return context
     }

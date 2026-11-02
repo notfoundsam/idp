@@ -4,7 +4,6 @@ import idp.audit.application.AuditService
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.testing.TestDatabase
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
@@ -20,8 +19,7 @@ import java.net.http.HttpResponse
 
 class AppApplicationTest :
     StringSpec({
-        val database = TestDatabase.create()
-        TenantMigrationRunner(database.owner()).migrateAll()
+        val database = TestDatabase.migrated()
         database.role("app_runtime")
         val arguments =
             arrayOf(

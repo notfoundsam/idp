@@ -1,7 +1,6 @@
 package idp.app.web
 
 import idp.app.AppApplication
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.tenant.TenantContext
@@ -39,7 +38,7 @@ private fun DataSource.update(sql: String) {
 
 class TenantFilterTest :
     FunSpec({
-        val database = TestDatabase.create()
+        val database = TestDatabase.migrated()
         val owner = database.owner()
         val active: UUID = UUID.randomUUID()
 
@@ -52,7 +51,6 @@ class TenantFilterTest :
             owner.update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES ('$host', '$id')")
         }
 
-        TenantMigrationRunner(owner).migrateAll()
         tenant(active, "acme.idp.test", "ACTIVE")
         TenantSchemaFactory(owner).create(active)
         listOf("REQUESTED", "APPROVED", "PROVISIONING", "SUSPENDED", "OFFBOARDING", "DELETED").forEach {

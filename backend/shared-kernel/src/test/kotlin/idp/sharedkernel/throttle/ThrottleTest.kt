@@ -16,7 +16,6 @@ import idp.sharedkernel.bus.decorators.LoggerDecorator
 import idp.sharedkernel.bus.decorators.SecurityDecorator
 import idp.sharedkernel.bus.decorators.ThrottleDecorator
 import idp.sharedkernel.bus.decorators.TransactionDecorator
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.security.Permission
 import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.Role
@@ -302,8 +301,7 @@ class ThrottleTest :
 
         context("the chain") {
             test("over the limit the caller gets the wait, and neither the handler nor the database is reached") {
-                val database = TestDatabase.create()
-                TenantMigrationRunner(database.owner()).migrateAll()
+                val database = TestDatabase.migrated()
                 val connections = AtomicInteger()
                 val runtime =
                     object : DelegatingDataSource(database.role("app_runtime")) {

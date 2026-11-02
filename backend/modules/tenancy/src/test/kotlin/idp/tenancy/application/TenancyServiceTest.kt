@@ -7,7 +7,6 @@ import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.FieldDecryptionException
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.persistence.VersionConflictException
@@ -56,14 +55,10 @@ private class RecordingAudit : AuditLog {
 }
 
 private class Platform {
-    val database = TestDatabase.create()
+    val database = TestDatabase.migrated()
     val owner = database.owner()
     val sql = JdbcTemplate(owner)
     val audit = RecordingAudit()
-
-    init {
-        TenantMigrationRunner(owner).migrateAll()
-    }
 
     private val name = "contacts-${UUID.randomUUID()}"
     private val root = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)

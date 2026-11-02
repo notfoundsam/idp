@@ -145,8 +145,8 @@ private class FailingAudit(
 }
 
 private class Provisioning {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val sql = JdbcTemplate(owner)
     val worker = database.pooled("worker_runtime")
     val kms = ObservedKms(OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN))

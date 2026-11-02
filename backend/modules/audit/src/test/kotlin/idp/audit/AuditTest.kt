@@ -13,9 +13,7 @@ import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.FieldDecryptionException
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantContextRequired
@@ -43,15 +41,9 @@ private val DETAILS = mapOf("reason" to "wrong password")
 private val KEY_CACHE_TTL: Duration = Duration.ofMinutes(1)
 
 private class Audit {
-    val database = TestDatabase.create()
-    val owner = database.owner()
-    val sql = JdbcTemplate(owner)
+    val database = TestDatabase.migrated()
+    val sql = JdbcTemplate(database.owner())
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
-
-    init {
-        TenantMigrationRunner(owner).migrateAll()
-    }
-
     val runtime = database.pooled("app_runtime")
     val transaction = TenantTransaction(runtime)
     val keys = KeyHierarchy(kms, transaction, KEY_CACHE_TTL)
@@ -59,11 +51,9 @@ private class Audit {
     val audit = AuditService(transaction, keys, clock)
 
     fun tenant(): TenantContext {
-        val id = UUID.randomUUID()
+        val id = database.tenantSchema()
         sql.update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'ACTIVE')", id)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
-        val context = TenantContext(id, kms.createKey("tenant-$id"))
+        val context = TenantContext(id, kms.createKey("tenant-${UUID.randomUUID()}"))
         TenantContext.with(context) { keys.createTenantKey() }
         return context
     }
@@ -508,8 +498,8 @@ class AuditTest :
 
         context("operator") {
             class Operators {
-                val database = TestDatabase.create()
-                val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+                val database = TestDatabase.migrated()
+                val owner = database.owner()
                 val sql = JdbcTemplate(owner)
                 val platform = PlatformTransaction(database.pooled("ops_runtime"))
                 val audit = OperatorAuditService(platform)

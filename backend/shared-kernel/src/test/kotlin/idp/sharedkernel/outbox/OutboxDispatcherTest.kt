@@ -1,9 +1,7 @@
 package idp.sharedkernel.outbox
 
 import idp.db.jooq.platform.tables.Outbox.OUTBOX
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.persistence.VersionConflictException
@@ -64,11 +62,11 @@ private fun event(
 ) = NewEvent("user", UUID.randomUUID(), version, type, payload)
 
 private class Outbox {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val worker = database.role("worker_runtime")
-    val a: UUID = UUID.randomUUID()
-    val b: UUID = UUID.randomUUID()
+    val a: UUID = database.tenantSchema()
+    val b: UUID = database.tenantSchema()
     val clock = MovableClock()
     val publisher = OutboxPublisher()
     val tenants = TenantTransaction(worker)
@@ -78,8 +76,6 @@ private class Outbox {
     init {
         listOf(a, b).forEach { id ->
             owner.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES ('$id', 'tenant', 'ACTIVE', 'kek-$id')")
-            TenantSchemaFactory(owner).create(id)
-            TenantMigrationRunner(owner).migrateTenant(id)
             owner.update("""CREATE TABLE "${TenantSchema(id).name}".fixture (id int)""")
         }
     }

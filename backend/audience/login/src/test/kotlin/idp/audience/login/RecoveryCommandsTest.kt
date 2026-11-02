@@ -27,9 +27,7 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.RequiresFreshAuthentication
@@ -79,9 +77,8 @@ private class AuditOnPurpose : AuditLog {
 }
 
 private class Commands {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
-    val sql = JdbcTemplate(owner)
+    val database = TestDatabase.migrated()
+    val sql = JdbcTemplate(database.owner())
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val dataSource = database.pooled("app_runtime")
     val transaction = TenantTransaction(dataSource)
@@ -98,12 +95,10 @@ private class Commands {
     val tenant = tenant()
 
     private fun tenant(): TenantContext {
-        val id = UUID.randomUUID()
-        val kekUri = kms.createKey("tenant-$id")
+        val id = database.tenantSchema()
+        val kekUri = kms.createKey("tenant-${UUID.randomUUID()}")
         sql.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'Contoso Group', 'ACTIVE', ?)", id, kekUri)
         sql.update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES (?, ?)", HOST, id)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
         return TenantContext(id, kekUri).also { context -> TenantContext.with(context) { keys.createTenantKey() } }
     }
 

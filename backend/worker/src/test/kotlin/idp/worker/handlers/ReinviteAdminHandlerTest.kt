@@ -4,9 +4,7 @@ import idp.authentication.application.AuthenticationService
 import idp.identity.application.IdentityService
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.crypto.KeyHierarchy
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxEvent
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
@@ -37,12 +35,10 @@ private val OPERATOR = Actor.Operator("alice")
 private val TOKEN = Regex("""#token=([\w-]+)""")
 
 private fun WorkerEnvironment.tenant(context: ConfigurableApplicationContext): TenantContext {
-    val id = UUID.randomUUID()
-    val kekUri = kms.createKey("tenant-$id")
+    val id = database.tenantSchema()
+    val kekUri = kms.createKey("tenant-${UUID.randomUUID()}")
     jdbc.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'Acme', 'ACTIVE', ?)", id, kekUri)
     jdbc.update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES (?, ?)", "${id.toString().take(8)}.idp.test", id)
-    TenantSchemaFactory(owner).create(id)
-    TenantMigrationRunner(owner).migrateTenant(id)
     return TenantContext(id, kekUri).also { tenant ->
         TenantContext.with(tenant) { context.getBean(KeyHierarchy::class.java).createTenantKey() }
     }

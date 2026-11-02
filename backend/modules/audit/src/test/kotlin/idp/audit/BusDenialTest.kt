@@ -12,8 +12,6 @@ import idp.sharedkernel.bus.decorators.SecurityDecorator
 import idp.sharedkernel.bus.decorators.TransactionDecorator
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.security.AccessDeniedException
 import idp.sharedkernel.security.Permission
 import idp.sharedkernel.security.Role
@@ -39,19 +37,15 @@ private class DeleteUser : Command<Unit>
 
 class BusDenialTest :
     FunSpec({
-        val database = TestDatabase.create()
-        val owner = database.owner()
-        TenantMigrationRunner(owner).migrateAll()
+        val database = TestDatabase.migrated()
         val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
         val runtime = database.pooled("app_runtime")
         val transaction = TenantTransaction(runtime)
         val keys = KeyHierarchy(kms, transaction, Duration.ofMinutes(1))
         val audit = AuditService(transaction, keys)
-        val id = UUID.randomUUID()
-        JdbcTemplate(owner).update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'ACTIVE')", id)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
-        val tenant = TenantContext(id, kms.createKey("tenant-$id"))
+        val id = database.tenantSchema()
+        JdbcTemplate(database.owner()).update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'ACTIVE')", id)
+        val tenant = TenantContext(id, kms.createKey("tenant-${UUID.randomUUID()}"))
         TenantContext.with(tenant) { keys.createTenantKey() }
         val handled = AtomicInteger()
         val handler =

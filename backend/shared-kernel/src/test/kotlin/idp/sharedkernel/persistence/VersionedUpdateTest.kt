@@ -1,7 +1,6 @@
 package idp.sharedkernel.persistence
 
 import idp.db.jooq.platform.tables.Tenants.TENANTS
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.tenant.PlatformTransaction
@@ -13,14 +12,13 @@ import io.kotest.matchers.string.shouldContain
 import java.util.UUID
 
 private class Row {
-    val database = TestDatabase.create()
+    val database = TestDatabase.migrated()
     val owner = database.owner()
     val id: UUID = UUID.randomUUID()
     val transaction: PlatformTransaction
     val versioned = VersionedUpdate(TENANTS, TENANTS.ID, TENANTS.VERSION)
 
     init {
-        TenantMigrationRunner(owner).migrateAll()
         owner.update("INSERT INTO platform.tenants (id, name, status) VALUES ('$id', 'first', 'ACTIVE')")
         transaction = PlatformTransaction(database.pooled("ops_runtime"))
     }

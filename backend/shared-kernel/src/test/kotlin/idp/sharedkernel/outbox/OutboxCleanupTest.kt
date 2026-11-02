@@ -1,8 +1,6 @@
 package idp.sharedkernel.outbox
 
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.scheduling.JobLocks
@@ -25,8 +23,8 @@ private val RETENTION: Duration = Duration.ofDays(7)
 private val TTL: Duration = Duration.ofDays(7)
 
 private class Cleanup {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val worker = database.role("worker_runtime")
     val clock = MovableClock()
     val platform = PlatformTransaction(worker)
@@ -35,10 +33,8 @@ private class Cleanup {
     fun scheduler(job: ScheduledJob) = JobScheduler(listOf(job), JobLocks(platform, clock))
 
     fun tenant(): UUID {
-        val id = UUID.randomUUID()
+        val id = database.tenantSchema()
         owner.update("INSERT INTO platform.tenants (id, name, status) VALUES ('$id', 'tenant', 'ACTIVE')")
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
         return id
     }
 

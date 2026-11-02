@@ -10,7 +10,6 @@ import idp.sharedkernel.bus.decorators.LoggerDecorator
 import idp.sharedkernel.bus.decorators.SecurityDecorator
 import idp.sharedkernel.bus.decorators.ThrottleDecorator
 import idp.sharedkernel.bus.decorators.TransactionDecorator
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.NewEvent
@@ -124,8 +123,8 @@ private class Config(
 }
 
 private class Bus {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val sql = JdbcTemplate(owner)
     val tenant = TenantContext(UUID.randomUUID(), null)
     val events = CopyOnWriteArrayList<String>()

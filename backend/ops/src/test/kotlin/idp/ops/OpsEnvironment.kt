@@ -1,7 +1,6 @@
 package idp.ops
 
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
 import org.springframework.jdbc.core.JdbcTemplate
@@ -19,8 +18,8 @@ const val MASK = "a***@acme.example"
 
 /** A migrated database of its own and a platform KEK that the token of `ops` may only encrypt with, as in production. */
 class OpsEnvironment {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val sql = JdbcTemplate(owner)
     val root = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     private val keyName = "platform-${UUID.randomUUID()}"
