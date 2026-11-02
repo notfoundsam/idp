@@ -46,7 +46,7 @@ private class Audit {
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val runtime = database.pooled("app_runtime")
     val transaction = TenantTransaction(runtime)
-    val keys = KeyHierarchy(kms, transaction, KEY_CACHE_TTL)
+    val keys = KeyHierarchy(kms, transaction, PlatformTransaction(runtime), KEY_CACHE_TTL)
     val clock = MovableClock()
     val audit = AuditService(transaction, keys, clock)
 

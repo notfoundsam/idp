@@ -11,8 +11,10 @@ import com.google.crypto.tink.aead.AesGcmKey
 import com.google.crypto.tink.aead.PredefinedAeadParameters
 import com.google.crypto.tink.subtle.Hkdf
 import com.google.crypto.tink.util.SecretBytes
+import idp.db.jooq.platform.tables.Tenants.TENANTS
 import idp.db.jooq.tenant.tables.TenantKeys.TENANT_KEYS
 import idp.db.jooq.tenant.tables.UserKeys.USER_KEYS
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import java.security.GeneralSecurityException
@@ -65,10 +67,14 @@ private class TenantKey(
     fun userKeyContext(userId: UUID): ByteArray = "$USER_KEYS_PURPOSE/$tenantId/$userId".toByteArray()
 }
 
-/** KEK in KMS → tenant key → user keys and derived keys. The TTL is how long a destroyed KEK keeps working. */
+/**
+ * KEK in KMS → tenant key → user keys and derived keys. The TTL is how long a destroyed KEK keeps working. [platform] names the
+ * KEKs of a tenant when the URI in its context is out of date.
+ */
 class KeyHierarchy(
     private val kms: KeyManagementService,
     private val transaction: TenantTransaction,
+    private val platform: PlatformTransaction,
     ttl: Duration,
     ticker: Ticker = Ticker.systemTicker(),
 ) {
@@ -93,6 +99,33 @@ class KeyHierarchy(
                 .onConflictDoNothing()
                 .execute()
         }
+    }
+
+    /** Returns false when [to] already wraps the key, so a run cut short after the update repeats harmlessly. */
+    fun rewrapTenantKey(
+        from: String,
+        to: String,
+    ): Boolean {
+        val wrapped = wrappedTenantKey(TenantContext.current())
+        val material =
+            try {
+                kms.unwrap(from, wrapped)
+            } catch (e: KeyManagementException) {
+                if (e is KeyManagementUnavailableException) throw e
+                kms.unwrap(to, wrapped)
+                return false
+            }
+        val rewrapped = kms.wrap(to, material)
+        // The previous KEK goes once its backups expire, and a bad wrap found after that would cost the tenant.
+        check(kms.unwrap(to, rewrapped).contentEquals(material)) { "$to does not unwrap what it wrapped" }
+        transaction.execute { dsl ->
+            dsl
+                .update(TENANT_KEYS)
+                .set(TENANT_KEYS.WRAPPED_KEY, rewrapped)
+                .where(TENANT_KEYS.VERSION.eq(TENANT_KEY_VERSION))
+                .execute()
+        }
+        return true
     }
 
     fun createUserKey(userId: UUID) {
@@ -172,6 +205,48 @@ class KeyHierarchy(
 
     private fun load(context: TenantContext): TenantKey {
         val kekUri = kekUri(context)
+        val wrapped = wrappedTenantKey(context)
+        val material =
+            try {
+                kms.unwrap(kekUri, wrapped)
+            } catch (e: KeyManagementException) {
+                if (e is KeyManagementUnavailableException) throw e
+                unwrapWithStoredKeks(context.tenantId, kekUri, wrapped, e)
+            }
+        return TenantKey(material, context.tenantId)
+    }
+
+    /**
+     * A context made before a move carries the KEK of then, and one made during it may meet a key the job has not rewrapped
+     * yet. `platform.tenants` names both KEKs, and one read of it settles either case.
+     */
+    private fun unwrapWithStoredKeks(
+        tenantId: UUID,
+        tried: String,
+        wrapped: ByteArray,
+        failure: KeyManagementException,
+    ): ByteArray {
+        val stored =
+            platform.executeSeparately { dsl ->
+                dsl
+                    .select(TENANTS.KEK_URI, TENANTS.PREVIOUS_KEK_URI)
+                    .from(TENANTS)
+                    .where(TENANTS.ID.eq(tenantId))
+                    .fetchOne { listOfNotNull(it.value1(), it.value2()) }
+                    .orEmpty()
+            }
+        for (kekUri in stored - tried) {
+            try {
+                return kms.unwrap(kekUri, wrapped)
+            } catch (e: KeyManagementException) {
+                if (e is KeyManagementUnavailableException) throw e
+                failure.addSuppressed(e)
+            }
+        }
+        throw failure
+    }
+
+    private fun wrappedTenantKey(context: TenantContext): ByteArray {
         val wrapped =
             transaction.execute { dsl ->
                 dsl
@@ -180,8 +255,7 @@ class KeyHierarchy(
                     .where(TENANT_KEYS.VERSION.eq(TENANT_KEY_VERSION))
                     .fetchOne(TENANT_KEYS.WRAPPED_KEY)
             }
-        checkNotNull(wrapped) { "Tenant ${context.tenantId} has no key" }
-        return TenantKey(kms.unwrap(kekUri, wrapped), context.tenantId)
+        return checkNotNull(wrapped) { "Tenant ${context.tenantId} has no key" }
     }
 
     private fun kekUri(context: TenantContext): String = checkNotNull(context.kekUri) { "Tenant ${context.tenantId} has no KEK" }

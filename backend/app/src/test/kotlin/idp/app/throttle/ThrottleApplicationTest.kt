@@ -18,6 +18,7 @@ import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.Role
 import idp.sharedkernel.security.SecurityConfig
 import idp.sharedkernel.security.SecurityContext
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.TestDatabase
@@ -121,7 +122,7 @@ class ThrottleApplicationTest :
         TenantMigrationRunner(owner).migrateTenant(tenant)
         val runtime = database.role("app_runtime")
         TenantContext.with(TenantContext(tenant, kekUri)) {
-            KeyHierarchy(kms, TenantTransaction(runtime), Duration.ofMinutes(1)).createTenantKey()
+            KeyHierarchy(kms, TenantTransaction(runtime), PlatformTransaction(runtime), Duration.ofMinutes(1)).createTenantKey()
         }
 
         fun start(

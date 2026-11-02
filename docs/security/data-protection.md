@@ -21,7 +21,7 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 
 - Never leaves KMS as a KEK. The tenant key is stored wrapped by the tenant KEK, user keys and SAML keys wrapped by keys below it.
 - Unwrapped keys live only in memory, at most for the cache TTL of `KeyHierarchy`.
-- Destroying a key is how data is erased: a user key goes with the user, a tenant KEK with the tenant.
+- Destroying a key is how data is erased: a user key goes with the user, the tenant KEKs with the tenant. After a move to another KMS a tenant keeps its previous KEK for 35 days, so backups taken before the move still open, see [crypto-inventory.md](crypto-inventory.md).
 - Only `app`, `worker` and `migrator` restoring a backup may call `Decrypt` on tenant KEKs. `ops` may only `Encrypt` with the platform KEK.
 - Never logged, never in an event, never in an API response.
 
@@ -61,4 +61,4 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 
 ## Deleting a tenant
 
-Offboarding waits 30 days after the operator starts it, then destroys the KEK, which makes the tenant's data in every backup unreadable, and drops the schema and its role. The tenant row stays as `DELETED` with its ID and subdomain, and holds no personal data.
+Offboarding waits 30 days after the operator starts it, then destroys the KEK and a previous one left by a move, which makes the tenant's data in every backup unreadable, and drops the schema and its role. The tenant row stays as `DELETED` with its ID and subdomain, and holds no personal data.

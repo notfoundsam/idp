@@ -24,6 +24,8 @@ internal class Tenant(
     provisioningStep: String?,
     kekUri: String?,
     offboardingAfter: Instant?,
+    previousKekUri: String? = null,
+    previousKekDestroyAfter: Instant? = null,
 ) {
     var status = status
         private set
@@ -32,6 +34,10 @@ internal class Tenant(
     var kekUri = kekUri
         private set
     var offboardingAfter = offboardingAfter
+        private set
+    var previousKekUri = previousKekUri
+        private set
+    var previousKekDestroyAfter = previousKekDestroyAfter
         private set
 
     fun approve() = move(REQUESTED, to = APPROVED)
@@ -88,6 +94,29 @@ internal class Tenant(
     fun delete(now: Instant) {
         ensureOffboardingDue(now)
         move(OFFBOARDING, to = DELETED)
+    }
+
+    /** The previous KEK still opens backups taken before the move, so one move must finish before the next begins. */
+    fun replaceKek(next: String) {
+        if (status != ACTIVE && status != SUSPENDED) throw ForbiddenTenantChange("A tenant in $status keeps its KEK")
+        val current = kekUri ?: throw ForbiddenTenantChange("Tenant $id has no KEK")
+        if (previousKekUri != null) throw ForbiddenTenantChange("Tenant $id still keeps its previous KEK")
+        if (next == current) throw ForbiddenTenantChange("Tenant $id already has this KEK")
+        previousKekUri = current
+        kekUri = next
+    }
+
+    /** A repeated record keeps the first time, so a retried run cannot postpone the destruction. */
+    fun recordRewrap(destroyAfter: Instant) {
+        if (previousKekUri == null) throw ForbiddenTenantChange("Tenant $id has no previous KEK")
+        previousKekDestroyAfter = previousKekDestroyAfter ?: destroyAfter
+    }
+
+    fun forgetPreviousKek(now: Instant) {
+        val after = previousKekDestroyAfter ?: throw ForbiddenTenantChange("Tenant $id has no previous KEK to destroy")
+        if (now.isBefore(after)) throw ForbiddenTenantChange("The previous KEK of tenant $id waits until $after")
+        previousKekUri = null
+        previousKekDestroyAfter = null
     }
 
     /** After a restore the journal outranks the row: the tenant was deleted, whatever status the backup kept. */

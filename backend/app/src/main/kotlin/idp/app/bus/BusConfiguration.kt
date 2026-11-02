@@ -37,8 +37,9 @@ class BusConfiguration {
     fun keyHierarchy(
         kms: KeyManagementService,
         transaction: TenantTransaction,
+        platform: PlatformTransaction,
         @Value("\${idp.kms.key-cache-ttl}") ttl: Duration,
-    ) = KeyHierarchy(kms, transaction, ttl)
+    ) = KeyHierarchy(kms, transaction, platform, ttl)
 
     @Bean
     fun auditLog(

@@ -51,7 +51,7 @@ class ReapplyErasuresJob(
     /** The KEK and the schema go again too: `worker` records the tenant first, so the backup may hold either. */
     private fun deleteTenant(id: UUID): Boolean {
         val tenant = tenancy.tenant(id) ?: return false
-        tenant.kekUri?.let(kms::destroy)
+        tenant.keks.forEach(kms::destroy)
         schemas.drop(id)
         return tenancy.deleteAgain(id)
     }

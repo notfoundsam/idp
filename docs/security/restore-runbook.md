@@ -22,9 +22,11 @@ Run the `migrator` task once with `REAPPLY_ERASURES=true`. In this mode it needs
 | `KMS_NEW_KEYS`, `KMS_AWS_REGION`, `KMS_AWS_KEY_POLICY` | As `worker` has them |
 | `PLATFORM_KEK_URI`, `TENANTS_BASE_DOMAIN` | As `worker` has them |
 
+While tenants move to another KMS, `worker` has the settings of both, and so does this task: a backup may name KEKs of either.
+
 The task migrates as on a release, then reads the whole journal:
 
-- A deleted tenant loses its KEK, its schema and its role, and becomes `DELETED`. It does not come back as `ACTIVE`, whatever status the backup kept.
+- A deleted tenant loses its KEKs, its schema and its role, and becomes `DELETED`. It does not come back as `ACTIVE`, whatever status the backup kept.
 - An erased user of a remaining tenant goes with everything that hangs on the `users` row, their key in `user_keys` included. The rule that keeps the last admin does not hold the erasure back. The tenant journal records `user.erased` by the system.
 
 Everything is safe to repeat. A user or tenant that the backup does not hold is skipped.

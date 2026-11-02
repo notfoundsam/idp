@@ -51,7 +51,12 @@ data class TenantView(
     val provisioningStep: String?,
     val kekUri: String?,
     val offboardingAfter: Instant?,
-)
+    val previousKekUri: String? = null,
+    val previousKekDestroyAfter: Instant? = null,
+) {
+    /** Everything that must go to make the tenant's data unreadable, backups included. */
+    val keks: List<String> get() = listOfNotNull(kekUri, previousKekUri)
+}
 
 data class TenantApplicationView(
     val id: UUID,
@@ -239,6 +244,32 @@ class TenancyService(
         }
     }
 
+    /** Not audited here: `worker` records the move in the tenant's journal together with the rewrap. */
+    fun replaceKek(
+        tenantId: UUID,
+        next: String,
+    ) {
+        transaction.execute { dsl -> tenants.save(dsl, load(dsl, tenantId).apply { replaceKek(next) }) }
+    }
+
+    fun recordKekRewrapped(
+        tenantId: UUID,
+        keepPreviousFor: Duration,
+    ) {
+        transaction.execute { dsl -> tenants.save(dsl, load(dsl, tenantId).apply { recordRewrap(clock.instant().plus(keepPreviousFor)) }) }
+    }
+
+    /** After `worker` destroyed it, and only once the backups it opens have expired. */
+    fun forgetPreviousKek(tenantId: UUID) {
+        transaction.execute { dsl -> tenants.save(dsl, load(dsl, tenantId).apply { forgetPreviousKek(clock.instant()) }) }
+    }
+
+    /** Offboarding and a restore destroy every KEK of the other tenants, so a move has nothing to do there. */
+    fun tenantsWithKek(): List<TenantView> =
+        transaction.execute { dsl ->
+            tenants.withKek(dsl, listOf(TenantStatus.ACTIVE, TenantStatus.SUSPENDED)).map { it.view() }
+        }
+
     fun tenant(id: UUID): TenantView? = transaction.execute { dsl -> tenants.find(dsl, id)?.view() }
 
     fun application(id: UUID): TenantApplicationView? = transaction.execute { dsl -> applications.find(dsl, id)?.view() }
@@ -291,7 +322,8 @@ class TenancyService(
         }
     }
 
-    private fun Tenant.view() = TenantView(id, name, status, version, provisioningStep, kekUri, offboardingAfter)
+    private fun Tenant.view() =
+        TenantView(id, name, status, version, provisioningStep, kekUri, offboardingAfter, previousKekUri, previousKekDestroyAfter)
 
     private fun TenantApplication.view() = TenantApplicationView(id, tenantId, companyName, subdomain.value, contactMask, status.name)
 }

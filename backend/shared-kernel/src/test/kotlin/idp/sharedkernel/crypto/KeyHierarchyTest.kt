@@ -7,6 +7,7 @@ import com.google.crypto.tink.aead.AeadConfig2026
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.update
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantContextRequired
 import idp.sharedkernel.tenant.TenantTransaction
@@ -50,12 +51,15 @@ private class ObservedKms(
 
     @Volatile var release: CountDownLatch? = null
 
+    /** Wraps material other than the plaintext, as a broken KMS would, so the result still unwraps. */
+    @Volatile var corruptWraps = false
+
     override fun wrap(
         kekUri: String,
         plaintext: ByteArray,
     ): ByteArray {
         wrapped += plaintext
-        return delegate.wrap(kekUri, plaintext)
+        return delegate.wrap(kekUri, if (corruptWraps) plaintext.reversedArray() else plaintext)
     }
 
     override fun unwrap(
@@ -77,7 +81,7 @@ private class Hierarchy {
     val runtime = database.role("app_runtime")
     val keys = newKeys()
 
-    fun newKeys() = KeyHierarchy(kms, TenantTransaction(runtime), TTL, Ticker(nanos::get))
+    fun newKeys() = KeyHierarchy(kms, TenantTransaction(runtime), PlatformTransaction(runtime), TTL, Ticker(nanos::get))
 
     fun tenant(): TenantContext {
         val id = database.tenantSchema()
@@ -416,6 +420,76 @@ class KeyHierarchyTest :
                 shouldThrow<IllegalStateException> {
                     TenantContext.with(context.copy(kekUri = null)) { keys.blindIndex() }
                 }
+            }
+        }
+
+        test("an outdated KEK URI is replaced by the one in platform.tenants") {
+            Hierarchy().run {
+                val context = tenant()
+                owner.update("UPDATE platform.tenants SET kek_uri = '${context.kekUri}' WHERE id = '${context.tenantId}'")
+                val outdated = context.copy(kekUri = kms.createKey("tenant-${UUID.randomUUID()}"))
+                kms.unwraps.set(0)
+
+                TenantContext.with(outdated) { keys.blindIndex() }
+
+                kms.unwraps.get() shouldBe 2
+            }
+        }
+
+        test("KEKs that open nothing fail after one read of platform.tenants") {
+            Hierarchy().run {
+                val context = tenant()
+                val (current, previous) = List(2) { kms.createKey("tenant-${UUID.randomUUID()}") }
+                owner.update(
+                    "UPDATE platform.tenants SET kek_uri = '$current', previous_kek_uri = '$previous' WHERE id = '${context.tenantId}'",
+                )
+                val outdated = context.copy(kekUri = kms.createKey("tenant-${UUID.randomUUID()}"))
+                kms.unwraps.set(0)
+
+                val failure = shouldThrow<WrongKeyException> { TenantContext.with(outdated) { keys.blindIndex() } }
+
+                kms.unwraps.get() shouldBe 3
+                failure.suppressed.map { it::class } shouldContainExactly listOf(WrongKeyException::class, WrongKeyException::class)
+            }
+        }
+
+        test("an unreachable KMS is not asked again with other KEKs") {
+            Hierarchy().run {
+                val context = tenant()
+                kms.down = true
+                kms.unwraps.set(0)
+
+                shouldThrow<KeyManagementUnavailableException> { TenantContext.with(context) { keys.blindIndex() } }
+
+                kms.unwraps.get() shouldBe 1
+            }
+        }
+
+        test("a tenant moved to a new KEK has its key rewrapped once, and a repeat changes nothing") {
+            Hierarchy().run {
+                val context = tenant()
+                val next = kms.createKey("tenant-${UUID.randomUUID()}")
+                val before = wrappedTenantKey(context)
+
+                TenantContext.with(context) { keys.rewrapTenantKey(context.kekUri!!, next) } shouldBe true
+                val after = wrappedTenantKey(context)
+                TenantContext.with(context) { keys.rewrapTenantKey(context.kekUri!!, next) } shouldBe false
+
+                wrappedTenantKey(context) shouldBe after
+                kms.unwrap(next, after) shouldBe kms.unwrap(context.kekUri!!, before)
+            }
+        }
+
+        test("a rewrap to a KEK that does not open what it wraps is refused") {
+            Hierarchy().run {
+                val context = tenant()
+                val next = kms.createKey("tenant-${UUID.randomUUID()}")
+                val before = wrappedTenantKey(context)
+                kms.corruptWraps = true
+
+                shouldThrow<IllegalStateException> { TenantContext.with(context) { keys.rewrapTenantKey(context.kekUri!!, next) } }
+
+                wrappedTenantKey(context) shouldBe before
             }
         }
 

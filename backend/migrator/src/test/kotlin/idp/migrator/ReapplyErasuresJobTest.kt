@@ -12,6 +12,7 @@ import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.security.UserRole
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.TestDatabase
@@ -37,8 +38,9 @@ private class Restore {
     private val platformKekUri = kms.createKey("platform-${UUID.randomUUID()}")
     val journalFile: Path = Files.createTempDirectory("erasures").resolve("journal")
     val journal = FileErasureJournal(journalFile)
-    private val transaction = TenantTransaction(database.pooled("worker_runtime"))
-    private val keys = KeyHierarchy(kms, transaction, Duration.ofMinutes(1))
+    private val worker = database.pooled("worker_runtime")
+    private val transaction = TenantTransaction(worker)
+    private val keys = KeyHierarchy(kms, transaction, PlatformTransaction(worker), Duration.ofMinutes(1))
     private val identity = IdentityService(transaction, keys, AuditService(transaction, keys), OutboxPublisher())
 
     /** A tenant whose role a test drops needs an id of its own: pooled roles are shared by every clone. */
@@ -191,6 +193,22 @@ class ReapplyErasuresJobTest :
                     migrate(backup) shouldBe 0
 
                     shouldThrow<KeyNotFoundException> { kms.wrap(tenant.second, ByteArray(32)) }
+                }
+            }
+
+            test("loses the previous KEK of a move as well") {
+                Restore().run {
+                    val tenant = tenant(own = true)
+                    val previous = kms.createKey("tenant-${UUID.randomUUID()}")
+                    database.sql().update("UPDATE platform.tenants SET previous_kek_uri = ? WHERE id = ?", previous, tenant.first)
+                    val backup = database.backup()
+                    database.drop()
+                    journal.record(Erasure.Tenant(tenant.first))
+
+                    migrate(backup) shouldBe 0
+
+                    shouldThrow<KeyNotFoundException> { kms.wrap(tenant.second, ByteArray(32)) }
+                    shouldThrow<KeyNotFoundException> { kms.wrap(previous, ByteArray(32)) }
                 }
             }
 

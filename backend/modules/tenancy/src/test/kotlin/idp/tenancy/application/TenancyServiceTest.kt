@@ -27,6 +27,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.date.shouldBeBetween
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -839,6 +840,61 @@ class TenancyServiceTest :
                     worker.deleteAgain(UUID.randomUUID()) shouldBe false
 
                     ops.tenant(tenant).shouldNotBeNull().version shouldBe version
+                }
+            }
+        }
+
+        context("KEK move") {
+            val next = "aws-kms://next"
+            val keep = Duration.ofDays(35)
+
+            test("stores the new KEK, the previous one and its destruction time, then forgets the previous one") {
+                Platform().run {
+                    val tenant = active()
+
+                    worker.replaceKek(tenant, next)
+                    worker.tenant(tenant).shouldNotBeNull().run {
+                        kekUri shouldBe next
+                        previousKekUri shouldBe KEK
+                        previousKekDestroyAfter.shouldBeNull()
+                        keks shouldContainExactly listOf(next, KEK)
+                    }
+
+                    val before = clock.instant().plus(keep)
+                    worker.recordKekRewrapped(tenant, keep)
+                    val destroyAfter = worker.tenant(tenant)?.previousKekDestroyAfter.shouldNotBeNull()
+                    destroyAfter.shouldBeBetween(before.minusSeconds(1), clock.instant().plus(keep).plusSeconds(1))
+                    shouldThrow<ForbiddenTenantChange> { worker.forgetPreviousKek(tenant) }
+
+                    clock.offset = keep
+                    worker.forgetPreviousKek(tenant)
+                    worker.tenant(tenant).shouldNotBeNull().keks shouldContainExactly listOf(next)
+                }
+            }
+
+            test("lists active and suspended tenants with a KEK, and nobody else") {
+                Platform().run {
+                    val active = active()
+                    val suspended = approved("globex")
+                    worker.startProvisioning(suspended)
+                    worker.recordProvisioningStep(suspended, "keys", next)
+                    worker.activate(suspended)
+                    ops.suspend(suspended, OPERATOR)
+                    approved("initech")
+
+                    worker.tenantsWithKek().map { it.id }.toSet() shouldBe setOf(active, suspended)
+                }
+            }
+
+            test("is not audited in the platform, because worker records it in the tenant's journal") {
+                Platform().run {
+                    val tenant = active()
+                    audit.changes.clear()
+
+                    worker.replaceKek(tenant, next)
+                    worker.recordKekRewrapped(tenant, keep)
+
+                    audit.changes.shouldBeEmpty()
                 }
             }
         }

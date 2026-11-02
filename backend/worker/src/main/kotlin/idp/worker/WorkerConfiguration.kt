@@ -15,10 +15,13 @@ import idp.sharedkernel.erasure.adapter.ErasureJournalSettings
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
+import idp.sharedkernel.scheduling.ScheduledJob
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.tenancy.application.TenancyService
+import idp.worker.crypto.KekMoveJob
+import idp.worker.crypto.PreviousKekJob
 import idp.worker.handlers.EmailChangeMailHandler
 import idp.worker.handlers.EmailChangedMailHandler
 import idp.worker.handlers.ErasureJournalHandler
@@ -61,8 +64,28 @@ class WorkerConfiguration {
     fun keyHierarchy(
         kms: KeyManagementService,
         transaction: TenantTransaction,
+        platform: PlatformTransaction,
         @Value("\${idp.kms.key-cache-ttl}") ttl: Duration,
-    ) = KeyHierarchy(kms, transaction, ttl)
+    ) = KeyHierarchy(kms, transaction, platform, ttl)
+
+    @Bean
+    fun kekMoveJob(
+        tenancy: TenancyService,
+        kms: KeyManagementService,
+        keys: KeyHierarchy,
+        transaction: TenantTransaction,
+        audit: AuditLog,
+        @Value("\${idp.kms.new-keys}") newKeys: String,
+        @Value("\${idp.kms.previous-kek-retention}") retention: Duration,
+    ): ScheduledJob = KekMoveJob(tenancy, kms, keys, transaction, audit, newKeys, retention)
+
+    @Bean
+    fun previousKekJob(
+        tenancy: TenancyService,
+        kms: KeyManagementService,
+        transaction: TenantTransaction,
+        audit: AuditLog,
+    ): ScheduledJob = PreviousKekJob(tenancy, kms, transaction, audit)
 
     @Bean
     fun auditLog(

@@ -12,6 +12,7 @@ import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.security.UserRole
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.TestDatabase
@@ -69,8 +70,8 @@ class LoginEnvironment {
     val globex = tenant(GLOBEX)
 
     init {
-        val transaction = TenantTransaction(database.pooled("app_runtime"))
-        val keys = KeyHierarchy(kms, transaction, Duration.ofMinutes(1))
+        val runtime = database.pooled("app_runtime")
+        val keys = KeyHierarchy(kms, TenantTransaction(runtime), PlatformTransaction(runtime), Duration.ofMinutes(1))
         listOf(acme, globex).forEach { tenant -> tenant.acting { keys.createTenantKey() } }
         sql.update("UPDATE ${acme.table("tenant_policies")} SET mfa_for_users = false")
     }

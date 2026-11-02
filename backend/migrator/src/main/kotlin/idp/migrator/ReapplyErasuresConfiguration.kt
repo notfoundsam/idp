@@ -41,10 +41,10 @@ class ReapplyErasuresConfiguration {
     ): ReapplyErasuresJob {
         val kms = KeyManagementSettings(newKeys, openBaoAddress, openBaoToken, awsRegion, awsKeyPolicy).service()
         val transaction = TenantTransaction(dataSource)
-        val keys = KeyHierarchy(kms, transaction, Duration.ofMinutes(5))
+        val platform = PlatformTransaction(dataSource)
+        val keys = KeyHierarchy(kms, transaction, platform, Duration.ofMinutes(5))
         val audit = AuditService(transaction, keys)
-        val tenancy =
-            TenancyService(PlatformTransaction(dataSource), audit, OutboxPublisher(), FieldCipher.platform(kms, platformKekUri), baseDomain)
+        val tenancy = TenancyService(platform, audit, OutboxPublisher(), FieldCipher.platform(kms, platformKekUri), baseDomain)
         return ReapplyErasuresJob(
             ErasureJournalSettings(bucket, region, file).journal(),
             tenancy,

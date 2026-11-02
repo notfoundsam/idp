@@ -6,9 +6,11 @@ import idp.sharedkernel.crypto.keyManagementServiceContract
 import idp.sharedkernel.testing.TestOpenBao
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import java.net.InetSocketAddress
 import java.net.URI
+import java.time.Duration
 import java.util.UUID
 
 private val CLOSED_PORT = URI("http://127.0.0.1:1")
@@ -42,11 +44,18 @@ class OpenBaoKeyManagementServiceTest :
                 kms = ::openBao,
                 unknownKey = { "hcvault://transit/unknown-${UUID.randomUUID()}" },
                 unreachable = { OpenBaoKeyManagementService(CLOSED_PORT, "token") },
+                rotate = TestOpenBao::rotate,
             ),
         )
 
         test("a key URI names its transit key") {
             openBao().createKey("tenant-acme") shouldStartWith "hcvault://transit/tenant-acme"
+        }
+
+        test("a new key rotates itself once a year") {
+            val key = openBao().createKey("tenant-${UUID.randomUUID()}")
+
+            TestOpenBao.keyField(key, "auto_rotate_period") shouldBe Duration.ofDays(365).toSeconds().toString()
         }
 
         test("a sealed server is unavailable") {

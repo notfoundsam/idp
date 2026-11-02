@@ -13,6 +13,7 @@ import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserRole.TENANT_ADMIN
 import idp.sharedkernel.security.UserRole.USER
 import idp.sharedkernel.security.UserStatus
+import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.testing.MovableClock
@@ -71,8 +72,9 @@ private class Recovery {
     val database = TestDatabase.migrated()
     val sql = JdbcTemplate(database.owner())
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
-    val transaction = TenantTransaction(database.pooled("worker_runtime"))
-    val keys = KeyHierarchy(kms, transaction, KEY_CACHE_TTL)
+    val runtime = database.pooled("worker_runtime")
+    val transaction = TenantTransaction(runtime)
+    val keys = KeyHierarchy(kms, transaction, PlatformTransaction(runtime), KEY_CACHE_TTL)
     val audit = RecoveryAudit()
     val clock = MovableClock()
     val service = IdentityService(transaction, keys, audit, OutboxPublisher(), clock, TTL, RECOVERY_TTL)

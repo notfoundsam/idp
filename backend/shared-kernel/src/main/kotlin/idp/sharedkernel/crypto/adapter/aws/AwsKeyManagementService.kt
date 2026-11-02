@@ -21,6 +21,9 @@ import java.time.Duration
 private const val URI_PREFIX = "aws-kms://"
 private const val ALIAS_PREFIX = "alias/"
 private const val DELETION_WINDOW_DAYS = 7
+
+/** KMS keeps every backing key, so a rotation needs no rewrap. */
+private const val ROTATION_DAYS = 365
 private val CALL_TIMEOUT: Duration = Duration.ofSeconds(10)
 private val ATTEMPT_TIMEOUT: Duration = Duration.ofSeconds(3)
 
@@ -80,6 +83,7 @@ class AwsKeyManagementService(
 
     private fun createWithAlias(name: String): String {
         val arn = kms.createKey { it.policy(keyPolicy).description(name) }.keyMetadata().arn()
+        kms.enableKeyRotation { it.keyId(arn).rotationPeriodInDays(ROTATION_DAYS) }
         return try {
             kms.createAlias { it.aliasName(name).targetKeyId(arn) }
             arn
