@@ -134,6 +134,53 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/RuleViolated"
+  /api/tenants/{id}/offboarding:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: offboardTenant
+      summary: Start offboarding a suspended tenant
+      description: >-
+        After the waiting period `worker` destroys the KEK of the tenant, which makes every copy of its data unreadable, backups
+        included, and drops its schema. Until then the operator can cancel. The subdomain stays taken.
+      responses:
+        "202":
+          description: The deletion waits for the end of the period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Offboarding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
+    delete:
+      operationId: cancelOffboarding
+      summary: Cancel offboarding before the end of the waiting period
+      description: The tenant stays suspended, resuming it is a separate action.
+      responses:
+        "204":
+          description: Cancelled
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/RuleViolated"
   /api/tenants/{id}/admin-reinvite:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -238,7 +285,7 @@ components:
     Tenant:
       type: object
       additionalProperties: false
-      required: [id, name, status, provisioningStep]
+      required: [id, name, status, provisioningStep, offboardingAfter]
       properties:
         id:
           type: string
@@ -250,3 +297,15 @@ components:
           enum: [REQUESTED, APPROVED, PROVISIONING, ACTIVE, SUSPENDED, OFFBOARDING, DELETED]
         provisioningStep:
           type: [string, "null"]
+        offboardingAfter:
+          type: [string, "null"]
+          format: date-time
+          description: The end of the waiting period while the tenant is offboarding
+    Offboarding:
+      type: object
+      additionalProperties: false
+      required: [deletionAfter]
+      properties:
+        deletionAfter:
+          type: string
+          format: date-time

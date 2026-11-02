@@ -4,15 +4,20 @@ import idp.db.jooq.platform.tables.Outbox.OUTBOX
 import idp.sharedkernel.tenant.TenantContext
 import org.jooq.DSLContext
 import org.jooq.JSONB
+import org.jooq.impl.DSL
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
+/** An event with [availableAt] waits in the outbox until then, which is how a decision gets a waiting period. */
 data class NewEvent(
     val aggregateType: String,
     val aggregateId: UUID,
     val aggregateVersion: Long,
     val eventType: String,
     val payload: Any = emptyMap<String, Any>(),
+    val availableAt: Instant? = null,
 )
 
 /** Bound around a handler, so a reaction joins the chain of its cause without passing IDs by hand. */
@@ -51,6 +56,7 @@ class OutboxPublisher {
             .set(OUTBOX.PAYLOAD, JSONB.valueOf(eventJson.writeValueAsString(event.payload)))
             .set(OUTBOX.CORRELATION_ID, cause?.correlationId ?: UUID.randomUUID())
             .set(OUTBOX.CAUSATION_ID, cause?.eventId)
+            .set(OUTBOX.AVAILABLE_AT, event.availableAt?.let { DSL.value(it.atOffset(ZoneOffset.UTC)) } ?: DSL.currentOffsetDateTime())
             .execute()
     }
 }

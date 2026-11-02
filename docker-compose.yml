@@ -134,13 +134,32 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/idp
       DB_USERNAME: idp_owner
       DB_PASSWORD: idp_owner
+      # Read only when REAPPLY_ERASURES=true, after a restore. See docs/security/restore-runbook.md.
+      ERASURE_JOURNAL_FILE: /var/lib/idp/erasures/journal
+      TENANTS_BASE_DOMAIN: idp.test
+      KMS_NEW_KEYS: hcvault
+      PLATFORM_KEK_URI: hcvault://transit/platform-contacts
+      OPENBAO_ADDRESS: http://openbao:8200
+      OPENBAO_TOKEN: local-dev-token
     volumes:
       - ./backend/migrator/build/libs/migrator.jar:/app/service.jar:ro
+      - idp-erasures:/var/lib/idp/erasures
     depends_on:
       postgres:
         condition: service_healthy
       openbao-init:
         condition: service_completed_successfully
+      erasures-init:
+        condition: service_completed_successfully
+
+  # The erasure journal has a volume of its own: restoring the database must not roll it back.
+  erasures-init:
+    image: amazoncorretto:25.0.5-al2023-headless
+    # A new volume belongs to root, and the services that write to it run as 65532.
+    user: "0:0"
+    command: ["chown", "65532:65532", "/var/lib/idp/erasures"]
+    volumes:
+      - idp-erasures:/var/lib/idp/erasures
 
   role-passwords:
     image: postgres:18.6-alpine3.24
@@ -207,6 +226,11 @@ services:
       MAIL_HOST: mail
       MAIL_PORT: "1025"
       MAIL_FROM: no-reply@idp.test
+      ERASURE_JOURNAL_FILE: /var/lib/idp/erasures/journal
+    depends_on:
+      <<: *java-depends-on
+      erasures-init:
+        condition: service_completed_successfully
     healthcheck:
       # Readiness waits for the seed, so `make up` returns only when the tenants exist.
       test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]
@@ -215,6 +239,7 @@ services:
       retries: 40
     volumes:
       - ./backend/worker/build/libs/worker.jar:/app/service.jar:ro
+      - idp-erasures:/var/lib/idp/erasures
     ports:
       - "127.0.0.1:5006:5005"
 
@@ -256,5 +281,6 @@ services:
 volumes:
   idp-postgres:
   idp-openbao:
+  idp-erasures:
   idp-frontend-node-modules:
   idp-corepack-cache:

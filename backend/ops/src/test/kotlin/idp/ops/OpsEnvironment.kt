@@ -79,6 +79,8 @@ class OpsClient(
 
     fun trace(path: String) = send(HttpRequest.newBuilder(uri(path)).method("TRACE", HttpRequest.BodyPublishers.noBody()))
 
+    fun delete(path: String) = send(HttpRequest.newBuilder(uri(path)).DELETE())
+
     fun post(
         path: String,
         body: String? = null,

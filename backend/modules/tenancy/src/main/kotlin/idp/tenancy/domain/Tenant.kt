@@ -67,8 +67,9 @@ internal class Tenant(
 
     fun resume() = move(SUSPENDED, to = ACTIVE)
 
+    /** Only from a suspended tenant: its sessions are already revoked, so cancelling and resuming brings none of them back. */
     fun startOffboarding(after: Instant) {
-        move(ACTIVE, SUSPENDED, to = OFFBOARDING)
+        move(SUSPENDED, to = OFFBOARDING)
         offboardingAfter = after
     }
 
@@ -78,7 +79,22 @@ internal class Tenant(
         offboardingAfter = null
     }
 
-    fun delete() = move(OFFBOARDING, to = DELETED)
+    fun ensureOffboardingDue(now: Instant) {
+        val after = offboardingAfter
+        if (status != OFFBOARDING) throw ForbiddenTenantChange("A tenant in $status is not offboarding")
+        if (after != null && now.isBefore(after)) throw ForbiddenTenantChange("Tenant $id waits until $after")
+    }
+
+    fun delete(now: Instant) {
+        ensureOffboardingDue(now)
+        move(OFFBOARDING, to = DELETED)
+    }
+
+    /** After a restore the journal outranks the row: the tenant was deleted, whatever status the backup kept. */
+    fun deleteAgain() {
+        status = DELETED
+        offboardingAfter = null
+    }
 
     private fun move(
         vararg from: TenantStatus,

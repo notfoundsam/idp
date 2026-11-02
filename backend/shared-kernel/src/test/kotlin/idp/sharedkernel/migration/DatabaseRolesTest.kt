@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.postgresql.util.PSQLException
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import javax.sql.DataSource
 
 class DatabaseRolesTest :
@@ -187,6 +188,75 @@ class DatabaseRolesTest :
             Fixture().run {
                 TenantSchemaFactory(owner).create(tenantId).id shouldBe tenantId
                 owner.query("""SELECT count(*) FROM "${tenant.name}".fixture""") shouldBe "0"
+            }
+        }
+
+        context("dropping a tenant") {
+            fun Fixture.roleExists() = owner.query("SELECT count(*) FROM pg_roles WHERE rolname = '${tenant.name}'") == "1"
+
+            test("provisioner drops the schema and the role as idp_owner") {
+                Fixture().run {
+                    val schemas = TenantSchemaFactory(database.role("provisioner", options = "-c role=idp_owner"))
+
+                    schemas.drop(tenantId)
+
+                    schemas.exists(tenantId) shouldBe false
+                    roleExists() shouldBe false
+                }
+            }
+
+            test("a runtime role can no longer enter it") {
+                Fixture().run {
+                    TenantSchemaFactory(owner).drop(tenantId)
+
+                    shouldThrow<PSQLException> {
+                        database.role("app_runtime").asRole(tenant.name, "SELECT 1")
+                    }.message shouldContain "does not exist"
+                }
+            }
+
+            test("dropping twice is harmless") {
+                Fixture().run {
+                    TenantSchemaFactory(owner).drop(tenantId)
+                    TenantSchemaFactory(owner).drop(tenantId)
+
+                    TenantSchemaFactory(owner).exists(tenantId) shouldBe false
+                }
+            }
+
+            test("finishes a drop that stopped after the schema") {
+                Fixture().run {
+                    owner.update("""DROP SCHEMA "${tenant.name}" CASCADE""")
+
+                    TenantSchemaFactory(owner).drop(tenantId)
+
+                    roleExists() shouldBe false
+                }
+            }
+
+            test("leaves the other tenants alone") {
+                Fixture().run {
+                    val other = UUID.randomUUID()
+                    TenantSchemaFactory(owner).create(other)
+
+                    TenantSchemaFactory(owner).drop(tenantId)
+
+                    TenantSchemaFactory(owner).exists(other) shouldBe true
+                }
+            }
+
+            test("waits for a running migrator") {
+                Fixture().run {
+                    val dropped = CompletableFuture<Unit>()
+                    SchemaLock(owner).exclusive {
+                        Thread.ofVirtual().start { dropped.complete(TenantSchemaFactory(owner).drop(tenantId)) }
+                        Thread.sleep(300)
+                        dropped.isDone shouldBe false
+                    }
+
+                    dropped.get()
+                    TenantSchemaFactory(owner).exists(tenantId) shouldBe false
+                }
             }
         }
     })

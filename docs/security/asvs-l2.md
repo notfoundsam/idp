@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 58 |
-| Partial | Part of the control is merged, the listed tasks finish it | 58 |
-| Planned | The listed tasks build the control | 67 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 60 |
+| Partial | Part of the control is merged, the listed tasks finish it | 59 |
+| Planned | The listed tasks build the control | 64 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -127,7 +127,7 @@ SP metadata import is the only file upload.
 | V5.2.2 | 1 | Planned | T27 | Content must match the SAML metadata schema |
 | V5.2.3 | 2 | N/A | | Compressed files are not accepted. SAML DEFLATE limits are under V15.2.2 |
 | V5.3.1 | 1 | N/A | | Uploads are parsed into the database, no file lands in a served folder |
-| V5.3.2 | 1 | Planned | T25, T27 | The upload's file name is ignored, the erasure journal builds paths from IDs |
+| V5.3.2 | 1 | Partial | T27 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalLocalStackTest`), ignoring the upload's file name remains |
 | V5.4.1 | 2 | Planned | T27 | Metadata downloads use a fixed name in `Content-Disposition` |
 | V5.4.2 | 2 | N/A | | Served file names are constants, mail has no attachments |
 | V5.4.3 | 2 | N/A | | No untrusted file is served back to anyone |
@@ -186,7 +186,7 @@ SP metadata import is the only file upload.
 | V7.3.1 | 2 | Done | T22 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`) |
 | V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
 | V7.4.1 | 1 | Planned | T32 | Logout invalidates the session on the server |
-| V7.4.2 | 1 | Partial | T25, T34 | A blocked user is refused on the next request, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
+| V7.4.2 | 1 | Partial | T34 | A blocked user is refused on the next request, erasing a user deletes their sessions and flows with the row, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
 | V7.4.3 | 2 | Partial | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`), a factor change offering the same remains |
 | V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
@@ -312,12 +312,12 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V14.1.1 | 2 | Planned | T25 | `docs/security/data-protection.md` classifies data |
-| V14.1.2 | 2 | Planned | T25 | The same document defines requirements per class |
+| V14.1.1 | 2 | Done | T25 | [data-protection.md](data-protection.md) classifies data, by inspection |
+| V14.1.2 | 2 | Done | T25 | The same document sets encryption, integrity, retention, logging and access per class, by inspection |
 | V14.2.1 | 1 | Partial | T28, T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). SAML redirect parameters remain |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
-| V14.2.4 | 2 | Partial | T25, T38 | Field encryption, audit, users and sessions are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`), logs remain |
+| V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
 | V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
 | V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
 | V14.3.3 | 2 | Planned | T31 | Nothing sensitive in browser storage |

@@ -35,6 +35,7 @@ import idp.tenancy.application.TenancyEvents
 import idp.tenancy.application.TenancyNotFound
 import idp.tenancy.application.TenancyService
 import idp.tenancy.application.TenantView
+import idp.worker.SwitchableDataSource
 import idp.worker.handlers.InvitationMailHandler
 import idp.worker.mail.MailDispatcher
 import idp.worker.mail.MailRecipients
@@ -54,15 +55,11 @@ import io.kotest.matchers.string.shouldNotContain
 import org.postgresql.util.PSQLException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mail.javamail.JavaMailSenderImpl
-import java.io.PrintWriter
 import java.net.URI
 import java.nio.file.Path
-import java.sql.Connection
-import java.sql.SQLException
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
-import javax.sql.DataSource
 import kotlin.io.path.listDirectoryEntries
 
 private const val BASE_DOMAIN = "idp.test"
@@ -71,33 +68,6 @@ private const val FROM = "no-reply@idp.test"
 private const val NEXT_RELEASE = "classpath:fixtures/migrations/next"
 private const val CURRENT_RELEASE = "classpath:db/tenant"
 private val OPERATOR = Actor.Operator("alice")
-
-private class SwitchableDataSource(
-    private val delegate: DataSource,
-) : DataSource {
-    @Volatile var down = false
-
-    override fun getConnection(): Connection = if (down) throw SQLException("database is down") else delegate.connection
-
-    override fun getConnection(
-        username: String?,
-        password: String?,
-    ): Connection = throw UnsupportedOperationException()
-
-    override fun getLogWriter(): PrintWriter = delegate.logWriter
-
-    override fun setLogWriter(out: PrintWriter?) = throw UnsupportedOperationException()
-
-    override fun setLoginTimeout(seconds: Int) = throw UnsupportedOperationException()
-
-    override fun getLoginTimeout(): Int = delegate.loginTimeout
-
-    override fun getParentLogger(): java.util.logging.Logger = delegate.parentLogger
-
-    override fun <T : Any?> unwrap(iface: Class<T>?): T = throw UnsupportedOperationException()
-
-    override fun isWrapperFor(iface: Class<*>?): Boolean = false
-}
 
 private class ObservedKms(
     private val delegate: KeyManagementService,

@@ -49,6 +49,12 @@ idp:
     aws:
       region: ${KMS_AWS_REGION:}
       key-policy: ${KMS_AWS_KEY_POLICY:}
+  erasures:
+    # A bucket with Object Lock in AWS, a file outside the database volume locally. Exactly one of them.
+    s3:
+      bucket: ${ERASURE_JOURNAL_BUCKET:}
+      region: ${ERASURE_JOURNAL_REGION:}
+    file: ${ERASURE_JOURNAL_FILE:}
   outbox:
     poll-interval: PT0.5S
   jobs:

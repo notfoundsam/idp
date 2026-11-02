@@ -43,7 +43,6 @@ private const val CREATED = "user.created"
 private const val BLOCKED = "user.blocked"
 private const val UNBLOCKED = "user.unblocked"
 private const val ROLE_CHANGED = "user.role_changed"
-private const val ERASED = "user.erased"
 private const val PROFILE_UPDATED = "user.profile_updated"
 private const val INVITATION_ISSUED = "user.invitation_issued"
 private const val INVITATION_ACCEPTED = "user.invitation_accepted"
@@ -381,7 +380,10 @@ class IdentityService(
         }
     }
 
-    /** The record goes first: its IP is sealed with the key of the actor, who may be this user. The rest leaves by FK. */
+    /**
+     * The record goes first: its IP is sealed with the key of the actor, who may be this user. The rest leaves by FK, the key in
+     * `user_keys` too, so a copy of the rows in a backup cannot be read. The ID is never given out again.
+     */
     fun eraseUser(
         userId: UUID,
         actor: Actor,
@@ -389,11 +391,24 @@ class IdentityService(
     ) {
         transaction.execute { dsl ->
             val others = otherActiveAdmins(dsl, userId)
-            load(dsl, userId).ensureErasable(others)
-            audit.recordChange(AuditRecord(actor, ERASED, AuditTarget.user(userId), ip))
+            val user = load(dsl, userId).apply { ensureErasable(others) }
+            audit.recordChange(AuditRecord(actor, IdentityEvents.ERASED, AuditTarget.user(userId), ip))
+            outbox.publish(dsl, NewEvent(IdentityEvents.AGGREGATE, userId, user.version, IdentityEvents.ERASED))
             users.delete(dsl, userId)
         }
     }
+
+    /**
+     * For a restored backup: the user asked to go before the backup was restored. The last-admin rule protected the tenant then,
+     * and a restored row must not hold the erasure back. False when the row is not there.
+     */
+    fun eraseAgain(userId: UUID): Boolean =
+        transaction.execute { dsl ->
+            if (users.find(dsl, userId) == null) return@execute false
+            audit.recordChange(AuditRecord(Actor.System, IdentityEvents.ERASED, AuditTarget.user(userId)))
+            users.delete(dsl, userId)
+            true
+        }
 
     fun updateProfile(
         userId: UUID,

@@ -6,4 +6,7 @@ object IdentityEvents {
     const val PASSWORD_RESET_REQUESTED = "user.password_reset_requested"
     const val EMAIL_CHANGE_REQUESTED = "user.email_change_requested"
     const val EMAIL_CHANGED = "user.email_changed"
+
+    /** `worker` writes the IDs to the erasure journal, which a restore of the database does not roll back. */
+    const val ERASED = "user.erased"
 }

@@ -39,6 +39,8 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 `app`, `worker` and `ops` connect through PgBouncer in transaction mode under their own roles, and every tenant transaction sets its role with `SET LOCAL`. Tests start PgBouncer from the same `dev-tools/pgbouncer` files, so a new role goes into `userlist.txt`. `worker` also connects directly as `provisioner` to create tenant schemas.
 
+`worker` records erased users and deleted tenants by ID in a file in the `idp-erasures` volume, apart from the database. After restoring the database, apply them again with `docker compose run --rm -e REAPPLY_ERASURES=true migrator`, see [the runbook](../docs/security/restore-runbook.md).
+
 In the `local` profile `worker` applies for the tenants `acme` and `globex` and approves them as `ops` would, then provisions them from the outbox event like any other tenant. `make up` returns after that, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
 
 ## Operator

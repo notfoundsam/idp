@@ -2,6 +2,8 @@ package idp.audience.operator
 
 import idp.audience.operator.application.command.ApproveApplication
 import idp.audience.operator.application.command.BootstrapServiceTenant
+import idp.audience.operator.application.command.CancelOffboarding
+import idp.audience.operator.application.command.OffboardTenant
 import idp.audience.operator.application.command.ResumeTenant
 import idp.audience.operator.application.command.SubmitApplication
 import idp.audience.operator.application.command.SuspendTenant
@@ -30,6 +32,8 @@ object OperatorSecurityConfig : SecurityConfig {
             ApproveApplication::class to MANAGE,
             SuspendTenant::class to MANAGE,
             ResumeTenant::class to MANAGE,
+            OffboardTenant::class to MANAGE,
+            CancelOffboarding::class to MANAGE,
             ReinviteAdmin::class to MANAGE,
             GetTenant::class to READ,
             GetApplication::class to READ,

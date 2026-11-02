@@ -552,6 +552,74 @@ class IdentityServiceTest :
                     tenant.invite() shouldNotBe user
                 }
             }
+
+            test("publishes an event with the IDs alone, for the erasure journal") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.invite()
+
+                    tenant.acting { eraseUser(user, ADMIN) }
+
+                    val event = tenant.events().single { it["event_type"] == IdentityEvents.ERASED }
+                    event["aggregate_type"] shouldBe IdentityEvents.AGGREGATE
+                    event["aggregate_id"] shouldBe user
+                    event["payload"] shouldBe "{}"
+                }
+            }
+
+            test("a refused erasure publishes nothing") {
+                Identity().run {
+                    val tenant = tenant()
+                    val admin = tenant.active(role = TENANT_ADMIN)
+
+                    shouldThrow<LastAdminRequired> { tenant.acting { eraseUser(admin, ADMIN) } }
+
+                    tenant.events().filter { it["event_type"] == IdentityEvents.ERASED }.shouldBeEmpty()
+                }
+            }
+
+            test("a user who comes back by the same address gets a new ID") {
+                Identity().run {
+                    val tenant = tenant()
+                    val first = tenant.active()
+                    tenant.acting { eraseUser(first, ADMIN) }
+
+                    val second = tenant.active()
+
+                    second shouldNotBe first
+                    tenant.acting { user(first) }.shouldBeNull()
+                }
+            }
+
+            test("applied again after a restore, it ignores the last-admin rule and is audited under the system") {
+                Identity().run {
+                    val tenant = tenant()
+                    val admin = tenant.active(role = TENANT_ADMIN)
+
+                    tenant.acting { eraseAgain(admin) } shouldBe true
+
+                    listOf("users", "user_keys", "user_profiles").forEach { tenant.rows(it).shouldBeEmpty() }
+                    audit.changes.last().run {
+                        actor shouldBe Actor.System
+                        action shouldBe IdentityEvents.ERASED
+                        target shouldBe AuditTarget.user(admin)
+                    }
+                }
+            }
+
+            test("applied again to a user who is gone, it changes nothing") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.invite()
+                    tenant.acting { eraseUser(user, ADMIN) }
+                    val before = actions()
+
+                    tenant.acting { eraseAgain(user) } shouldBe false
+
+                    actions() shouldBe before
+                    tenant.events().count { it["event_type"] == IdentityEvents.ERASED } shouldBe 1
+                }
+            }
         }
 
         context("aggregates") {

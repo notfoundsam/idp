@@ -3,6 +3,8 @@ package idp.ops.cli
 import idp.audience.operator.OperatorSecurityConfig
 import idp.audience.operator.application.command.ApproveApplication
 import idp.audience.operator.application.command.BootstrapServiceTenant
+import idp.audience.operator.application.command.CancelOffboarding
+import idp.audience.operator.application.command.OffboardTenant
 import idp.audience.operator.application.command.ResumeTenant
 import idp.audience.operator.application.command.SubmitApplication
 import idp.audience.operator.application.command.SuspendTenant
@@ -72,6 +74,15 @@ class OpsCli(
                     commands.dispatch(ResumeTenant(idOf(id)))
                     "resumed $id"
                 },
+            "offboard" to
+                Operation("<tenant-id>") { (id) ->
+                    "offboarding $id, deletion after ${commands.dispatch(OffboardTenant(idOf(id)))}"
+                },
+            "cancel-offboarding" to
+                Operation("<tenant-id>") { (id) ->
+                    commands.dispatch(CancelOffboarding(idOf(id)))
+                    "offboarding cancelled for $id"
+                },
             "reinvite" to
                 Operation("<tenant-id> <contact>") { (id, contact) ->
                     commands.dispatch(ReinviteAdmin(idOf(id), contact))
@@ -80,7 +91,8 @@ class OpsCli(
             "tenant" to
                 Operation("<tenant-id>") { (id) ->
                     val tenant = queries.ask(GetTenant(idOf(id)))
-                    "id=${tenant.id} name=${tenant.name} status=${tenant.status} provisioningStep=${tenant.provisioningStep}"
+                    "id=${tenant.id} name=${tenant.name} status=${tenant.status} provisioningStep=${tenant.provisioningStep} " +
+                        "offboardingAfter=${tenant.offboardingAfter}"
                 },
             "application" to
                 Operation("<application-id>") { (id) ->

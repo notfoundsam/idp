@@ -41,9 +41,9 @@ private val MOVES =
         Move("activate", setOf(PROVISIONING), ACTIVE) { activate() },
         Move("suspend", setOf(ACTIVE), SUSPENDED) { suspend() },
         Move("resume", setOf(SUSPENDED), ACTIVE) { resume() },
-        Move("start offboarding", setOf(ACTIVE, SUSPENDED), OFFBOARDING) { startOffboarding(AFTER) },
+        Move("start offboarding", setOf(SUSPENDED), OFFBOARDING) { startOffboarding(AFTER) },
         Move("cancel offboarding", setOf(OFFBOARDING), SUSPENDED) { cancelOffboarding() },
-        Move("delete", setOf(OFFBOARDING), DELETED) { delete() },
+        Move("delete", setOf(OFFBOARDING), DELETED) { delete(AFTER) },
     )
 
 class TenantTest :
@@ -149,11 +149,42 @@ class TenantTest :
 
         context("offboarding") {
             test("starting it stores the end of the waiting period") {
-                tenant(ACTIVE).apply { startOffboarding(AFTER) }.offboardingAfter shouldBe AFTER
+                tenant(SUSPENDED).apply { startOffboarding(AFTER) }.offboardingAfter shouldBe AFTER
             }
 
             test("cancelling it clears the end of the waiting period") {
                 tenant(OFFBOARDING, offboardingAfter = AFTER).apply { cancelOffboarding() }.offboardingAfter.shouldBeNull()
+            }
+
+            test("deletion waits for the end of the waiting period") {
+                val tenant = tenant(OFFBOARDING, offboardingAfter = AFTER)
+
+                shouldThrow<ForbiddenTenantChange> { tenant.delete(AFTER.minusSeconds(1)) }
+
+                tenant.status shouldBe OFFBOARDING
+            }
+
+            test("deletion is due at the end of the waiting period") {
+                tenant(OFFBOARDING, offboardingAfter = AFTER).apply { delete(AFTER) }.status shouldBe DELETED
+            }
+
+            test("the waiting period is checked before anything is destroyed") {
+                val offboarding = tenant(OFFBOARDING, offboardingAfter = AFTER)
+
+                shouldNotThrowAny { offboarding.ensureOffboardingDue(AFTER) }
+                shouldThrow<ForbiddenTenantChange> { offboarding.ensureOffboardingDue(AFTER.minusSeconds(1)) }
+                shouldThrow<ForbiddenTenantChange> { tenant(SUSPENDED).ensureOffboardingDue(AFTER) }
+            }
+
+            TenantStatus.entries.forEach { status ->
+                test("a deletion applied again after a restore turns $status into DELETED") {
+                    val tenant = tenant(status, offboardingAfter = AFTER)
+
+                    tenant.deleteAgain()
+
+                    tenant.status shouldBe DELETED
+                    tenant.offboardingAfter.shouldBeNull()
+                }
             }
         }
 

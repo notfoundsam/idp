@@ -5,6 +5,7 @@ import idp.sharedkernel.bus.Query
 import idp.sharedkernel.bus.TransactionScope
 import idp.tenancy.application.TenancyNotFound
 import idp.tenancy.application.TenancyService
+import java.time.Instant
 import java.util.UUID
 
 data class GetTenant(
@@ -18,6 +19,7 @@ data class TenantResponse(
     val name: String,
     val status: String,
     val provisioningStep: String?,
+    val offboardingAfter: Instant?,
 )
 
 class GetTenantHandler(
@@ -27,6 +29,6 @@ class GetTenantHandler(
 
     override fun handle(message: GetTenant): TenantResponse {
         val tenant = tenancy.tenant(message.id) ?: throw TenancyNotFound(message.id)
-        return TenantResponse(tenant.id, tenant.name, tenant.status.name, tenant.provisioningStep)
+        return TenantResponse(tenant.id, tenant.name, tenant.status.name, tenant.provisioningStep, tenant.offboardingAfter)
     }
 }
