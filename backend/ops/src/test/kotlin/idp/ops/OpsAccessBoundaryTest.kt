@@ -2,8 +2,7 @@ package idp.ops
 
 import idp.sharedkernel.crypto.KeyManagementService
 import idp.sharedkernel.crypto.KeyManagementUnavailableException
-import idp.sharedkernel.migration.TenantMigrationRunner
-import idp.sharedkernel.migration.TenantSchemaFactory
+import idp.sharedkernel.migration.TenantSchema
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -14,7 +13,6 @@ import org.springframework.boot.runApplication
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
 import java.sql.SQLException
-import java.util.UUID
 
 /** A typo in a table name fails as bad SQL too, so only this state proves that a right is missing. */
 private const val INSUFFICIENT_PRIVILEGE = "42501"
@@ -33,10 +31,9 @@ class OpsAccessBoundaryTest :
         }
 
         context("tenant schemas") {
-            val tenant = UUID.randomUUID()
+            val tenant = environment.database.tenantSchema()
             environment.sql.update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'PROVISIONING')", tenant)
-            val schema = TenantSchemaFactory(environment.owner).create(tenant).name
-            TenantMigrationRunner(environment.owner).migrateTenant(tenant)
+            val schema = TenantSchema(tenant).name
 
             test("ops_runtime cannot read a table of a tenant") {
                 denied { runtime.queryForList("""SELECT * FROM "$schema".users""") }

@@ -1,8 +1,6 @@
 package idp.sharedkernel.scheduling
 
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.tenant.PlatformTransaction
@@ -60,8 +58,8 @@ private class FixtureCleanup(
 }
 
 private class Schedule {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val worker = database.role("worker_runtime")
     val clock = MovableClock()
     val locks = locks(worker)
@@ -77,10 +75,8 @@ private class Schedule {
     fun cleanupJob(cleanup: TenantCleanup) = TenantCleanupJob(cleanup, runner, clock, INTERVAL)
 
     fun tenant(status: String = "ACTIVE"): UUID {
-        val id = UUID.randomUUID()
+        val id = database.tenantSchema()
         insertTenant(id, status)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
         owner.update("""CREATE TABLE "${TenantSchema(id).name}".fixture (id int)""")
         return id
     }

@@ -105,13 +105,14 @@ private class ProbeEndpoints(
 
 class ThrottleApplicationTest :
     FunSpec({
-        val database = TestDatabase.create()
+        val database = TestDatabase.migrated()
         val owner = database.owner()
+
+        // Not from the pool: limits are counted per tenant in a Valkey that outlives this spec.
         val tenant: UUID = UUID.randomUUID()
         val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
         val kekUri = kms.createKey("tenant-$tenant")
         val sql = JdbcTemplate(owner)
-        TenantMigrationRunner(owner).migrateAll()
         sql.run {
             update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'acme', 'ACTIVE', ?)", tenant, kekUri)
             update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES (?, ?)", HOST, tenant)

@@ -4,9 +4,7 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.spi.ThrowableProxyUtil
 import ch.qos.logback.core.read.ListAppender
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.EventHandler
 import idp.sharedkernel.outbox.EventScope
 import idp.sharedkernel.outbox.IdempotentHandler
@@ -97,18 +95,16 @@ private class InvitationHandler(
 }
 
 private class Tenant {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val jdbc = JdbcTemplate(owner)
     val worker = database.role("worker_runtime")
-    val id: UUID = UUID.randomUUID()
+    val id: UUID = database.tenantSchema()
     val clock = MovableClock()
     val transaction = TenantTransaction(worker)
 
     init {
         jdbc.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'tenant', 'ACTIVE', 'kek')", id)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
     }
 
     fun publish(userId: UUID) {

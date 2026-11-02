@@ -3,9 +3,7 @@ package idp.worker.handlers
 import idp.authentication.application.AuthenticationService
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.crypto.KeyHierarchy
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
 import idp.tenancy.application.TenancyService
@@ -24,11 +22,9 @@ import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 private fun WorkerEnvironment.tenant(context: ConfigurableApplicationContext): TenantContext {
-    val id = UUID.randomUUID()
-    val kekUri = kms.createKey("tenant-$id")
+    val id = database.tenantSchema()
+    val kekUri = kms.createKey("tenant-${UUID.randomUUID()}")
     jdbc.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'tenant', 'ACTIVE', ?)", id, kekUri)
-    TenantSchemaFactory(owner).create(id)
-    TenantMigrationRunner(owner).migrateTenant(id)
     return TenantContext(id, kekUri).also { tenant ->
         TenantContext.with(tenant) { context.getBean(KeyHierarchy::class.java).createTenantKey() }
     }

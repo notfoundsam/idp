@@ -15,9 +15,7 @@ import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.FieldDecryptionException
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.scheduling.TenantCleanup
@@ -82,9 +80,8 @@ private class RecordingAudit : AuditLog {
 }
 
 private class Identity {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
-    val sql = JdbcTemplate(owner)
+    val database = TestDatabase.migrated()
+    val sql = JdbcTemplate(database.owner())
     val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val runtime = database.pooled("worker_runtime")
     val transaction = TenantTransaction(runtime)
@@ -94,11 +91,9 @@ private class Identity {
     val service = IdentityService(transaction, keys, audit, OutboxPublisher(), clock, TTL)
 
     fun tenant(): TenantContext {
-        val id = UUID.randomUUID()
+        val id = database.tenantSchema()
         sql.update("INSERT INTO platform.tenants (id, name, status) VALUES (?, 'tenant', 'ACTIVE')", id)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
-        val context = TenantContext(id, kms.createKey("tenant-$id"))
+        val context = TenantContext(id, kms.createKey("tenant-${UUID.randomUUID()}"))
         TenantContext.with(context) { keys.createTenantKey() }
         return context
     }

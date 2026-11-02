@@ -1,9 +1,7 @@
 package idp.sharedkernel.tenant
 
 import idp.db.jooq.tenant.tables.TenantKeys.TENANT_KEYS
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.testing.TestDatabase
@@ -20,17 +18,14 @@ import java.util.UUID
 import javax.sql.DataSource
 
 private class Tenants {
-    val database = TestDatabase.create()
+    val database = TestDatabase.migrated()
     val owner = database.owner()
-    val a: UUID = UUID.randomUUID()
-    val b: UUID = UUID.randomUUID()
+    val a: UUID = database.tenantSchema()
+    val b: UUID = database.tenantSchema()
 
     init {
-        TenantMigrationRunner(owner).migrateAll()
         listOf(a, b).forEach { id ->
             owner.update("INSERT INTO platform.tenants (id, name, status) VALUES ('$id', 'tenant', 'ACTIVE')")
-            TenantSchemaFactory(owner).create(id)
-            TenantMigrationRunner(owner).migrateTenant(id)
             owner.update("""CREATE TABLE "${TenantSchema(id).name}".fixture (id int)""")
         }
     }

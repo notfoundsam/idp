@@ -1,5 +1,7 @@
 package idp.sharedkernel.testing
 
+import idp.sharedkernel.migration.TenantMigrationRunner
+import idp.sharedkernel.migration.TenantSchemaFactory
 import org.postgresql.ds.PGSimpleDataSource
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.Network
@@ -8,6 +10,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.MountableFile
 import java.sql.DriverManager
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 import javax.sql.DataSource
 
 /** One Postgres per test JVM. Roles are cluster-wide, so tests isolate themselves with a new database. */
@@ -42,9 +45,27 @@ private val pgbouncer: GenericContainer<*> by lazy {
         .also { it.start() }
 }
 
+private const val POOLED_TENANTS = 4
+
 class TestDatabase private constructor(
     val url: String,
+    tenants: List<UUID> = emptyList(),
 ) {
+    private val pooledTenants = ConcurrentLinkedQueue(tenants)
+
+    /**
+     * A migrated tenant schema that `platform.tenants` does not know yet. The caller adds the row.
+     *
+     * Every clone hands out the same ids, so nothing outside this database may be keyed by them: a test
+     * that keeps a tenant's data in OpenBao or Valkey for longer than itself needs its own names there.
+     */
+    fun tenantSchema(): UUID =
+        pooledTenants.poll() ?: UUID.randomUUID().also { id ->
+            val owner = owner()
+            TenantSchemaFactory(owner).create(id)
+            TenantMigrationRunner(owner).migrateTenant(id)
+        }
+
     /** Passwords match dev-tools/pgbouncer/userlist.txt, which holds each role under its own name. */
     fun pooledUrl(): String {
         val name = url.substringAfterLast('/')
@@ -77,11 +98,35 @@ class TestDatabase private constructor(
         }
     }
 
+    private class Template(
+        val name: String,
+        val tenants: List<UUID>,
+    )
+
     companion object {
-        fun create(): TestDatabase {
+        /** Migrations take most of a test's setup, and a clone costs a tenth of them. Tests of the migrations start from [create]. */
+        private val template: Template by lazy {
+            val database = create()
+            TenantMigrationRunner(database.owner()).migrateAll()
+            Template(database.url.substringAfterLast('/'), List(POOLED_TENANTS) { database.tenantSchema() })
+        }
+
+        /** An empty database. */
+        fun create(): TestDatabase = database { name -> "CREATE DATABASE $name OWNER idp_owner" }
+
+        /** A database with the current migrations, isolated from every other test like one from [create]. */
+        fun migrated(): TestDatabase {
+            val template = template
+            return database(template.tenants) { name -> "CREATE DATABASE $name OWNER idp_owner TEMPLATE ${template.name}" }
+        }
+
+        private fun database(
+            tenants: List<UUID> = emptyList(),
+            statement: (String) -> String,
+        ): TestDatabase {
             val name = "test_" + UUID.randomUUID().toString().replace("-", "")
-            superuser(postgres.jdbcUrl) { execute("CREATE DATABASE $name OWNER idp_owner") }
-            return TestDatabase(postgres.jdbcUrl.replaceAfterLast('/', name))
+            superuser(postgres.jdbcUrl) { execute(statement(name)) }
+            return TestDatabase(postgres.jdbcUrl.replaceAfterLast('/', name), tenants)
         }
 
         private fun superuser(

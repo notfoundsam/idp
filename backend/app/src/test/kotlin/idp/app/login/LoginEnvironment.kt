@@ -10,9 +10,7 @@ import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
@@ -63,8 +61,8 @@ class TestTenant(
 
 /** A migrated database with two tenants. `acme` relaxes MFA, so a password completes a login there. `globex` keeps the default. */
 class LoginEnvironment {
-    val database = TestDatabase.create()
-    val owner = database.owner().also { TenantMigrationRunner(it).migrateAll() }
+    val database = TestDatabase.migrated()
+    val owner = database.owner()
     val sql = JdbcTemplate(owner)
     private val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val acme = tenant(ACME)
@@ -78,12 +76,10 @@ class LoginEnvironment {
     }
 
     private fun tenant(host: String): TestTenant {
-        val id = UUID.randomUUID()
-        val kekUri = kms.createKey("tenant-$id")
+        val id = database.tenantSchema()
+        val kekUri = kms.createKey("tenant-${UUID.randomUUID()}")
         sql.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'tenant', 'ACTIVE', ?)", id, kekUri)
         sql.update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES (?, ?)", host, id)
-        TenantSchemaFactory(owner).create(id)
-        TenantMigrationRunner(owner).migrateTenant(id)
         return TestTenant(TenantContext(id, kekUri), host)
     }
 

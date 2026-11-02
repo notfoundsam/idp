@@ -3,9 +3,7 @@ package idp.app.web
 import idp.app.AppApplication
 import idp.authentication.application.SessionCookie
 import idp.sharedkernel.audit.Actor
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchema
-import idp.sharedkernel.migration.TenantSchemaFactory
 import idp.sharedkernel.security.SecurityContext
 import idp.sharedkernel.testing.TestDatabase
 import io.kotest.core.spec.style.FunSpec
@@ -60,11 +58,10 @@ private class CountedDataSources : BeanPostProcessor {
 
 class SessionFilterTest :
     FunSpec({
-        val database = TestDatabase.create()
-        val owner = database.owner()
-        val sql = JdbcTemplate(owner)
-        val acme: UUID = UUID.randomUUID()
-        val suspended: UUID = UUID.randomUUID()
+        val database = TestDatabase.migrated()
+        val sql = JdbcTemplate(database.owner())
+        val acme: UUID = database.tenantSchema()
+        val suspended: UUID = database.tenantSchema()
 
         fun tenant(
             id: UUID,
@@ -73,8 +70,6 @@ class SessionFilterTest :
         ) {
             sql.update("INSERT INTO platform.tenants (id, name, status, kek_uri) VALUES (?, 'tenant', ?, 'hcvault://tenant')", id, status)
             sql.update("INSERT INTO platform.tenant_domains (domain, tenant_id) VALUES (?, ?)", host, id)
-            TenantSchemaFactory(owner).create(id)
-            TenantMigrationRunner(owner).migrateTenant(id)
         }
 
         fun table(
@@ -118,7 +113,6 @@ class SessionFilterTest :
             return token
         }
 
-        TenantMigrationRunner(owner).migrateAll()
         tenant(acme, ACME, "ACTIVE")
         tenant(suspended, SUSPENDED, "SUSPENDED")
         database.pooled("app_runtime")

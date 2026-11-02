@@ -1,7 +1,6 @@
 package idp.sharedkernel.tenant
 
 import com.github.benmanes.caffeine.cache.Ticker
-import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.update
 import idp.sharedkernel.testing.TestDatabase
 import io.kotest.core.spec.style.FunSpec
@@ -22,15 +21,10 @@ private class ManualTicker : Ticker {
 }
 
 private class Platform {
-    val database = TestDatabase.create()
+    val database = TestDatabase.migrated()
     val owner = database.owner()
     val ticker = ManualTicker()
     val ttl: Duration = Duration.ofSeconds(30)
-
-    init {
-        TenantMigrationRunner(owner).migrateAll()
-    }
-
     val resolver = TenantResolver(PlatformTransaction(database.role("app_runtime")), ttl, ticker)
 
     fun tenant(
