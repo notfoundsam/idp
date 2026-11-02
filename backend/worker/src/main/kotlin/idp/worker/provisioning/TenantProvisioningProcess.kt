@@ -1,5 +1,6 @@
 package idp.worker.provisioning
 
+import idp.federation.application.FederationService
 import idp.identity.application.IdentityService
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.KeyManagementService
@@ -33,6 +34,7 @@ class TenantProvisioningProcess(
     private val kms: KeyManagementService,
     private val keys: KeyHierarchy,
     private val identity: IdentityService,
+    private val federation: FederationService,
 ) : EventHandler {
     override val name: String = "tenant-provisioning"
     override val eventType: String = TenancyEvents.APPROVED
@@ -49,6 +51,10 @@ class TenantProvisioningProcess(
                 null
             },
             Step("keys", ::createKeys),
+            Step("saml-keys") { id ->
+                createSamlIdentity(id)
+                null
+            },
             Step("admin-invitation") { id ->
                 inviteFirstAdmin(id)
                 null
@@ -82,6 +88,13 @@ class TenantProvisioningProcess(
         val kekUri = kms.createKey("tenant-$id")
         TenantContext.with(TenantContext(id, kekUri)) { keys.createTenantKey() }
         return kekUri
+    }
+
+    /** The EntityID takes the host the tenant has now and keeps it, so the trust of SPs survives a later change of domains. */
+    private fun createSamlIdentity(id: UUID) {
+        val tenant = tenancy.tenant(id) ?: throw TenancyNotFound(id)
+        val site = checkNotNull(tenancy.site(id)) { "Tenant $id has no site" }
+        TenantContext.with(TenantContext(id, tenant.kekUri)) { federation.createIdentity(site.host) }
     }
 
     /** Before activation, which erases the contact. From here the address lives only in the encrypted `users` row. */

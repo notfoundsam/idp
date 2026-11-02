@@ -2,6 +2,7 @@ package idp.worker.provisioning
 
 import idp.audit.application.AuditService
 import idp.audit.application.OperatorAuditService
+import idp.federation.application.FederationService
 import idp.identity.application.IdentityEvents
 import idp.identity.application.IdentityService
 import idp.sharedkernel.audit.Actor
@@ -134,8 +135,12 @@ private class Provisioning {
     private val audit = FailingAudit(AuditService(tenantTransaction, keys))
     val identity = IdentityService(tenantTransaction, keys, audit, publisher)
 
+    /** Its own audit, so a test can fail the SAML step and the invitation apart. */
+    private val samlAudit = FailingAudit(AuditService(tenantTransaction, keys))
+    val federation = FederationService(tenantTransaction, keys, samlAudit, identity)
+
     fun process(runner: TenantMigrationRunner = TenantMigrationRunner(migrations)) =
-        TenantProvisioningProcess(tenancy, TenantSchemaFactory(schemas), runner, kms, keys, identity)
+        TenantProvisioningProcess(tenancy, TenantSchemaFactory(schemas), runner, kms, keys, identity, federation)
 
     fun approved(subdomain: String = "acme"): UUID {
         val application = ops.submit(NewApplication("Acme", subdomain, CONTACT), OPERATOR)
@@ -168,6 +173,16 @@ private class Provisioning {
         kms.afterWrap = {}
         audit.afterChange = {}
         audit.down = false
+        samlAudit.afterChange = {}
+        samlAudit.down = false
+    }
+
+    fun failSamlKeys() {
+        samlAudit.down = true
+    }
+
+    fun failAfterSamlKeys() {
+        samlAudit.afterChange = { platform.down = true }
     }
 
     fun failInvitation() {
@@ -184,6 +199,13 @@ private class Provisioning {
     ): T = TenantContext.with(TenantContext(tenant, view(tenant).kekUri)) { identity.block() }
 
     fun users(tenant: UUID): Int? = sql.queryForObject("""SELECT count(*) FROM "${TenantSchema(tenant).name}".users""", Int::class.java)
+
+    fun samlKeys(tenant: UUID): List<ByteArray> =
+        sql
+            .queryForList("""SELECT certificate FROM "${TenantSchema(tenant).name}".saml_signing_keys""", ByteArray::class.java)
+            .filterNotNull()
+
+    fun entityId(tenant: UUID): String? = TenantContext.with(TenantContext(tenant, view(tenant).kekUri)) { federation.entityId() }
 
     fun invitations(tenant: UUID): Int? =
         sql.queryForObject("""SELECT count(*) FROM "${TenantSchema(tenant).name}".invitations""", Int::class.java)
@@ -242,8 +264,10 @@ private val FAILURES =
         Failure("creating the KEK", "migrations") { kms.creationDown = true },
         Failure("creating the tenant key", "migrations") { kms.wrappingDown = true },
         Failure("recording the keys step", "migrations") { kms.afterWrap = { platform.down = true } },
-        Failure("inviting the first admin", "keys") { failInvitation() },
-        Failure("recording the invitation step", "keys") { failAfterInvitation() },
+        Failure("creating the SAML keys", "keys") { failSamlKeys() },
+        Failure("recording the SAML keys step", "keys") { failAfterSamlKeys() },
+        Failure("inviting the first admin", "saml-keys") { failInvitation() },
+        Failure("recording the invitation step", "saml-keys") { failAfterInvitation() },
     )
 
 private fun tenantMigrationFiles(): Int = Path.of("../db/src/main/resources/db/tenant").listDirectoryEntries("V*.sql").size
@@ -254,6 +278,27 @@ class TenantProvisioningProcessTest :
         afterSpec { mailpit.close() }
 
         context("the steps") {
+            test("a full run takes an approved tenant through every step to ACTIVE") {
+                Provisioning().run {
+                    val tenant = approved()
+                    view(tenant).status shouldBe TenantStatus.APPROVED
+
+                    deliver(tenant)
+
+                    view(tenant).run {
+                        status shouldBe TenantStatus.ACTIVE
+                        provisioningStep shouldBe "admin-invitation"
+                        kekUri shouldBe "hcvault://transit/tenant-$tenant"
+                    }
+                    appliedMigrations(tenant) shouldBe tenantMigrationFiles()
+                    wrappedKeys(tenant) shouldHaveSize 1
+                    entityId(tenant) shouldBe "https://acme.$BASE_DOMAIN/saml/metadata"
+                    samlKeys(tenant) shouldHaveSize 1
+                    inTenant(tenant) { findByEmail(CONTACT) }.shouldNotBeNull().role shouldBe UserRole.TENANT_ADMIN
+                    tenancy.contact(tenant).shouldBeNull()
+                }
+            }
+
             test("the first step creates the schema and the role of the tenant") {
                 Provisioning().run {
                     val tenant = approved()
@@ -285,6 +330,17 @@ class TenantProvisioningProcessTest :
                     val kekUri = view(tenant).kekUri.shouldNotBeNull()
                     kekUri shouldBe "hcvault://transit/tenant-$tenant"
                     kms.unwrap(kekUri, wrappedKeys(tenant).single()).size shouldBe 32
+                }
+            }
+
+            test("the fourth step fixes the EntityID from the tenant host and creates one SAML signing key") {
+                Provisioning().run {
+                    val tenant = approved()
+
+                    deliver(tenant)
+
+                    entityId(tenant) shouldBe "https://acme.$BASE_DOMAIN/saml/metadata"
+                    samlKeys(tenant) shouldHaveSize 1
                 }
             }
 
@@ -367,6 +423,7 @@ class TenantProvisioningProcessTest :
                         view(tenant).status shouldBe TenantStatus.ACTIVE
                         appliedMigrations(tenant) shouldBe tenantMigrationFiles()
                         wrappedKeys(tenant) shouldHaveSize 1
+                        samlKeys(tenant) shouldHaveSize 1
                         users(tenant) shouldBe 1
                         invitedEvents(tenant) shouldHaveSize 1
                     }
@@ -404,10 +461,10 @@ class TenantProvisioningProcessTest :
                 }
             }
 
-            test("a tenant stopped by the previous release on the keys step goes on to the invitation") {
+            test("a tenant stopped by the previous release on the keys step gets SAML keys and goes on to the invitation") {
                 Provisioning().run {
                     val tenant = approved()
-                    failInvitation()
+                    failSamlKeys()
                     shouldThrowAny { deliver(tenant) }
                     heal()
                     view(tenant).provisioningStep shouldBe "keys"
@@ -416,6 +473,7 @@ class TenantProvisioningProcessTest :
                     deliver(tenant)
 
                     view(tenant).status shouldBe TenantStatus.ACTIVE
+                    samlKeys(tenant) shouldHaveSize 1
                     users(tenant) shouldBe 1
                 }
             }
@@ -424,9 +482,9 @@ class TenantProvisioningProcessTest :
                 Provisioning().run {
                     val tenant = approved()
                     tenancy.startProvisioning(tenant)
-                    tenancy.recordProvisioningStep(tenant, "saml-keys")
+                    tenancy.recordProvisioningStep(tenant, "next-release-step")
 
-                    shouldThrow<IllegalStateException> { deliver(tenant) }.message shouldContain "saml-keys"
+                    shouldThrow<IllegalStateException> { deliver(tenant) }.message shouldContain "next-release-step"
 
                     view(tenant).status shouldBe TenantStatus.PROVISIONING
                 }
@@ -445,6 +503,20 @@ class TenantProvisioningProcessTest :
 
                     kms.created shouldContainExactly List(2) { "hcvault://transit/tenant-$tenant" }
                     view(tenant).kekUri shouldBe kms.created.first()
+                }
+            }
+
+            test("a repeat of the SAML step keeps the first signing key") {
+                Provisioning().run {
+                    val tenant = approved()
+                    failAfterSamlKeys()
+                    shouldThrowAny { deliver(tenant) }
+                    heal()
+                    val first = samlKeys(tenant).single()
+
+                    deliver(tenant)
+
+                    samlKeys(tenant).single() shouldBe first
                 }
             }
 

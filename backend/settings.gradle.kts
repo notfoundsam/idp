@@ -13,6 +13,14 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         mavenCentral()
+        // OpenSAML is not published to Maven Central.
+        exclusiveContent {
+            forRepository { maven("https://build.shibboleth.net/maven/releases") { name = "shibboleth" } }
+            filter {
+                includeGroup("org.opensaml")
+                includeGroup("net.shibboleth")
+            }
+        }
     }
 }
 

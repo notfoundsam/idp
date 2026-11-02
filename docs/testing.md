@@ -37,6 +37,7 @@ Not used: MockMvc, the Spring test context, Mockito and MockK.
 - **Time.** Code takes a `Clock`, and tests move it with `MovableClock`.
 - **Architecture rules.** Each rule has a fixture with a violation in `architecture-tests/src/test/kotlin/archfixtures`, and a new table needs an entry in `tableOwners`.
 - **Spans.** The services export nothing without an OTLP endpoint, so tests send nothing out. A test that reads spans passes a bean class with an `InMemorySpanExporter` as an extra source, sets `management.tracing.sampling.probability=1.0`, and flushes `SdkTracerProvider` before reading. The class has no `@Configuration`, or the component scan of every other spec in the module would pick it up.
+- **Hostile XML.** A parser of XML from outside has negative tests for a DOCTYPE with external or nested entities, XInclude, a foreign schema and the size limit. See `MetadataImporterTest`.
 - **API contract.** A contract test built on `OpenApiContract` fails when the controllers and the contract list different operations, so a new endpoint needs its contract first. Responses, refusals included, are checked against the contract's schemas.
 
 ## Database

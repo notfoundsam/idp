@@ -9,10 +9,16 @@ data class AuditTarget(
     companion object {
         const val USER = "user"
         const val TENANT = "tenant"
+        const val SERVICE_PROVIDER = "service_provider"
+        const val SIGNING_KEY = "signing_key"
 
         fun user(id: UUID) = AuditTarget(USER, id)
 
         fun tenant(id: UUID) = AuditTarget(TENANT, id)
+
+        fun serviceProvider(id: UUID) = AuditTarget(SERVICE_PROVIDER, id)
+
+        fun signingKey(id: UUID) = AuditTarget(SIGNING_KEY, id)
     }
 }
 

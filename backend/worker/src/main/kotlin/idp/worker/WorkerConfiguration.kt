@@ -2,6 +2,7 @@ package idp.worker
 
 import idp.audit.application.AuditService
 import idp.authentication.application.AuthenticationService
+import idp.federation.application.FederationService
 import idp.identity.application.IdentityService
 import idp.identity.application.PasskeyService
 import idp.identity.application.TotpService
@@ -110,6 +111,14 @@ class WorkerConfiguration {
     ) = IdentityService(transaction, keys, audit, OutboxPublisher())
 
     @Bean
+    fun federationService(
+        transaction: TenantTransaction,
+        keys: KeyHierarchy,
+        audit: AuditLog,
+        identity: IdentityService,
+    ) = FederationService(transaction, keys, audit, identity)
+
+    @Bean
     fun invitationCleanup(identity: IdentityService): TenantCleanup = identity.invitationCleanup
 
     @Bean
@@ -196,12 +205,21 @@ class WorkerConfiguration {
         kms: KeyManagementService,
         keys: KeyHierarchy,
         identity: IdentityService,
+        federation: FederationService,
         @Value("\${idp.provisioner.url}") url: String,
         @Value("\${idp.provisioner.username}") username: String,
         @Value("\${idp.provisioner.password}") password: String,
     ): TenantProvisioningProcess {
         val provisioner = DriverManagerDataSource(url, username, password)
-        return TenantProvisioningProcess(tenancy, TenantSchemaFactory(provisioner), TenantMigrationRunner(provisioner), kms, keys, identity)
+        return TenantProvisioningProcess(
+            tenancy,
+            TenantSchemaFactory(provisioner),
+            TenantMigrationRunner(provisioner),
+            kms,
+            keys,
+            identity,
+            federation,
+        )
     }
 
     /** Through the provisioner for the same reason as [tenantProvisioningProcess]: only `idp_owner` drops a schema and a role. */

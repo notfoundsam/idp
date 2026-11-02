@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 62 |
-| Partial | Part of the control is merged, the listed tasks finish it | 58 |
-| Planned | The listed tasks build the control | 62 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 68 |
+| Partial | Part of the control is merged, the listed tasks finish it | 60 |
+| Planned | The listed tasks build the control | 54 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -37,7 +37,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.1.1 | 2 | Partial | T28 | JSON and base64url are decoded once, before validation (`FlowApiTest`), SAML base64 and DEFLATE remain |
 | V1.1.2 | 2 | Partial | T29, T31 | Encoding at the sink: mail templates and jOOQ are merged, SAML form and SPA remain |
 | V1.2.1 | 1 | Partial | T29, T31 | HTML mail is escaped (`MailTemplatesTest`), SAML form and SPA remain |
-| V1.2.2 | 1 | Partial | T27 | Mail links are `https` and built from the stored tenant host, never from a request (`RecoveryMailTest`), ACS URLs remain |
+| V1.2.2 | 1 | Done | T27 | Mail links are `https` and built from the stored tenant host, never from a request (`RecoveryMailTest`). ACS URLs must be absolute `https` without user info or fragment, so `javascript:` and `data:` are refused (`ServiceProviderTest`, `MetadataImporterTest`) |
 | V1.2.3 | 1 | Partial | T31 | JSON comes only from the serializer (`FlowContractTest`), the frontend remains |
 | V1.2.4 | 1 | Done | T4, T5 | jOOQ binds every value, DDL identifiers derive only from a tenant UUID (`TenantIsolationTest`) |
 | V1.2.5 | 1 | N/A | | The application starts no OS processes |
@@ -59,7 +59,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.4.1 | 2 | N/A | | JVM and JavaScript are memory safe, the application has no native code of its own |
 | V1.4.2 | 2 | Planned | T36 | Numeric API inputs have ranges in the contracts |
 | V1.4.3 | 2 | N/A | | Garbage-collected runtimes |
-| V1.5.1 | 1 | Planned | T27, T28, T30 | XML parsers refuse DTDs and external entities, with negative tests |
+| V1.5.1 | 1 | Partial | T28, T30 | XML parsers refuse DTDs and external entities, with negative tests. The metadata parser refuses DTDs, external entities and XInclude (`MetadataImporterTest`), AuthnRequest and the ops SP remain |
 | V1.5.2 | 2 | Done | T8 | Jackson binds fixed types without default typing, no Java serialization (`OutboxDispatcherTest`) |
 
 ## V2 Validation and Business Logic
@@ -100,13 +100,13 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.5.4 | 2 | Partial | T30, T40 | Each tenant has its own host (`TenantFilterTest`), `ops` is separate. Login and console form one application |
 | V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
 | V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
-| V3.7.2 | 2 | Planned | T27, T28, T29 | The only automatic cross-host navigation goes to a registered ACS URL |
+| V3.7.2 | 2 | Partial | T28, T29 | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`), sending the Response remains |
 
 ## V4 API and Web Service
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Partial | T27, T29, T31 | Every JSON body names its charset (`ResponseHeadersTest`, `OpsApiTest`), XML and HTML remain |
+| V4.1.1 | 1 | Partial | T29, T31 | Every JSON body and the SAML metadata name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`), HTML remains |
 | V4.1.2 | 2 | Planned | T40 | Only `/login/*` and `/console/*` redirect to HTTPS, `/api/*` and `/saml/*` refuse plain HTTP |
 | V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
 | V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
@@ -124,12 +124,12 @@ SP metadata import is the only file upload.
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V5.1.1 | 2 | Planned | T36 | `docs/security/input-validation.md` describes the upload |
-| V5.2.1 | 1 | Planned | T27 | Size limit on metadata files |
-| V5.2.2 | 1 | Planned | T27 | Content must match the SAML metadata schema |
+| V5.2.1 | 1 | Done | T27 | Metadata over 128 KiB is refused before parsing (`MetadataImporterTest`) |
+| V5.2.2 | 1 | Done | T27 | Content must be one `EntityDescriptor` with an SP role that validates against the SAML metadata schema (`MetadataImporterTest`) |
 | V5.2.3 | 2 | N/A | | Compressed files are not accepted. SAML DEFLATE limits are under V15.2.2 |
 | V5.3.1 | 1 | N/A | | Uploads are parsed into the database, no file lands in a served folder |
-| V5.3.2 | 1 | Partial | T27 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalLocalStackTest`), ignoring the upload's file name remains |
-| V5.4.1 | 2 | Planned | T27 | Metadata downloads use a fixed name in `Content-Disposition` |
+| V5.3.2 | 1 | Partial | T36 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalLocalStackTest`). Metadata import takes the content only and has no parameter for a file name (`FederationService`), the upload endpoint remains |
+| V5.4.1 | 2 | Done | T27 | Metadata downloads use the fixed name `idp-metadata.xml` in `Content-Disposition`, whatever the request holds (`MetadataApiTest`) |
 | V5.4.2 | 2 | N/A | | Served file names are constants, mail has no attachments |
 | V5.4.3 | 2 | N/A | | No untrusted file is served back to anyone |
 
@@ -215,12 +215,12 @@ SAML assertions are the self-contained tokens. The IdP issues them and `ops` con
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V9.1.1 | 1 | Planned | T28, T30 | Signatures are verified before content is used |
-| V9.1.2 | 1 | Planned | T27, T30 | Allowlist of signature algorithms, SHA-1 is refused |
-| V9.1.3 | 1 | Planned | T27, T30 | Keys come from pre-registered metadata, never from the message |
+| V9.1.2 | 1 | Partial | T30 | Allowlist of signature algorithms, SHA-1 is refused. An SP setting names RSA-PSS or RSA with SHA-256 only, SHA-1 URIs are refused (`ServiceProviderTest`, `SignatureAlgorithmTest`), the ops SP remains |
+| V9.1.3 | 1 | Partial | T30 | Keys come from pre-registered metadata, never from the message. SP certificates are stored from uploaded metadata (`FederationServiceTest`), the ops SP remains |
 | V9.2.1 | 1 | Planned | T29, T30 | Validity window is issued and verified |
 | V9.2.2 | 2 | Planned | T30 | `ops` accepts only a bearer assertion for its own SSO |
 | V9.2.3 | 2 | Planned | T29, T30 | Audience is issued and verified |
-| V9.2.4 | 2 | Planned | T27, T29 | Each assertion names one SP, EntityID is unique within a tenant |
+| V9.2.4 | 2 | Partial | T29 | Each assertion names one SP, EntityID is unique within a tenant. Uniqueness is merged (`FederationServiceTest`), the audience of the assertion remains |
 
 ## V10 OAuth and OIDC
 
@@ -263,19 +263,19 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V11.1.1 | 2 | Done | T26 | [crypto-inventory.md](crypto-inventory.md) holds the key policy and lifecycle after NIST SP 800-57, and the [runbook](key-compromise-runbook.md) covers a compromise. Rotation and moves of KEKs are tested (`KeyRotationJobsTest`, `KeyManagementServiceContract`) |
-| V11.1.2 | 2 | Done | T26 | The same document inventories keys, algorithms and certificates and where each may be used. SAML keys and certificates join it in T27 |
-| V11.2.1 | 2 | Partial | T27 | Tink, the JDK, KMS, Bouncy Castle and WebAuthn4J are merged, SAML libraries remain |
+| V11.1.2 | 2 | Done | T26, T27 | The same document inventories keys, algorithms and certificates and where each may be used, SAML keys and certificates included |
+| V11.2.1 | 2 | Done | T27 | Tink, the JDK, KMS, Bouncy Castle, WebAuthn4J and OpenSAML with Apache Santuario (`SignatureAlgorithmTest`) |
 | V11.2.2 | 2 | Exception | T26 | Ciphertexts carry a key version in the Tink prefix, password hashes carry their parameters (`PasswordHasherTest`), and [crypto-inventory.md](crypto-inventory.md) describes replacing an algorithm. KEKs rotate in the KMS and move to another KMS without encrypting data again (`KeyRotationJobsTest`). See [Exceptions](#exceptions) for the tenant key |
-| V11.2.3 | 2 | Partial | T27 | AES-256 and HMAC-SHA-256 are merged, SAML keys need RSA-3072 or stronger |
+| V11.2.3 | 2 | Done | T27 | AES-256, HMAC-SHA-256 and RSA-3072 SAML keys, a weaker or non-RSA signing key is refused (`SigningKeyTest`, `SigningKeyGeneratorTest`) |
 | V11.3.1 | 1 | Done | T7 | Only AES-GCM through Tink and KMS envelopes (`FieldCipherTest`) |
 | V11.3.2 | 1 | Done | T7 | Only AES-GCM (`FieldCipherTest`, `PlatformCipherTest`) |
 | V11.3.3 | 2 | Done | T7 | Authenticated encryption with AAD bound to the row and field (`FieldCipherTest`) |
-| V11.4.1 | 1 | Exception | T27 | SHA-256 family everywhere except TOTP (`TotpCredential`). See [Exceptions](#exceptions) |
+| V11.4.1 | 1 | Exception | T29 | SHA-256 family everywhere except TOTP (`TotpCredential`), the SAML digest is fixed to SHA-256 (`ServiceProviderTest`). See [Exceptions](#exceptions) |
 | V11.4.2 | 2 | Done | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value (`PasswordHasherTest`) |
-| V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
+| V11.4.3 | 2 | Partial | T29 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests of the Response remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
 | V11.5.1 | 2 | Done | T24 | Key material, session tokens, TOTP secrets, recovery codes and every token in a mail use `SecureRandom`, with at least 128 bits and never a UUID (`InvitationTest`, `AccountRecoveryTest`, `SsoSessionTest`, `TotpCredentialTest`, `RecoveryCodeTest`) |
-| V11.6.1 | 2 | Exception | T27 | RSA-PSS or ECDSA by default, passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
+| V11.6.1 | 2 | Exception | T29 | RSA-PSS with SHA-256 by default, `rsa-sha256` only as an audited setting of one SP (`ServiceProviderTest`, `FederationServiceTest`, `SignatureAlgorithmTest`), passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
 
