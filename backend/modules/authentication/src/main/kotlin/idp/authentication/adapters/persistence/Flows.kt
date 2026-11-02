@@ -86,6 +86,13 @@ internal class Flows {
         if (deleted == 0) throw VersionConflictException(FLOWS.name, flow.id, flow.version)
     }
 
+    fun deleteOfUser(
+        dsl: DSLContext,
+        userId: UUID,
+    ) {
+        dsl.deleteFrom(FLOWS).where(FLOWS.USER_ID.eq(userId)).execute()
+    }
+
     /** One statement, so of two parallel checks only one goes on. A check that died gives the flow back when the lease ends. */
     fun lease(
         dsl: DSLContext,

@@ -15,9 +15,16 @@ import idp.audience.login.application.command.SubmitPasskeyHandler
 import idp.audience.login.application.command.SubmitPasswordHandler
 import idp.audience.login.application.command.SubmitRecoveryCodeHandler
 import idp.audience.login.application.command.SubmitTotpHandler
+import idp.audience.login.application.command.recovery.AcceptInvitationHandler
+import idp.audience.login.application.command.recovery.ConfirmEmailChangeHandler
+import idp.audience.login.application.command.recovery.ConfirmPasswordResetHandler
+import idp.audience.login.application.command.recovery.RequestEmailChangeHandler
+import idp.audience.login.application.command.recovery.RequestPasswordResetHandler
 import idp.audience.login.application.query.GetFlowHandler
 import idp.audience.login.web.FlowController
+import idp.audience.login.web.RecoveryController
 import idp.authentication.application.AuthenticationService
+import idp.identity.application.IdentityService
 import idp.identity.application.PasskeyService
 import idp.identity.application.PasswordService
 import idp.identity.application.TotpService
@@ -25,6 +32,8 @@ import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.SecurityConfig
+import idp.sharedkernel.tenant.TenantResolver
+import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.throttle.ThrottleConfig
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -120,8 +129,43 @@ class LoginConfiguration {
     ) = CompleteFlowHandler(authentication, audit)
 
     @Bean
+    fun acceptInvitationHandler(
+        transaction: TenantTransaction,
+        authentication: AuthenticationService,
+        identity: IdentityService,
+        passwords: PasswordService,
+        tenants: TenantResolver,
+        audit: AuditLog,
+    ) = AcceptInvitationHandler(transaction, authentication, identity, passwords, tenants, audit)
+
+    @Bean
+    fun requestPasswordResetHandler(identity: IdentityService) = RequestPasswordResetHandler(identity)
+
+    @Bean
+    fun confirmPasswordResetHandler(
+        transaction: TenantTransaction,
+        authentication: AuthenticationService,
+        identity: IdentityService,
+        passwords: PasswordService,
+        tenants: TenantResolver,
+        audit: AuditLog,
+    ) = ConfirmPasswordResetHandler(transaction, authentication, identity, passwords, tenants, audit)
+
+    @Bean
+    fun requestEmailChangeHandler(identity: IdentityService) = RequestEmailChangeHandler(identity)
+
+    @Bean
+    fun confirmEmailChangeHandler(
+        identity: IdentityService,
+        audit: AuditLog,
+    ) = ConfirmEmailChangeHandler(identity, audit)
+
+    @Bean
     fun flowController(
         commands: CommandBus,
         queries: QueryBus,
     ) = FlowController(commands, queries)
+
+    @Bean
+    fun recoveryController(commands: CommandBus) = RecoveryController(commands)
 }

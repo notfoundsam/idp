@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 55 |
-| Partial | Part of the control is merged, the listed tasks finish it | 57 |
-| Planned | The listed tasks build the control | 71 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 58 |
+| Partial | Part of the control is merged, the listed tasks finish it | 58 |
+| Planned | The listed tasks build the control | 67 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 3 |
 
@@ -36,7 +36,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.1.1 | 2 | Partial | T28 | JSON and base64url are decoded once, before validation (`FlowApiTest`), SAML base64 and DEFLATE remain |
 | V1.1.2 | 2 | Partial | T29, T31 | Encoding at the sink: mail templates and jOOQ are merged, SAML form and SPA remain |
 | V1.2.1 | 1 | Partial | T29, T31 | HTML mail is escaped (`MailTemplatesTest`), SAML form and SPA remain |
-| V1.2.2 | 1 | Planned | T24, T27 | ACS URLs are `https` only, mail links are built from the tenant host |
+| V1.2.2 | 1 | Partial | T27 | Mail links are `https` and built from the stored tenant host, never from a request (`RecoveryMailTest`), ACS URLs remain |
 | V1.2.3 | 1 | Partial | T31 | JSON comes only from the serializer (`FlowContractTest`), the frontend remains |
 | V1.2.4 | 1 | Done | T4, T5 | jOOQ binds every value, DDL identifiers derive only from a tenant UUID (`TenantIsolationTest`) |
 | V1.2.5 | 1 | N/A | | The application starts no OS processes |
@@ -74,7 +74,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.1 | 1 | Done | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API cannot skip one (`FlowApiTest`) |
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
-| V2.3.4 | 2 | Done | T23 | Invitation tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
+| V2.3.4 | 2 | Done | T23, T24 | Invitation, reset and email change tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `AccountRecoveryTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
 | V2.4.1 | 2 | Partial | T28, T40 | The throttle decorator and the limits of the login are merged (`ThrottleTest`, `LoginLimitsTest`), SAML filter and WAF remain |
 
 ## V3 Web Frontend Security
@@ -155,10 +155,10 @@ SP metadata import is the only file upload.
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
 | V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`), its relaxing remains. See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Done | T23 | Every session starts from `AuthFlow`, and `docs/security/authentication.md` lists every pathway |
-| V6.4.1 | 1 | Partial | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), setting the first password remains |
+| V6.4.1 | 1 | Done | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), and the first password is chosen by the user under the password policy (`RecoveryCommandsTest`, `RecoveryApiTest`) |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
-| V6.4.3 | 2 | Planned | T24 | A reset never opens a session, the next login still asks for the second factor |
-| V6.4.4 | 2 | Planned | T24, T34 | Lost factors are reset by the tenant admin, who also enrolled the user |
+| V6.4.3 | 2 | Done | T24 | A reset never opens a session, and the next login still asks for the second factor (`RecoveryApiTest`, `RecoveryCommandsTest`) |
+| V6.4.4 | 2 | Partial | T34 | A lost factor comes back only through `IdentityService.resetMfa`, and the user enrolls again (`AccountRecoveryTest`, `RecoveryApiTest`). An only admin goes through the [runbook](tenant-admin-recovery-runbook.md) (`ReinviteAdminHandlerTest`). The admin command remains |
 | V6.5.1 | 2 | Done | T19 | TOTP codes and recovery codes work once (`TotpServiceTest`) |
 | V6.5.2 | 2 | Done | T19 | Recovery codes have 128 bits of entropy and are stored as SHA-256 (`RecoveryCodeTest`, `TotpServiceTest`) |
 | V6.5.3 | 2 | Done | T19 | Codes and seeds come from a CSPRNG (`RecoveryCodeTest`, `TotpCredentialTest`) |
@@ -187,10 +187,10 @@ SP metadata import is the only file upload.
 | V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
 | V7.4.1 | 1 | Planned | T32 | Logout invalidates the session on the server |
 | V7.4.2 | 1 | Partial | T25, T34 | A blocked user is refused on the next request, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
-| V7.4.3 | 2 | Planned | T24, T32 | A factor change offers ending other sessions, a reset ends them |
+| V7.4.3 | 2 | Partial | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`), a factor change offering the same remains |
 | V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
-| V7.5.1 | 2 | Partial | T24, T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), the email and factor messages remain |
+| V7.5.1 | 2 | Partial | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`), the factor messages remain |
 | V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
 | V7.6.1 | 2 | Planned | T29, T30 | SP session bounds are stated in the assertion and follow the document |
 | V7.6.2 | 2 | Planned | T28, T29 | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed |
@@ -273,7 +273,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V11.4.2 | 2 | Done | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value (`PasswordHasherTest`) |
 | V11.4.3 | 2 | Partial | T27 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests remain |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
-| V11.5.1 | 2 | Partial | T24 | Key material, invitation and session tokens, TOTP secrets and recovery codes use `SecureRandom` (`InvitationTest`, `SsoSessionTest`, `TotpCredentialTest`, `RecoveryCodeTest`), other tokens need 128 bits and never a UUID |
+| V11.5.1 | 2 | Done | T24 | Key material, session tokens, TOTP secrets, recovery codes and every token in a mail use `SecureRandom`, with at least 128 bits and never a UUID (`InvitationTest`, `AccountRecoveryTest`, `SsoSessionTest`, `TotpCredentialTest`, `RecoveryCodeTest`) |
 | V11.6.1 | 2 | Exception | T27 | RSA-PSS or ECDSA by default, passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
@@ -314,7 +314,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V14.1.1 | 2 | Planned | T25 | `docs/security/data-protection.md` classifies data |
 | V14.1.2 | 2 | Planned | T25 | The same document defines requirements per class |
-| V14.2.1 | 1 | Partial | T24, T28, T31 | The invitation token travels in the URL fragment (`TenantProvisioningProcessTest`). Other mail tokens and SAML redirect parameters remain |
+| V14.2.1 | 1 | Partial | T28, T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). SAML redirect parameters remain |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
 | V14.2.4 | 2 | Partial | T25, T38 | Field encryption, audit, users and sessions are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`), logs remain |

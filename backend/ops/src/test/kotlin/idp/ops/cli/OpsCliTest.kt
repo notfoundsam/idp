@@ -92,6 +92,43 @@ class OpsCliTest :
                 }
             }
 
+            test("reinvite seals the address, starts the event and prints neither the address nor anything of the tenant") {
+                val tenant = tenantOf(submit("reinvite"))
+                sql.update("UPDATE platform.tenants SET status = 'ACTIVE', version = version + 1 WHERE id = ?", tenant)
+                sql.update("DELETE FROM platform.operator_audit")
+                val address = "new.admin@acme.example"
+
+                cli.run(listOf("reinvite", tenant.toString(), address)) shouldBe 0
+
+                printed() shouldBe "reinvite requested for $tenant"
+                val stored =
+                    sql.queryForObject(
+                        "SELECT contact_ciphertext FROM platform.admin_reinvites WHERE tenant_id = ?",
+                        ByteArray::class.java,
+                        tenant,
+                    )!!
+                String(stored, Charsets.ISO_8859_1) shouldNotContain address
+                sql
+                    .queryForObject(
+                        "SELECT count(*) FROM platform.outbox WHERE tenant_id = ? AND event_type = ?",
+                        Int::class.java,
+                        tenant,
+                        TenancyEvents.ADMIN_REINVITE_REQUESTED,
+                    ) shouldBe 1
+                val record = environment.audit().single()
+                record["action"] shouldBe "tenant.admin_reinvite_requested"
+                record["actor"] shouldBe IAM_ACTOR
+                record.toString() shouldNotContain address
+            }
+
+            test("reinvite is refused for a tenant that is not active") {
+                val tenant = tenantOf(submit("inactive"))
+
+                cli.run(listOf("reinvite", tenant.toString(), CONTACT)) shouldBe 1
+
+                err.toString().trim() shouldBe "refused: ForbiddenTenantChange"
+            }
+
             test("reads print the same data as the API, with the mask only") {
                 val id = submit("read")
 
@@ -133,6 +170,8 @@ class OpsCliTest :
                 listOf("approve"),
                 listOf("approve", "not-an-id"),
                 listOf("approve", UUID.randomUUID().toString(), "extra"),
+                listOf("reinvite", UUID.randomUUID().toString()),
+                listOf("reinvite", "not-an-id", CONTACT),
             ).forEach { arguments ->
                 test("'${arguments.joinToString(" ")}' exits with 2 and prints the usage") {
                     cli.run(arguments) shouldBe 2

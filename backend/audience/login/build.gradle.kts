@@ -5,4 +5,7 @@ dependencies {
     implementation(project(":modules:identity"))
     compileOnly(libs.spring.web)
     compileOnly(libs.jakarta.servlet.api)
+
+    testImplementation(testFixtures(project(":shared-kernel")))
+    testImplementation(libs.spring.jdbc)
 }

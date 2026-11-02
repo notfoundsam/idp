@@ -28,6 +28,17 @@ internal class Invitations {
             .execute()
     }
 
+    fun ownerOf(
+        dsl: DSLContext,
+        tokenHash: ByteArray,
+        now: Instant,
+    ): UUID? =
+        dsl
+            .select(INVITATIONS.USER_ID)
+            .from(INVITATIONS)
+            .where(INVITATIONS.TOKEN_HASH.eq(tokenHash), INVITATIONS.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
+            .fetchOne(INVITATIONS.USER_ID)
+
     /** One statement, so of two concurrent attempts only one gets the row. Null when there is nothing live to accept. */
     fun consume(
         dsl: DSLContext,

@@ -11,6 +11,11 @@ import idp.audience.login.application.command.SubmitPasskey
 import idp.audience.login.application.command.SubmitPassword
 import idp.audience.login.application.command.SubmitRecoveryCode
 import idp.audience.login.application.command.SubmitTotp
+import idp.audience.login.application.command.recovery.AcceptInvitation
+import idp.audience.login.application.command.recovery.ConfirmEmailChange
+import idp.audience.login.application.command.recovery.ConfirmPasswordReset
+import idp.audience.login.application.command.recovery.RequestEmailChange
+import idp.audience.login.application.command.recovery.RequestPasswordReset
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.throttle.ThrottleConfig
 import idp.sharedkernel.throttle.ThrottleDimension
@@ -20,6 +25,7 @@ import java.time.Duration
 import kotlin.reflect.KClass
 
 private val MINUTE: Duration = Duration.ofMinutes(1)
+private val HOUR: Duration = Duration.ofHours(1)
 
 /** A flow asks for several of these calls, and a person mistypes. */
 private val NAVIGATION =
@@ -38,6 +44,13 @@ private val CREDENTIAL =
         ThrottleRule(ThrottleLimit(1_000, MINUTE), ThrottleDimension.TENANT),
     )
 
+/** Each of these sends a mail to a mailbox the caller may not own. A person needs one or two. */
+private val MAIL =
+    listOf(
+        ThrottleRule(ThrottleLimit(5, HOUR), ThrottleDimension.IP),
+        ThrottleRule(ThrottleLimit(500, HOUR), ThrottleDimension.TENANT),
+    )
+
 object LoginThrottleConfig : ThrottleConfig {
     override val rules: Map<KClass<out Message<*>>, List<ThrottleRule>> =
         mapOf(
@@ -52,5 +65,10 @@ object LoginThrottleConfig : ThrottleConfig {
             SubmitPasskey::class to CREDENTIAL,
             ConfirmTotpEnrollment::class to CREDENTIAL,
             FinishPasskeyEnrollment::class to CREDENTIAL,
+            AcceptInvitation::class to CREDENTIAL,
+            ConfirmPasswordReset::class to CREDENTIAL,
+            ConfirmEmailChange::class to CREDENTIAL,
+            RequestPasswordReset::class to MAIL,
+            RequestEmailChange::class to MAIL,
         )
 }

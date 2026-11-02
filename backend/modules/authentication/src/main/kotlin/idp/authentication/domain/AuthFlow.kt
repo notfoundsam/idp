@@ -97,6 +97,19 @@ internal class AuthFlow(
         now: Instant,
     ): Boolean = (step(now) as? FlowStep.EnrollMfa)?.let { factor in it.factors } == true
 
+    /** Only the first step: a flow that knows someone, or took over a session, must not turn into another user. */
+    fun takesInvitation(now: Instant): Boolean = step(now) == FlowStep.Identify
+
+    /** The password was set a moment ago, so it counts as proved, and the flow goes on as after a password step. */
+    fun invitationAccepted(
+        user: FlowUser,
+        now: Instant,
+    ) {
+        if (!takesInvitation(now)) throw StepNotAllowed()
+        this.user = user
+        proved += PASSWORD
+    }
+
     /** Pass null when the login matched nobody. [login] is what was entered, already encrypted. */
     fun identify(
         user: FlowUser?,

@@ -22,18 +22,36 @@ class EmailTaken : DomainRuleViolation("The tenant already has a user with this 
 /** Answers for login and status. The profile and each credential are aggregates of their own, linked by ID. */
 internal class User(
     val id: UUID,
-    val emailIndex: ByteArray,
-    val emailCiphertext: ByteArray,
+    emailIndex: ByteArray,
+    emailCiphertext: ByteArray,
     role: UserRole,
     status: UserStatus,
     val version: Long,
 ) {
+    var emailIndex = emailIndex
+        private set
+    var emailCiphertext = emailCiphertext
+        private set
     var role = role
         private set
     var status = status
         private set
 
     fun activate() = move(INVITED, to = ACTIVE)
+
+    /** Only for a customer proved outside the system: it is the one way back to [INVITED], and it skips the rule on the last admin. */
+    fun reinvite() {
+        role = TENANT_ADMIN
+        status = INVITED
+    }
+
+    fun changeEmail(
+        index: ByteArray,
+        ciphertext: ByteArray,
+    ) {
+        emailIndex = index
+        emailCiphertext = ciphertext
+    }
 
     fun block(otherActiveAdmins: Int) {
         ensureNotLastAdmin(otherActiveAdmins)

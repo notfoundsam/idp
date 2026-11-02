@@ -6,6 +6,7 @@ import idp.audience.operator.application.command.BootstrapServiceTenant
 import idp.audience.operator.application.command.ResumeTenant
 import idp.audience.operator.application.command.SubmitApplication
 import idp.audience.operator.application.command.SuspendTenant
+import idp.audience.operator.application.command.reinvite.ReinviteAdmin
 import idp.audience.operator.application.query.GetApplication
 import idp.audience.operator.application.query.GetTenant
 import idp.ops.OpsApplication
@@ -70,6 +71,11 @@ class OpsCli(
                 Operation("<tenant-id>") { (id) ->
                     commands.dispatch(ResumeTenant(idOf(id)))
                     "resumed $id"
+                },
+            "reinvite" to
+                Operation("<tenant-id> <contact>") { (id, contact) ->
+                    commands.dispatch(ReinviteAdmin(idOf(id), contact))
+                    "reinvite requested for $id"
                 },
             "tenant" to
                 Operation("<tenant-id>") { (id) ->

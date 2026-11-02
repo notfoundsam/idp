@@ -13,6 +13,10 @@ class InvalidApplication(
     message: String,
 ) : DomainRuleViolation(message)
 
+internal fun requireContact(contact: String) {
+    if (contact.length > MAX_CONTACT_LENGTH || !EMAIL.matches(contact)) throw InvalidApplication("A contact must be an email address")
+}
+
 internal enum class ApplicationStatus {
     SUBMITTED,
     APPROVED,
@@ -60,9 +64,7 @@ internal class TenantApplication(
             contact: String,
             cipher: FieldCipher,
         ): TenantApplication {
-            if (contact.length > MAX_CONTACT_LENGTH || !EMAIL.matches(contact)) {
-                throw InvalidApplication("A contact must be an email address")
-            }
+            requireContact(contact)
             return TenantApplication(
                 id,
                 tenantId,

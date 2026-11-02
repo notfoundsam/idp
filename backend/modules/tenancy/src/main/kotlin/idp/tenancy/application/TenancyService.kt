@@ -11,8 +11,10 @@ import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
+import idp.tenancy.adapters.persistence.AdminReinvites
 import idp.tenancy.adapters.persistence.TenantApplications
 import idp.tenancy.adapters.persistence.Tenants
+import idp.tenancy.domain.AdminReinvite
 import idp.tenancy.domain.Subdomain
 import idp.tenancy.domain.SubdomainTaken
 import idp.tenancy.domain.Tenant
@@ -72,6 +74,7 @@ class TenancyService(
 ) {
     private val tenants = Tenants()
     private val applications = TenantApplications()
+    private val reinvites = AdminReinvites()
 
     fun submit(
         application: NewApplication,
@@ -129,6 +132,32 @@ class TenancyService(
             tenants.save(dsl, tenant)
             audit.recordChange(AuditRecord(actor, RESUMED, AuditTarget.tenant(tenant.id), ip))
         }
+    }
+
+    /** The operator names an address and learns nothing of the tenant: whether it holds that address stays inside `worker`. */
+    fun requestAdminReinvite(
+        tenantId: UUID,
+        contact: String,
+        actor: Actor.Operator,
+        ip: String? = null,
+    ) {
+        val reinvite = AdminReinvite.requested(UUID.randomUUID(), tenantId, contact, contacts)
+        transaction.execute { dsl ->
+            val tenant = load(dsl, tenantId).apply { ensureActive() }
+            reinvites.add(dsl, reinvite)
+            TenantContext.with(TenantContext(tenant.id, tenant.kekUri)) {
+                val event = NewEvent(TenancyEvents.REINVITE_AGGREGATE, reinvite.id, 0, TenancyEvents.ADMIN_REINVITE_REQUESTED)
+                outbox.publish(dsl, event)
+            }
+            audit.recordChange(AuditRecord(actor, TenancyEvents.ADMIN_REINVITE_REQUESTED, AuditTarget.tenant(tenant.id), ip))
+        }
+    }
+
+    /** Null once [eraseReinvite] ran, so a redelivered event ends here. */
+    fun reinviteContact(id: UUID): String? = transaction.execute { dsl -> reinvites.find(dsl, id) }?.contact(contacts)
+
+    fun eraseReinvite(id: UUID) {
+        transaction.execute { dsl -> reinvites.delete(dsl, id) }
     }
 
     fun startProvisioning(tenantId: UUID) {

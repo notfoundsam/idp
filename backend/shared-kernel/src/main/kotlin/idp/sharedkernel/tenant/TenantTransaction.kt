@@ -15,6 +15,9 @@ class TenantTransaction(
         return transaction.execute(schema, setup(schema), block)
     }
 
+    /** For a handler that hashes first and then composes services in one transaction. An audience has no business with `DSLContext`. */
+    fun <T> atomically(block: () -> T): T = execute { block() }
+
     /** For work that must share the fate of the caller's transaction and would be wrong in one of its own. */
     fun <T> join(block: (DSLContext) -> T): T = transaction.join(schema(), block)
 

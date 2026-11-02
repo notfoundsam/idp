@@ -1,14 +1,21 @@
 package idp.identity.application
 
+import idp.identity.adapters.persistence.EmailChangeNotices
+import idp.identity.adapters.persistence.EmailChanges
 import idp.identity.adapters.persistence.InvitationCleanup
 import idp.identity.adapters.persistence.Invitations
 import idp.identity.adapters.persistence.PasskeyChallengeCleanup
+import idp.identity.adapters.persistence.Passkeys
+import idp.identity.adapters.persistence.PasswordResets
+import idp.identity.adapters.persistence.RecoveryCleanup
+import idp.identity.adapters.persistence.RecoveryCodes
+import idp.identity.adapters.persistence.Totps
 import idp.identity.adapters.persistence.UserProfiles
 import idp.identity.adapters.persistence.Users
 import idp.identity.domain.Email
 import idp.identity.domain.EmailTaken
 import idp.identity.domain.Invitation
-import idp.identity.domain.InvitationToken
+import idp.identity.domain.OneTimeToken
 import idp.identity.domain.User
 import idp.identity.domain.UserProfile
 import idp.sharedkernel.audit.Actor
@@ -40,10 +47,19 @@ private const val ERASED = "user.erased"
 private const val PROFILE_UPDATED = "user.profile_updated"
 private const val INVITATION_ISSUED = "user.invitation_issued"
 private const val INVITATION_ACCEPTED = "user.invitation_accepted"
+private const val REINVITED = "user.reinvited"
+private const val PASSWORD_RESET_ACTION = "user.password_reset"
+private const val PASSWORD_RESET_ISSUED = "user.password_reset_issued"
+private const val MFA_RESET = "user.mfa_reset"
+private const val EMAIL_CHANGE_ISSUED = "user.email_change_issued"
 
 private const val EMAIL_FIELD = "users.email_ciphertext"
+private const val NEW_EMAIL_FIELD = "email_changes.new_email_ciphertext"
 private const val NAME_FIELD = "user_profiles.name_ciphertext"
 private const val PHONE_FIELD = "user_profiles.phone_ciphertext"
+
+/** Long enough for an outage of the mail server, and no longer: the row holds an address the user has given up. */
+private val EMAIL_NOTICE_TTL: Duration = Duration.ofDays(7)
 
 class UserNotFound(
     id: UUID,
@@ -51,6 +67,12 @@ class UserNotFound(
 
 /** The same answer for an unknown, spent and expired token, so a guess learns nothing. */
 class InvitationNotValid : DomainRuleViolation("The invitation is not valid")
+
+/** The same answer for an unknown, spent and expired token, so a guess learns nothing. */
+class PasswordResetNotValid : DomainRuleViolation("The password reset is not valid")
+
+/** The same answer for an unknown, spent and expired token and for a taken address, so an address cannot be probed. */
+class EmailChangeNotValid : DomainRuleViolation("The email change is not valid")
 
 data class UserView(
     val id: UUID,
@@ -80,13 +102,22 @@ class IdentityService(
     private val outbox: OutboxPublisher,
     private val clock: Clock = Clock.systemUTC(),
     private val invitationTtl: Duration = Duration.ofHours(72),
+    private val recoveryTtl: Duration = Duration.ofHours(1),
 ) {
     private val users = Users()
     private val profiles = UserProfiles()
     private val invitations = Invitations()
+    private val passwordResets = PasswordResets()
+    private val emailChanges = EmailChanges()
+    private val emailNotices = EmailChangeNotices()
+    private val totps = Totps()
+    private val recoveryCodes = RecoveryCodes()
+    private val passkeys = Passkeys()
     private val random = SecureRandom()
 
     val invitationCleanup: TenantCleanup = InvitationCleanup()
+
+    val recoveryCleanup: TenantCleanup = RecoveryCleanup()
 
     /** Lives here because `worker` has no use for `PasskeyService` of its own. */
     val passkeyChallengeCleanup: TenantCleanup = PasskeyChallengeCleanup()
@@ -118,6 +149,26 @@ class IdentityService(
             users.findByEmailIndex(dsl, emailIndex(email))?.id ?: invite(email, UserRole.TENANT_ADMIN, Actor.System)
         }
 
+    /**
+     * The way back for a tenant that lost its admin, after the customer was proved outside the system. Whoever holds [email] starts
+     * over as an invited admin, so the factors go. The caller revokes the sessions in the same transaction.
+     */
+    fun reinviteAdmin(email: String): UUID {
+        val address = Email.of(email).value
+        return transaction.execute { dsl ->
+            val user =
+                users.findByEmailIndex(dsl, emailIndex(address))
+                    ?: return@execute invite(address, UserRole.TENANT_ADMIN, Actor.System)
+            user.reinvite()
+            removeFactors(dsl, user.id)
+            passwordResets.delete(dsl, user.id)
+            emailChanges.delete(dsl, user.id)
+            outbox.publish(dsl, NewEvent(IdentityEvents.AGGREGATE, user.id, users.save(dsl, user), IdentityEvents.INVITED))
+            audit.recordChange(AuditRecord(Actor.System, REINVITED, AuditTarget.user(user.id)))
+            user.id
+        }
+    }
+
     /** Null when nobody waits for a link: the user is gone or has already accepted. */
     fun issueInvitation(
         userId: UUID,
@@ -132,17 +183,161 @@ class IdentityService(
             issued.token.value
         }
 
+    /** Spends nothing, so a refused password can be typed again. */
+    fun invitationOwner(token: String): UUID? =
+        transaction.execute { dsl -> invitations.ownerOf(dsl, OneTimeToken(token).hash(), clock.instant()) }
+
     fun acceptInvitation(
         token: String,
         actor: Actor,
         ip: String? = null,
     ): UUID =
         transaction.execute { dsl ->
-            val userId = invitations.consume(dsl, InvitationToken(token).hash(), clock.instant()) ?: throw InvitationNotValid()
+            val userId = invitations.consume(dsl, OneTimeToken(token).hash(), clock.instant()) ?: throw InvitationNotValid()
             users.save(dsl, load(dsl, userId).apply { activate() })
             audit.recordChange(AuditRecord(actor, INVITATION_ACCEPTED, AuditTarget.user(userId), ip))
             userId
         }
+
+    /**
+     * Takes one index lookup, one event and one audit row whether the login matched anyone or not, so neither the answer nor its time
+     * tells. The event of a login that matched nobody names a random user and ends in [issuePasswordReset].
+     */
+    fun requestPasswordReset(
+        login: String,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            val user = users.findByEmailIndex(dsl, emailIndex(login))
+            val id = user?.id ?: UUID.randomUUID()
+            outbox.publish(
+                dsl,
+                NewEvent(IdentityEvents.AGGREGATE, id, user?.version ?: 0, IdentityEvents.PASSWORD_RESET_REQUESTED),
+            )
+            val target = user?.let { AuditTarget.user(it.id) }
+            audit.recordChange(AuditRecord(Actor.Anonymous, IdentityEvents.PASSWORD_RESET_REQUESTED, target, ip))
+        }
+    }
+
+    /** Null for anyone but an active user: an invited user holds an invitation, and a blocked one may not come back this way. */
+    fun issuePasswordReset(
+        userId: UUID,
+        actor: Actor,
+        ip: String? = null,
+    ): String? =
+        transaction.execute { dsl ->
+            if (users.find(dsl, userId)?.status != UserStatus.ACTIVE) return@execute null
+            val token = OneTimeToken.generate(random)
+            passwordResets.replace(dsl, userId, token.hash(), clock.instant().plus(recoveryTtl))
+            audit.recordChange(AuditRecord(actor, PASSWORD_RESET_ISSUED, AuditTarget.user(userId), ip))
+            token.value
+        }
+
+    /** Spends nothing, so a refused password can be typed again. */
+    fun passwordResetOwner(token: String): UUID? =
+        transaction.execute { dsl ->
+            passwordResets.ownerOf(dsl, OneTimeToken(token).hash(), clock.instant())?.takeIf { isActive(dsl, it) }
+        }
+
+    /**
+     * Spends the token. The caller stores the password and revokes the sessions in the same transaction. A waiting email change goes
+     * too: whoever needs this may have lost the session that asked for it.
+     */
+    fun completePasswordReset(
+        token: String,
+        ip: String? = null,
+    ): UUID =
+        transaction.execute { dsl ->
+            val userId = passwordResets.consume(dsl, OneTimeToken(token).hash(), clock.instant()) ?: throw PasswordResetNotValid()
+            if (!isActive(dsl, userId)) throw PasswordResetNotValid()
+            emailChanges.delete(dsl, userId)
+            audit.recordChange(AuditRecord(Actor.User(userId), PASSWORD_RESET_ACTION, AuditTarget.user(userId), ip))
+            userId
+        }
+
+    /** The way back after losing every factor, so only an admin reaches it. The caller revokes the sessions in the same transaction. */
+    fun resetMfa(
+        userId: UUID,
+        actor: Actor,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            load(dsl, userId)
+            removeFactors(dsl, userId)
+            audit.recordChange(AuditRecord(actor, MFA_RESET, AuditTarget.user(userId), ip))
+        }
+    }
+
+    /** Accepts an address that belongs to someone else, because refusing it here would tell who has an account. See [confirmEmailChange]. */
+    fun requestEmailChange(
+        userId: UUID,
+        newEmail: String,
+        actor: Actor,
+        ip: String? = null,
+    ) {
+        val address = Email.of(newEmail)
+        transaction.execute { dsl ->
+            val user = load(dsl, userId)
+            val ciphertext = keys.userCipher(userId).encrypt(address.value.toByteArray(), FieldContext(NEW_EMAIL_FIELD, userId))
+            emailChanges.replace(dsl, userId, ciphertext, clock.instant().plus(recoveryTtl))
+            outbox.publish(dsl, NewEvent(IdentityEvents.AGGREGATE, userId, user.version, IdentityEvents.EMAIL_CHANGE_REQUESTED))
+            audit.recordChange(AuditRecord(actor, IdentityEvents.EMAIL_CHANGE_REQUESTED, AuditTarget.user(userId), ip))
+        }
+    }
+
+    /** Null when no live request waits, so a late event mails nothing. */
+    fun issueEmailChange(
+        userId: UUID,
+        actor: Actor,
+        ip: String? = null,
+    ): String? =
+        transaction.execute { dsl ->
+            val token = OneTimeToken.generate(random)
+            if (!emailChanges.attachToken(dsl, userId, token.hash(), clock.instant())) return@execute null
+            audit.recordChange(AuditRecord(actor, EMAIL_CHANGE_ISSUED, AuditTarget.user(userId), ip))
+            token.value
+        }
+
+    /** The address that waits for its confirmation, or null when none does. */
+    fun pendingEmailOf(userId: UUID): String? =
+        transaction.execute { dsl ->
+            emailChanges.newEmailOf(dsl, userId, clock.instant())?.let { ciphertext ->
+                keys.userCipher(userId).decrypt(ciphertext, FieldContext(NEW_EMAIL_FIELD, userId)).decodeToString()
+            }
+        }
+
+    /** Only a mailbox that received the token gets here, and a reset that was waiting for the old address goes. */
+    fun confirmEmailChange(
+        token: String,
+        ip: String? = null,
+    ): UUID =
+        transaction.execute { dsl ->
+            val now = clock.instant()
+            val change = emailChanges.consume(dsl, OneTimeToken(token).hash(), now) ?: throw EmailChangeNotValid()
+            val user = load(dsl, change.userId).takeIf { it.status == UserStatus.ACTIVE } ?: throw EmailChangeNotValid()
+            val cipher = keys.userCipher(user.id)
+            val address = cipher.decrypt(change.newEmailCiphertext, FieldContext(NEW_EMAIL_FIELD, user.id))
+            val index = emailIndex(address.decodeToString())
+            if (users.findByEmailIndex(dsl, index) != null) throw EmailChangeNotValid()
+            emailNotices.add(dsl, user.id, user.emailCiphertext, now.plus(EMAIL_NOTICE_TTL))
+            user.changeEmail(index, cipher.encrypt(address, FieldContext(EMAIL_FIELD, user.id)))
+            passwordResets.delete(dsl, user.id)
+            outbox.publish(dsl, NewEvent(IdentityEvents.AGGREGATE, user.id, users.save(dsl, user), IdentityEvents.EMAIL_CHANGED))
+            audit.recordChange(AuditRecord(Actor.User(user.id), IdentityEvents.EMAIL_CHANGED, AuditTarget.user(user.id), ip))
+            user.id
+        }
+
+    /** The address the last change left behind, kept until its owner is told. */
+    fun previousEmailOf(userId: UUID): String? =
+        transaction.execute { dsl ->
+            emailNotices.oldEmailOf(dsl, userId)?.let { ciphertext ->
+                keys.userCipher(userId).decrypt(ciphertext, FieldContext(EMAIL_FIELD, userId)).decodeToString()
+            }
+        }
+
+    fun forgetPreviousEmail(userId: UUID) {
+        transaction.execute { dsl -> emailNotices.delete(dsl, userId) }
+    }
 
     fun block(
         userId: UUID,
@@ -250,6 +445,20 @@ class IdentityService(
     ): String? = ciphertext?.let { decrypt(it, FieldContext(field, userId)).decodeToString() }
 
     private fun emailIndex(email: String): ByteArray = keys.blindIndex().email(email)
+
+    private fun isActive(
+        dsl: DSLContext,
+        userId: UUID,
+    ): Boolean = users.find(dsl, userId)?.status == UserStatus.ACTIVE
+
+    private fun removeFactors(
+        dsl: DSLContext,
+        userId: UUID,
+    ) {
+        totps.delete(dsl, userId)
+        recoveryCodes.delete(dsl, userId)
+        passkeys.deleteOfUser(dsl, userId)
+    }
 
     private fun load(
         dsl: DSLContext,

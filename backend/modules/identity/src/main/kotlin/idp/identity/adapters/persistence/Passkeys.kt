@@ -48,6 +48,13 @@ internal class Passkeys {
             .fetch(PASSKEY_CREDENTIALS.CREDENTIAL_ID)
             .filterNotNull()
 
+    fun deleteOfUser(
+        dsl: DSLContext,
+        userId: UUID,
+    ) {
+        dsl.deleteFrom(PASSKEY_CREDENTIALS).where(PASSKEY_CREDENTIALS.USER_ID.eq(userId)).execute()
+    }
+
     /** A counter of zero means the authenticator keeps none. Any other must grow, or two copies of the key are in use. */
     fun recordUse(
         dsl: DSLContext,

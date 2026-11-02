@@ -32,6 +32,7 @@ object ArchitectureRules {
             "Tenants" to listOf("tenancy", "sharedkernel"),
             "TenantDomains" to listOf("tenancy", "sharedkernel"),
             "TenantApplications" to listOf("tenancy"),
+            "AdminReinvites" to listOf("tenancy"),
             "OperatorAudit" to listOf("audit"),
             "AuditEntries" to listOf("audit"),
             "TenantKeys" to listOf("sharedkernel"),
@@ -42,6 +43,9 @@ object ArchitectureRules {
             "Users" to listOf("identity"),
             "UserProfiles" to listOf("identity"),
             "Invitations" to listOf("identity"),
+            "PasswordResets" to listOf("identity"),
+            "EmailChanges" to listOf("identity"),
+            "EmailChangeNotices" to listOf("identity"),
             "PasswordCredentials" to listOf("identity"),
             "TotpCredentials" to listOf("identity"),
             "RecoveryCodes" to listOf("identity"),
@@ -68,6 +72,10 @@ object ArchitectureRules {
             "audience.login.application.command.BeginPasskeyEnrollment",
             "audience.login.application.command.FinishPasskeyEnrollment",
             "audience.login.application.command.CompleteFlow",
+            "audience.login.application.command.recovery.AcceptInvitation",
+            "audience.login.application.command.recovery.RequestPasswordReset",
+            "audience.login.application.command.recovery.ConfirmPasswordReset",
+            "audience.login.application.command.recovery.ConfirmEmailChange",
         )
 
     private const val JOOQ_SCHEMAS = """db\.jooq\.(platform|tenant)\.tables"""

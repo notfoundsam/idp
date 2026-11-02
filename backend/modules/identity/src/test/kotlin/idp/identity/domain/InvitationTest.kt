@@ -55,7 +55,7 @@ class InvitationTest :
         test("the same text hashes to the same value, so a token finds its row") {
             val issued = issue()
 
-            InvitationToken(issued.token.value).hash() shouldBe issued.invitation.tokenHash
+            OneTimeToken(issued.token.value).hash() shouldBe issued.invitation.tokenHash
         }
 
         test("the invitation expires after the TTL") {

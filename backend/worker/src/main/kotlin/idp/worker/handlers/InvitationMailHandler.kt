@@ -25,8 +25,7 @@ class InvitationMailHandler(
     override val scope: EventScope = EventScope.TENANT
 
     override fun handle(event: OutboxEvent) {
-        val tenantId = checkNotNull(event.tenantId) { "Event ${event.id} has no tenant" }
-        val site = checkNotNull(tenancy.site(tenantId)) { "Tenant $tenantId has no site" }
+        val site = tenancy.siteOf(event)
         val token = identity.issueInvitation(event.aggregateId, Actor.System) ?: return
         val link = "https://${site.host}/invite#token=$token"
         mail.send(Mail(event.aggregateId, MailTemplate.INVITATION, mapOf("tenant" to site.name, "link" to link)))

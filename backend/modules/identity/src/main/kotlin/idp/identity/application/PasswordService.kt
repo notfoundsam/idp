@@ -16,7 +16,13 @@ import java.util.UUID
 
 private const val PASSWORD_SET = "user.password_set"
 
-/** Every hash runs outside a transaction, so call these with none open: a connection must not wait for Argon2id. */
+/** Not a data class: `toString` must not print the hash. */
+class PreparedPassword internal constructor(
+    val userId: UUID,
+    internal val hash: String,
+)
+
+/** Every hash runs outside a transaction, so call what hashes with none open: a connection must not wait for Argon2id. */
 class PasswordService internal constructor(
     private val transaction: TenantTransaction,
     private val identity: IdentityService,
@@ -42,14 +48,29 @@ class PasswordService internal constructor(
         tenantWords: Set<String>,
         actor: Actor,
         ip: String? = null,
-    ) {
+    ) = store(prepare(userId, password, tenantWords), actor, ip)
+
+    /** Checks and hashes, with no transaction open. Splitting this from [store] lets a caller store it together with other changes. */
+    fun prepare(
+        userId: UUID,
+        password: String,
+        tenantWords: Set<String>,
+    ): PreparedPassword {
         policy.checkLength(password)
         val email = identity.emailOf(userId) ?: throw UserNotFound(userId)
         policy.check(password, tenantWords + email.substringBefore('@'))
-        val hash = limit.run { hasher.hash(password) }
+        return PreparedPassword(userId, limit.run { hasher.hash(password) })
+    }
+
+    /** Joins the transaction of the caller when there is one. */
+    fun store(
+        prepared: PreparedPassword,
+        actor: Actor,
+        ip: String? = null,
+    ) {
         transaction.execute { dsl ->
-            passwords.replace(dsl, PasswordCredential.new(userId, hash))
-            audit.recordChange(AuditRecord(actor, PASSWORD_SET, AuditTarget.user(userId), ip))
+            passwords.replace(dsl, PasswordCredential.new(prepared.userId, prepared.hash))
+            audit.recordChange(AuditRecord(actor, PASSWORD_SET, AuditTarget.user(prepared.userId), ip))
         }
     }
 

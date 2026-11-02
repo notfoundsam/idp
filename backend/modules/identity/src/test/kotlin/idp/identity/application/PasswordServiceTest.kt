@@ -139,6 +139,39 @@ private fun allocatedBytes(block: () -> Unit): Long {
 
 class PasswordServiceTest :
     FunSpec({
+        context("preparing a password") {
+            test("checks the password and stores nothing") {
+                Fixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+
+                    shouldThrow<WeakPassword> { tenant.acting { prepare(user, "short", emptySet()) } }
+                    tenant.acting { prepare(user, PASSWORD, emptySet()) }
+
+                    tenant.credential(user).shouldBeNull()
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
+            test("is stored inside the transaction of the caller, so a failure there leaves the old password") {
+                Fixture().run {
+                    val tenant = tenant()
+                    val user = tenant.userWithPassword()
+                    val before = tenant.hash(user)
+                    val prepared = tenant.acting { prepare(user, WRONG, emptySet()) }
+
+                    shouldThrow<IllegalStateException> {
+                        tenant.inTransaction {
+                            tenant.acting { store(prepared, ADMIN, IP) }
+                            error("the caller failed")
+                        }
+                    }
+
+                    tenant.hash(user) shouldBe before
+                }
+            }
+        }
+
         context("setting a password") {
             test("only an Argon2id hash reaches the database") {
                 Fixture().run {

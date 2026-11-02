@@ -56,7 +56,12 @@ internal class Users {
             dsl,
             user.id,
             user.version,
-            mapOf(USERS.ROLE to user.role.name, USERS.STATUS to user.status.name),
+            mapOf(
+                USERS.EMAIL_INDEX to user.emailIndex,
+                USERS.EMAIL_CIPHERTEXT to user.emailCiphertext,
+                USERS.ROLE to user.role.name,
+                USERS.STATUS to user.status.name,
+            ),
         )
 
     fun delete(

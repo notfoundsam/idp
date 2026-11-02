@@ -4,6 +4,7 @@ import idp.audience.operator.application.command.ApproveApplication
 import idp.audience.operator.application.command.ResumeTenant
 import idp.audience.operator.application.command.SubmitApplication
 import idp.audience.operator.application.command.SuspendTenant
+import idp.audience.operator.application.command.reinvite.ReinviteAdmin
 import idp.audience.operator.application.query.ApplicationResponse
 import idp.audience.operator.application.query.GetApplication
 import idp.audience.operator.application.query.GetTenant
@@ -24,6 +25,11 @@ import java.util.UUID
 class SubmitApplicationRequest(
     val companyName: String,
     val subdomain: String,
+    val contact: String,
+)
+
+/** Not a data class: `toString` must not print the contact. */
+class ReinviteAdminRequest(
     val contact: String,
 )
 
@@ -70,4 +76,12 @@ class TenantOpsController(
     fun resume(
         @PathVariable id: UUID,
     ) = commands.dispatch(ResumeTenant(id))
+
+    /** Answers the same whether the tenant knows the address or not: the operator sees nothing of it. */
+    @PostMapping("/tenants/{id}/admin-reinvite")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    fun reinviteAdmin(
+        @PathVariable id: UUID,
+        @RequestBody request: ReinviteAdminRequest,
+    ) = commands.dispatch(ReinviteAdmin(id, request.contact))
 }
