@@ -53,7 +53,22 @@ object ArchitectureRules {
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */
-    val publicMessages = emptySet<String>()
+    val publicMessages =
+        setOf(
+            "audience.login.application.command.StartFlow",
+            "audience.login.application.query.GetFlow",
+            "audience.login.application.command.SubmitLogin",
+            "audience.login.application.command.SubmitPassword",
+            "audience.login.application.command.SubmitTotp",
+            "audience.login.application.command.SubmitRecoveryCode",
+            "audience.login.application.command.BeginPasskeyLogin",
+            "audience.login.application.command.SubmitPasskey",
+            "audience.login.application.command.BeginTotpEnrollment",
+            "audience.login.application.command.ConfirmTotpEnrollment",
+            "audience.login.application.command.BeginPasskeyEnrollment",
+            "audience.login.application.command.FinishPasskeyEnrollment",
+            "audience.login.application.command.CompleteFlow",
+        )
 
     private const val JOOQ_SCHEMAS = """db\.jooq\.(platform|tenant)\.tables"""
     private const val CONTROLLER = "org.springframework.stereotype.Controller"

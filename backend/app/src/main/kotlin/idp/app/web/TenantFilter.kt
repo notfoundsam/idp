@@ -30,6 +30,7 @@ class TenantFilter(
     }
 
     companion object {
-        const val ORDER = Ordered.HIGHEST_PRECEDENCE + 1
+        /** After the checks that need no tenant, so an outdated client or an oversized request costs no lookup. */
+        const val ORDER = RequestSizeFilter.ORDER + 1
     }
 }

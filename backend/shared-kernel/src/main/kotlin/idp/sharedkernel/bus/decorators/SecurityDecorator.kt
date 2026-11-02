@@ -6,18 +6,25 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.security.AccessDeniedException
 import idp.sharedkernel.security.Principal
+import idp.sharedkernel.security.ReauthenticationRequiredException
+import idp.sharedkernel.security.RequiresFreshAuthentication
 import idp.sharedkernel.security.SecurityConfig
 import idp.sharedkernel.security.SecurityContext
 import idp.sharedkernel.web.ClientIp
+import java.time.Clock
+import java.time.Duration
 import kotlin.reflect.KClass
 
 private const val ACCESS_DENIED = "access.denied"
+private const val REAUTHENTICATION_REQUIRED = "access.reauthentication_required"
 private const val MESSAGE = "message"
 
 /** Runs before Transaction, so a denial needs no second connection and survives whatever happens next. */
 class SecurityDecorator(
     configs: List<SecurityConfig>,
     private val audit: AuditLog,
+    private val clock: Clock = Clock.systemUTC(),
+    private val freshness: Duration = Duration.ofMinutes(10),
 ) : BusDecorator {
     private val owners: Map<KClass<out Message<*>>, SecurityConfig> =
         configs.fold(emptyMap()) { all, config ->
@@ -33,17 +40,34 @@ class SecurityDecorator(
         next: () -> R,
     ): R {
         val principal = SecurityContext.currentOrNull()
-        if (allowed(message, principal)) return next()
+        if (!allowed(message, principal)) {
+            deny(message, principal, ACCESS_DENIED)
+            throw AccessDeniedException(authenticated = principal != null)
+        }
+        if (message is RequiresFreshAuthentication && !isFresh(principal)) {
+            deny(message, principal, REAUTHENTICATION_REQUIRED)
+            throw ReauthenticationRequiredException()
+        }
+        return next()
+    }
+
+    private fun deny(
+        message: Message<*>,
+        principal: Principal?,
+        action: String,
+    ) {
         audit.recordDenial(
             AuditRecord(
                 actor = principal?.actor ?: Actor.Anonymous,
-                action = ACCESS_DENIED,
+                action = action,
                 ip = ClientIp.currentOrNull()?.address,
                 details = mapOf(MESSAGE to message.javaClass.name),
             ),
         )
-        throw AccessDeniedException(authenticated = principal != null)
     }
+
+    private fun isFresh(principal: Principal?): Boolean =
+        principal?.authenticatedAt?.let { clock.instant().isBefore(it.plus(freshness)) } == true
 
     private fun allowed(
         message: Message<*>,

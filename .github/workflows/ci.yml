@@ -62,6 +62,12 @@ jobs:
           base: .release/contracts/openapi/ops.yaml
           revision: contracts/openapi/ops.yaml
           fail-on: ERR
+      - if: steps.release.outputs.tag != '' && hashFiles('.release/contracts/openapi/auth.yaml') != ''
+        uses: oasdiff/oasdiff-action/breaking@9e56cf8b3aff7edb326d5767d3d23f96127e20c3 # v0.1.21
+        with:
+          base: .release/contracts/openapi/auth.yaml
+          revision: contracts/openapi/auth.yaml
+          fail-on: ERR
 
   dependency-review:
     if: github.event_name == 'pull_request'

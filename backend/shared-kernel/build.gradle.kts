@@ -28,6 +28,13 @@ dependencies {
     testFixturesApi(libs.postgresql)
     testFixturesImplementation(libs.testcontainers.postgresql)
     testFixturesImplementation(libs.jackson.databind)
+    testFixturesImplementation(libs.kotest.assertions)
+    testFixturesImplementation(libs.snakeyaml)
+    // Compile only: on the runtime classpath of `worker` tests it would turn their application into a web one.
+    testFixturesCompileOnly(libs.spring.webmvc)
+    testFixturesCompileOnly(libs.spring.web)
+    testFixturesCompileOnly(libs.spring.context)
+    testFixturesCompileOnly(libs.jakarta.servlet.api)
 }
 
 // LocalStack runs as its own CI job, so `check` needs nothing beyond Postgres, PgBouncer and OpenBao.

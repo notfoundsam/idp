@@ -5,10 +5,23 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  servlet:
+    encoding:
+      force-response: true
 
 idp:
   tenants:
     cache-ttl: 30s
+  release:
+    version: ${APP_VERSION:dev}
+    min-client-version: ${MIN_CLIENT_VERSION:}
+  login:
+    # Above what the limit on starting flows lets in during the 15 minutes a flow lives, so filling it needs Valkey to be down.
+    max-open-flows: 100000
+    max-request-size: 32KB
   client-ip:
     trusted-header: ${CLIENT_IP_HEADER:}
   kms:

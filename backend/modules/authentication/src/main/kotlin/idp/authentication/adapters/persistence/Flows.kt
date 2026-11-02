@@ -12,6 +12,7 @@ import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.persistence.VersionedUpdate
 import idp.sharedkernel.scheduling.TenantCleanup
 import org.jooq.DSLContext
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
@@ -22,10 +23,12 @@ internal class Flows {
     fun add(
         dsl: DSLContext,
         flow: AuthFlow,
+        browserHash: ByteArray,
     ) {
         dsl
             .insertInto(FLOWS)
             .set(FLOWS.ID, flow.id)
+            .set(FLOWS.BROWSER_HASH, browserHash)
             .set(FLOWS.USER_ID, flow.userId)
             .set(FLOWS.LOGIN_CIPHERTEXT, flow.login)
             .set(FLOWS.PROVED, flow.proved.names())
@@ -37,14 +40,18 @@ internal class Flows {
             .execute()
     }
 
-    /** The role, the factors and the policy are not stored: they come from the caller, so a change reaches a flow in progress. */
+    /**
+     * The hash is part of the key, so another browser finds no flow at all. The role, the factors and the policy are not stored: they
+     * come from the caller, so a change reaches a flow in progress.
+     */
     fun find(
         dsl: DSLContext,
         id: UUID,
+        browserHash: ByteArray,
         policy: TenantPolicy,
         userOf: (UUID) -> FlowUser?,
     ): AuthFlow? =
-        dsl.selectFrom(FLOWS).where(FLOWS.ID.eq(id)).fetchOne()?.let { row ->
+        dsl.selectFrom(FLOWS).where(FLOWS.ID.eq(id), FLOWS.BROWSER_HASH.eq(browserHash)).fetchOne()?.let { row ->
             AuthFlow(
                 row.id!!,
                 row.userId?.let(userOf),
@@ -78,6 +85,44 @@ internal class Flows {
         val deleted = dsl.deleteFrom(FLOWS).where(FLOWS.ID.eq(flow.id), FLOWS.VERSION.eq(flow.version)).execute()
         if (deleted == 0) throw VersionConflictException(FLOWS.name, flow.id, flow.version)
     }
+
+    /** One statement, so of two parallel checks only one goes on. A check that died gives the flow back when the lease ends. */
+    fun lease(
+        dsl: DSLContext,
+        id: UUID,
+        now: Instant,
+        until: Instant,
+    ): Boolean =
+        dsl
+            .update(FLOWS)
+            .set(FLOWS.STEP_LEASE_UNTIL, until.atOffset(ZoneOffset.UTC))
+            .where(FLOWS.ID.eq(id), FLOWS.STEP_LEASE_UNTIL.isNull.or(FLOWS.STEP_LEASE_UNTIL.le(now.atOffset(ZoneOffset.UTC))))
+            .execute() == 1
+
+    fun release(
+        dsl: DSLContext,
+        id: UUID,
+    ) {
+        dsl
+            .update(FLOWS)
+            .setNull(FLOWS.STEP_LEASE_UNTIL)
+            .where(FLOWS.ID.eq(id))
+            .execute()
+    }
+
+    /** Stops counting at [limit], so a tenant under attack does not pay for the rows it is being flooded with. */
+    fun countOpen(
+        dsl: DSLContext,
+        now: Instant,
+        limit: Int,
+    ): Int =
+        dsl.fetchCount(
+            dsl
+                .selectOne()
+                .from(FLOWS)
+                .where(FLOWS.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
+                .limit(limit),
+        )
 
     private fun Set<AuthFactor>.names(): Array<String> = map { it.name }.toTypedArray()
 

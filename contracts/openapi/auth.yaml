@@ -1,0 +1,562 @@
+openapi: 3.1.0
+info:
+  title: IdP login API
+  version: 1.0.0
+  description: >-
+    The login page walks a flow here. A flow lives in the URL and is bound to the browser by the `__Host-flow` cookie, so a flow that
+    is unknown, expired or began in another browser reads the same. The server decides the next step: a client follows `step` and
+    calls `complete` when it says `COMPLETE`. A browser with a live session echoes the `__Host-csrf` cookie in `X-CSRF-Token` on every
+    call that changes something, and gets 403 without it. A client states its version in `X-Client-Version`, every response states
+    the backend's in `X-App-Version`, and a client older than the minimum gets 426.
+paths:
+  /api/flows:
+    post:
+      operationId: startFlow
+      summary: Start a flow, which sets the cookie that binds it to this browser
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartFlowRequest"
+      responses:
+        "201":
+          description: The flow, already past whatever a live session proves
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getFlow
+      summary: Read where a flow stands, for a page that was reloaded
+      responses:
+        "200":
+          description: The flow
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/login:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: submitLogin
+      summary: Enter a login. The answer is the same whether it belongs to anyone or not
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NextStep"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/password:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: submitPassword
+      summary: Enter the password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NextStep"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Rejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/totp:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: submitTotp
+      summary: Enter a TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NextStep"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Rejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/recovery-code:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: submitRecoveryCode
+      summary: Enter a recovery code, which works once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NextStep"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Rejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/passkey/options:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: beginPasskeyLogin
+      summary: Get a challenge for a passkey. It lists no credentials, because passkeys are discoverable
+      responses:
+        "200":
+          description: The options for `navigator.credentials.get`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyLoginOptions"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/passkey:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: submitPasskey
+      summary: Answer the challenge. Binary fields are base64url
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NextStep"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Rejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/enrollment/totp:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: beginTotpEnrollment
+      summary: Get a TOTP secret. Offered only at the `ENROLL_MFA` step
+      responses:
+        "200":
+          description: The secret, shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpEnrollment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/enrollment/totp/confirmation:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: confirmTotpEnrollment
+      summary: Confirm the secret with a code, which also proves the factor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Enrolled"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Rejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/enrollment/passkey/options:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: beginPasskeyEnrollment
+      summary: Get the options to register a passkey. Offered only at the `ENROLL_MFA` step
+      responses:
+        "200":
+          description: The options for `navigator.credentials.create`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyEnrollmentOptions"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/enrollment/passkey:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: finishPasskeyEnrollment
+      summary: Register the passkey, which also proves the factor. Binary fields are base64url
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyEnrollmentRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Enrolled"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Rejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/flows/{id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: completeFlow
+      summary: Finish the flow, which consumes it
+      description: >-
+        Sets `__Host-session` and `__Host-csrf` when the flow proved something new. Otherwise the browser keeps the cookies it has.
+      responses:
+        "200":
+          description: Where the browser goes next
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Completed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "409":
+          $ref: "#/components/responses/StepConflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    NextStep:
+      description: The next step
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Flow"
+    Enrolled:
+      description: The next step, and recovery codes shown once
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/EnrolledFlow"
+    BadRequest:
+      description: The request is malformed or names an unknown field
+    CsrfRejected:
+      description: A browser with a live session did not echo its CSRF token
+    StepConflict:
+      description: The flow is at another step, or a parallel request is on this one. Read the flow and go on from there
+    Expired:
+      description: The flow is unknown, over, or began in another browser. Start a new one
+    TooLarge:
+      description: The request is over the size limit
+    Rejected:
+      description: >-
+        The credential is wrong, the next attempt has to wait, or this account cannot log in. The answer does not say which
+    UpgradeRequired:
+      description: The client is older than the minimum version, so it has to reload
+    TooManyRequests:
+      description: Over a limit
+      headers:
+        Retry-After:
+          description: Seconds to wait
+          schema:
+            type: integer
+  schemas:
+    StartFlowRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reauthenticate:
+          type: boolean
+          description: Ignore the session and prove everything anew, which sensitive actions ask for
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [login]
+      properties:
+        login:
+          type: string
+    PasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+    CodeRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+    PasskeyLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [credentialId, authenticatorData, clientDataJson, signature]
+      properties:
+        credentialId:
+          type: string
+        userHandle:
+          type: [string, "null"]
+        authenticatorData:
+          type: string
+        clientDataJson:
+          type: string
+        signature:
+          type: string
+    PasskeyEnrollmentRequest:
+      type: object
+      additionalProperties: false
+      required: [attestationObject, clientDataJson]
+      properties:
+        attestationObject:
+          type: string
+        clientDataJson:
+          type: string
+    Flow:
+      type: object
+      additionalProperties: false
+      required: [id, step, factors]
+      properties:
+        id:
+          type: string
+          format: uuid
+        step:
+          $ref: "#/components/schemas/Step"
+        factors:
+          type: array
+          description: What the step offers a choice of
+          items:
+            $ref: "#/components/schemas/Factor"
+    EnrolledFlow:
+      type: object
+      additionalProperties: false
+      required: [id, step, factors, recoveryCodes]
+      properties:
+        id:
+          type: string
+          format: uuid
+        step:
+          $ref: "#/components/schemas/Step"
+        factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/Factor"
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+    Step:
+      type: string
+      enum: [IDENTIFY, PASSWORD, SECOND_FACTOR, ENROLL_MFA, COMPLETE]
+    Factor:
+      type: string
+      enum: [PASSWORD, TOTP, PASSKEY, RECOVERY_CODE]
+    Completed:
+      type: object
+      additionalProperties: false
+      required: [returnUrl]
+      properties:
+        returnUrl:
+          type: [string, "null"]
+          description: Where to send the browser. Empty for a login that came from no Service Provider
+    TotpEnrollment:
+      type: object
+      additionalProperties: false
+      required: [secret]
+      properties:
+        secret:
+          type: string
+          description: Base32
+    PasskeyLoginOptions:
+      type: object
+      additionalProperties: false
+      required: [challenge, rpId, userVerification]
+      properties:
+        challenge:
+          type: string
+        rpId:
+          type: string
+        userVerification:
+          type: string
+    PasskeyEnrollmentOptions:
+      type: object
+      additionalProperties: false
+      required: [challenge, rpId, userHandle, algorithms, excludeCredentials, residentKey, userVerification, attestation]
+      properties:
+        challenge:
+          type: string
+        rpId:
+          type: string
+        userHandle:
+          type: string
+        algorithms:
+          type: array
+          items:
+            type: integer
+        excludeCredentials:
+          type: array
+          items:
+            type: string
+        residentKey:
+          type: string
+        userVerification:
+          type: string
+        attestation:
+          type: string

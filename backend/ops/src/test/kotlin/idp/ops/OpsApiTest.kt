@@ -128,6 +128,35 @@ class OpsApiTest :
             }
         }
 
+        context("responses") {
+            test("every one carries the security headers, a refusal too") {
+                val application = api.get("/api/applications/${api.submit("headers")}")
+                val refusal = api.get("/api/tenants/${UUID.randomUUID()}")
+
+                listOf(application, refusal).forEach {
+                    it.header("Strict-Transport-Security") shouldBe "max-age=31536000; includeSubDomains"
+                    it.header("X-Content-Type-Options") shouldBe "nosniff"
+                    it.header("Referrer-Policy") shouldBe "no-referrer"
+                    it.header("Content-Security-Policy").orEmpty() shouldContain "frame-ancestors 'none'"
+                    it.header("Cache-Control") shouldBe "no-store"
+                }
+            }
+
+            test("TRACE is refused") {
+                api.trace("/api/tenants/${UUID.randomUUID()}").status shouldBe 405
+            }
+
+            test("a body names its charset") {
+                api.get("/api/applications/${api.submit("charset")}").header("Content-Type") shouldBe "application/json;charset=UTF-8"
+            }
+
+            test("an unknown field is refused") {
+                api
+                    .post("/api/applications", """{"companyName":"Acme","subdomain":"extra","contact":"$CONTACT","plan":"gold"}""")
+                    .status shouldBe 400
+            }
+        }
+
         context("audit") {
             test("submitting, approving, suspending and resuming each write a record") {
                 val id = api.submit("audited")
