@@ -11,6 +11,8 @@ How the project tests its code and with which tools. A change that adds a tool o
 | HTTP | The real application on a random port, called over HTTP | `app/src/test/.../login/FlowApiTest.kt` |
 | API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `OpsContractTest` |
 | Telemetry | The real application with spans kept in memory | `app/src/test/.../web/TracingTest.kt` |
+| SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest` |
+| Servlet filter | One filter called directly with servlet mocks, where a limit is too large to reach over HTTP | `SamlThrottleFilterTest` |
 | Architecture | Module boundaries and the build graph | `architecture-tests` |
 | KMS and erasure journal | The AWS adapters against LocalStack | `*LocalStackTest` in `shared-kernel` |
 | Frontend | Unit tests | `frontend/packages/api-client` |
@@ -21,6 +23,8 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit and LocalStack. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs.
 - **ArchUnit** for architecture rules.
 - **OpenTelemetry SDK testing** for `InMemorySpanExporter`.
+- **spring-test** only for its servlet mocks, `MockHttpServletRequest` and `MockFilterChain`.
+- **`TestSp`** in the `federation` test fixtures: an SP with its own key that writes an AuthnRequest by hand, so a test can bend any part of it, and signs or encodes it for either binding.
 - **Vitest** for the frontend.
 - **oasdiff** in CI for breaking changes in the API contracts.
 

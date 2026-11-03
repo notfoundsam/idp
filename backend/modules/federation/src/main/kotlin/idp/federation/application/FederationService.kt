@@ -3,6 +3,9 @@ package idp.federation.application
 import idp.federation.adapters.crypto.SigningKeyGenerator
 import idp.federation.adapters.persistence.SamlIdentities
 import idp.federation.adapters.persistence.SamlIdentityRow
+import idp.federation.adapters.persistence.SamlRequestCleanup
+import idp.federation.adapters.persistence.SamlRequestRow
+import idp.federation.adapters.persistence.SamlRequests
 import idp.federation.adapters.persistence.ServiceProviders
 import idp.federation.adapters.persistence.SigningKeys
 import idp.federation.adapters.persistence.SpAssignments
@@ -24,13 +27,18 @@ import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.domain.Conflict
 import idp.sharedkernel.domain.NotFound
+import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.TenantTransaction
+import idp.sharedkernel.throttle.TooManyRequestsException
 import org.jooq.DSLContext
 import java.security.KeyFactory
+import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 private const val SP_REGISTERED = "sp.registered"
@@ -43,13 +51,40 @@ private const val ROTATION_STARTED = "saml.key_rotation_started"
 private const val ROTATION_COMPLETED = "saml.key_rotation_completed"
 
 private const val PRIVATE_KEY_FIELD = "saml_signing_keys.private_key_ciphertext"
+private const val REQUEST_FIELD = "saml_requests.request_ciphertext"
+private const val RELAY_STATE_FIELD = "saml_requests.relay_state_ciphertext"
 private const val METADATA_PATH = "/saml/metadata"
+
+private val REQUESTS_FULL_RETRY: Duration = Duration.ofMinutes(1)
 
 class ServiceProviderNotFound(
     id: UUID,
 ) : NotFound("No Service Provider $id")
 
 class EntityIdTaken : Conflict("The tenant already has a Service Provider with this EntityID")
+
+class RequestReplayed : Conflict("The Service Provider sent a request with this ID before")
+
+/** An AuthnRequest whose signature, sender and ACS were checked. [idValidUntil] is how long its ID must not come again. */
+class VerifiedRequest(
+    val spId: UUID,
+    val requestId: String,
+    val acsUrl: String,
+    val xml: ByteArray,
+    val relayState: String?,
+    val idValidUntil: Instant,
+)
+
+/** Not a data class: `toString` must not print the request or the RelayState. */
+class PendingRequest(
+    val id: UUID,
+    val spId: UUID,
+    val acsUrl: String,
+    val xml: ByteArray,
+    val relayState: String?,
+) {
+    override fun toString(): String = "PendingRequest($id, $spId)"
+}
 
 class SamlIdentityMissing : IllegalStateException("The tenant has no SAML identity yet")
 
@@ -84,13 +119,18 @@ class FederationService(
     private val audit: AuditLog,
     private val identity: IdentityService,
     private val clock: Clock = Clock.systemUTC(),
+    private val requestTtl: Duration = Duration.ofMinutes(15),
+    private val maxOpenRequests: Int = 100_000,
 ) {
     private val identities = SamlIdentities()
     private val signingKeys = SigningKeys()
     private val serviceProviders = ServiceProviders()
     private val assignments = SpAssignments()
+    private val requests = SamlRequests()
     private val importer = MetadataImporter()
     private val generator = SigningKeyGenerator()
+
+    val requestCleanup: TenantCleanup = SamlRequestCleanup()
 
     /**
      * Fixes the EntityID from [host] and creates the first signing key. Safe to repeat: a provisioning step can die after this
@@ -259,6 +299,52 @@ class FederationService(
 
     fun assignmentsOf(userId: UUID): List<UUID> = transaction.execute { dsl -> assignments.spsOf(dsl, userId) }
 
+    /**
+     * Keeps [request] until the browser comes back for it, sealed outside the transaction. Refuses beyond [maxOpenRequests], because
+     * an anonymous caller can send an unsigned request on behalf of any SP.
+     */
+    fun acceptRequest(request: VerifiedRequest): UUID {
+        val id = UUID.randomUUID()
+        val cipher = keys.derivedCipher(DerivedKey.FLOW)
+        val row =
+            SamlRequestRow(
+                id,
+                request.spId,
+                request.acsUrl,
+                cipher.encrypt(request.xml, FieldContext(REQUEST_FIELD, id)),
+                request.relayState?.let { cipher.encrypt(it.toByteArray(), FieldContext(RELAY_STATE_FIELD, id)) },
+                clock.instant().plus(requestTtl),
+            )
+        transaction.execute { dsl ->
+            val now = clock.instant()
+            if (requests.countOpen(dsl, now, maxOpenRequests) >= maxOpenRequests) throw TooManyRequestsException(REQUESTS_FULL_RETRY)
+            if (!requests.remember(dsl, request.spId, sha256(request.requestId), request.idValidUntil)) throw RequestReplayed()
+            requests.add(dsl, row)
+        }
+        return id
+    }
+
+    /** Binds the request to the browser that came back first. Null when it is gone, expired or taken by another browser. */
+    fun claimRequest(
+        id: UUID,
+        browserSecret: String,
+    ): PendingRequest? {
+        val row = transaction.execute { dsl -> requests.claim(dsl, id, sha256(browserSecret), clock.instant()) } ?: return null
+        val cipher = keys.derivedCipher(DerivedKey.FLOW)
+        return PendingRequest(
+            row.id,
+            row.spId,
+            row.acsUrl,
+            cipher.decrypt(row.requestCiphertext, FieldContext(REQUEST_FIELD, row.id)),
+            row.relayStateCiphertext?.let { String(cipher.decrypt(it, FieldContext(RELAY_STATE_FIELD, row.id))) },
+        )
+    }
+
+    /** For a request answered with an error before any login: nothing may resume it. */
+    fun discardRequest(id: UUID) {
+        transaction.execute { dsl -> requests.delete(dsl, id) }
+    }
+
     private fun assignmentRecord(
         actor: Actor,
         action: String,
@@ -284,6 +370,8 @@ class FederationService(
         dsl: DSLContext,
         id: UUID,
     ): ServiceProvider = serviceProviders.find(dsl, id) ?: throw ServiceProviderNotFound(id)
+
+    private fun sha256(value: String): ByteArray = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
 
     private fun ServiceProvider.view() =
         ServiceProviderView(

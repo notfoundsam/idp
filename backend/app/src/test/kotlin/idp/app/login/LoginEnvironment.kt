@@ -172,6 +172,12 @@ class Browser(
         return send(request.POST(body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()))
     }
 
+    /** A form as an SP page posts it, so no CSRF header and no JSON. */
+    fun form(
+        path: String,
+        body: String,
+    ) = send(request(path).header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(body)))
+
     fun send(
         method: String,
         path: String,

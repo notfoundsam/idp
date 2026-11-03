@@ -37,7 +37,7 @@ class WebConfiguration {
         @Value("\${idp.login.max-request-size}") maxSize: DataSize,
     ) = FilterRegistrationBean(RequestSizeFilter(maxSize.toBytes())).apply {
         order = RequestSizeFilter.ORDER
-        addUrlPatterns(API)
+        addUrlPatterns(API, "/saml/*")
     }
 
     @Bean
