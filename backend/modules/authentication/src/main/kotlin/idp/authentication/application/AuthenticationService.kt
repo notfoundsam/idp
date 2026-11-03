@@ -60,6 +60,18 @@ class IssuedSession(
     override fun toString(): String = "IssuedSession(***)"
 }
 
+/**
+ * A live session as an SP sees it: who, by which factors and since when. [expiresAt] is its absolute end under the policy of the
+ * moment. The idle end moves with every request, so it is not stated.
+ */
+class SessionView(
+    val id: UUID,
+    val userId: UUID,
+    val factors: Set<LoginFactor>,
+    val authenticatedAt: Instant,
+    val expiresAt: Instant,
+)
+
 /** [session] is null when the browser keeps the session it has: nothing new was proved, so there is nothing to rotate. */
 class CompletedFlow(
     val userId: UUID,
@@ -276,6 +288,23 @@ class AuthenticationService(
             val user = session?.let { identity.user(it.userId) }?.takeIf { it.status == UserStatus.ACTIVE } ?: return@execute null
             if (session.isDueForLastSeen(now, lastSeenInterval)) sessions.markSeen(dsl, session.id, now)
             Principal(Actor.User(user.id), Role(user.role.name), session.authenticatedAt)
+        }
+
+    /** Null for a session that is gone, timed out or revoked, or whose user may no longer log in. */
+    fun session(token: String): SessionView? =
+        transaction.execute { dsl ->
+            val now = clock.instant()
+            val policy = policies.load(dsl)
+            val session = sessions.findByTokenHash(dsl, SessionToken(token).hash())?.takeIf { it.isLive(policy, now) }
+            session?.takeIf { identity.user(it.userId)?.status == UserStatus.ACTIVE }?.let {
+                SessionView(
+                    it.id,
+                    it.userId,
+                    it.factors.map(LoginFactor::of).toSet(),
+                    it.authenticatedAt,
+                    it.authenticatedAt.plus(policy.sessionAbsoluteTimeout),
+                )
+            }
         }
 
     /**

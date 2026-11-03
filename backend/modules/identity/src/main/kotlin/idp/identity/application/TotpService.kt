@@ -46,9 +46,15 @@ class TotpService(
     private val recoveryCodes = RecoveryCodes()
     private val random = SecureRandom()
 
-    /** Replaces a secret nobody confirmed, so an abandoned enrollment does not get in the way. */
-    fun enroll(userId: UUID): TotpEnrollment {
-        val secret = TotpSecret.generate(random)
+    /**
+     * Replaces a secret nobody confirmed, so an abandoned enrollment does not get in the way. [knownSecret] is for the fixtures of the
+     * `local` profile, whose users log in with a secret written in the docs. It still needs a confirmation.
+     */
+    fun enroll(
+        userId: UUID,
+        knownSecret: String? = null,
+    ): TotpEnrollment {
+        val secret = knownSecret?.let(TotpSecret::decoded) ?: TotpSecret.generate(random)
         transaction.execute { dsl ->
             ensureExists(dsl, userId)
             val ciphertext = keys.userCipher(userId).encrypt(secret.bytes, FieldContext(SECRET_FIELD, userId))

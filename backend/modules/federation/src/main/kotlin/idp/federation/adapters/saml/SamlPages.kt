@@ -23,6 +23,13 @@ internal object SamlPages {
             page("Sign-in failed", "<p>The sign-in request could not be accepted. Go back to the application and try again.</p>"),
         )
 
+    /** Shown only after a login, so an anonymous visitor never learns who may reach which SP. */
+    fun denied(): SamlPage =
+        SamlPage(
+            403,
+            page("Access denied", "<p>You do not have access to this application. Ask your administrator to give you access.</p>"),
+        )
+
     /**
      * A navigation the page starts itself counts as same-site, unlike the redirect of a cross-site POST, so the `SameSite` cookies of
      * this host come along. A meta refresh needs no script, and the closed policy allows it.

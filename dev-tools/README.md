@@ -45,6 +45,25 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 In the `local` profile `worker` applies for the tenants `acme` and `globex` and approves them as `ops` would, then provisions them from the outbox event like any other tenant. `make up` returns after that, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
 
+`worker` then adds fixtures to `acme`, once, so a restart changes nothing:
+
+| User | Password | TOTP secret | Test SP |
+|---|---|---|---|
+| `alice@acme.test` | `local-fixture-password-acme` | `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` | Assigned |
+| `bob@acme.test` | `local-fixture-password-acme` | `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` | Not assigned |
+
+The test SP is SimpleSAMLphp, registered from `dev-tools/simplesamlphp/sp-metadata.xml` with the email and the display name released. It signs with `rsa-sha256`, because SimpleSAMLphp 2.5.3 verifies no RSA-PSS.
+
+## SAML
+
+SimpleSAMLphp needs the metadata of `acme`, whose certificate is created at provisioning. After the first `make up` on fresh volumes, and after a key rotation, run:
+
+```bash
+dev-tools/simplesamlphp/fetch-idp-metadata.sh
+```
+
+Then https://sp.idp.test/simplesaml/whoami.php logs in through `acme` and shows the NameID, the attributes and the authentication context it received. Tenants created before the SP registry have no SAML identity, so `make clean` first if `/saml/metadata` answers `404`. `SamlInteropTest` runs the same configuration in a container.
+
 ## Operator
 
 In the `local` profile the API of `ops` acts as the fixed operator `local-operator`, because SAML arrives in a later task. Elsewhere a request without a principal gets 401. Until then the API stays inside compose.

@@ -2,6 +2,7 @@ package idp.federation.adapters.persistence
 
 import idp.db.jooq.tenant.tables.SamlRequestIds.SAML_REQUEST_IDS
 import idp.db.jooq.tenant.tables.SamlRequests.SAML_REQUESTS
+import idp.db.jooq.tenant.tables.records.SamlRequestsRecord
 import idp.sharedkernel.scheduling.TenantCleanup
 import org.jooq.DSLContext
 import java.time.Instant
@@ -15,6 +16,7 @@ internal class SamlRequestRow(
     val acsUrl: String,
     val requestCiphertext: ByteArray,
     val relayStateCiphertext: ByteArray?,
+    val acceptedAt: Instant,
     val expiresAt: Instant,
 )
 
@@ -45,6 +47,7 @@ internal class SamlRequests {
             .set(SAML_REQUESTS.ACS_URL, row.acsUrl)
             .set(SAML_REQUESTS.REQUEST_CIPHERTEXT, row.requestCiphertext)
             .set(SAML_REQUESTS.RELAY_STATE_CIPHERTEXT, row.relayStateCiphertext)
+            .set(SAML_REQUESTS.ACCEPTED_AT, row.acceptedAt.atOffset(ZoneOffset.UTC))
             .set(SAML_REQUESTS.EXPIRES_AT, row.expiresAt.atOffset(ZoneOffset.UTC))
             .execute()
     }
@@ -62,16 +65,27 @@ internal class SamlRequests {
             .where(SAML_REQUESTS.ID.eq(id), SAML_REQUESTS.BROWSER_HASH.isNull, SAML_REQUESTS.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
             .returning()
             .fetchOne()
-            ?.let {
-                SamlRequestRow(
-                    it.id!!,
-                    it.spId!!,
-                    it.acsUrl!!,
-                    it.requestCiphertext!!,
-                    it.relayStateCiphertext,
-                    it.expiresAt!!.toInstant(),
-                )
-            }
+            ?.row()
+
+    /** Deletes the request in the statement that finds it, so two tabs that come back with one URL get one Response between them. */
+    fun consume(
+        dsl: DSLContext,
+        id: UUID,
+        browserHash: ByteArray,
+        now: Instant,
+    ): SamlRequestRow? =
+        dsl
+            .deleteFrom(SAML_REQUESTS)
+            .where(
+                SAML_REQUESTS.ID.eq(id),
+                SAML_REQUESTS.BROWSER_HASH.eq(browserHash),
+                SAML_REQUESTS.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)),
+            ).returning()
+            .fetchOne()
+            ?.row()
+
+    private fun SamlRequestsRecord.row() =
+        SamlRequestRow(id!!, spId!!, acsUrl!!, requestCiphertext!!, relayStateCiphertext, acceptedAt!!.toInstant(), expiresAt!!.toInstant())
 
     fun delete(
         dsl: DSLContext,

@@ -55,6 +55,21 @@ The SP's demands become the demands of the flow, so a live session counts only w
 
 `exact` and `minimum` need the weakest listed class, `better` the next one above it, and `maximum` is met by any login. A request with only unknown classes or with declarations answers `NoAuthnContext`.
 
+A request that names a Subject answers `RequestUnsupported`: the person at the keyboard decides who logs in. A `NameIDPolicy` may ask for the format set for the SP or for none, any other answers `InvalidNameIDPolicy`.
+
+## The Response
+
+The login page ends by sending the browser to `/saml/resume/{id}`, and everything is checked again there, because the browser may come back with another session than the one the flow left:
+
+1. A live session, otherwise an error page. An anonymous visitor learns nothing about assignments, since they come later.
+2. The request, taken for good, only with the `__Host-flow` secret of the browser that began it. A second visit and another browser get the error page.
+3. The demands of the SP against this session: the factors reach the requested context, and after `ForceAuthn` the login is newer than the request.
+4. The assignment. Without it the user sees a denial page and the journal gets `sp.login_denied`. A passive request answers `RequestDenied` at the ACS instead.
+
+The assertion is a bearer assertion for five minutes, with the SP as its only audience and the ACS as its recipient. It names the class the session proved, or the strongest requested class the session meets, the time of the login as `AuthnInstant`, and the absolute end of the IdP session as `SessionNotOnOrAfter`. The SP gets the attributes an admin released for it and nothing more, and only those fields of the user are decrypted. Each login reaches the journal as `sp.login`.
+
+The persistent NameID is random, one per user and SP, and kept until either is deleted. Two SPs cannot join what they know of a user, a new email keeps it, and a new user under an old email gets another one. The email as NameID is a setting an admin chooses for one SP.
+
 ## Recovery
 
 Links in mail carry a token of 256 bits from `SecureRandom`. Only its SHA-256 is stored, it works once, and a new one replaces the old. An invitation lives for 72 hours, a password reset and an email change for one hour. The handler in `worker` issues the token, so it exists only in the mail. It stands in the URL fragment, which browsers keep out of requests, logs and `Referer`, and the page sends it in a request body. Any refused token goes to the audit journal as `recovery.token_refused` with its kind.

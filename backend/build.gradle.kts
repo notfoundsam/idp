@@ -39,6 +39,15 @@ val mailpitImage: String =
         .find(rootDir.resolve("../docker-compose.yml").readText())!!
         .groupValues[1]
 
+val simpleSamlPhpImage: String =
+    Regex("""image: (cirrusid/simplesamlphp:\S+)""")
+        .find(rootDir.resolve("../docker-compose.yml").readText())!!
+        .groupValues[1]
+val simpleSamlPhpConfig: String =
+    rootDir
+        .resolve("../dev-tools/simplesamlphp")
+        .canonicalPath
+
 extra["postgresImage"] = postgresImage
 extra["postgresInitScript"] = postgresInitScript
 
@@ -69,6 +78,11 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
         systemProperty("idp.openbao.image", openbaoImage)
         systemProperty("idp.valkey.image", valkeyImage)
         systemProperty("idp.mailpit.image", mailpitImage)
+        systemProperty("idp.simplesamlphp.image", simpleSamlPhpImage)
+        systemProperty("idp.simplesamlphp.config", simpleSamlPhpConfig)
         inputs.dir(pgbouncerConfig).withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs
+            .files(fileTree(simpleSamlPhpConfig) { exclude("metadata/**") })
+            .withPathSensitivity(PathSensitivity.RELATIVE)
     }
 }

@@ -5,15 +5,12 @@ import idp.authentication.application.FlowCookie
 import idp.authentication.application.LoginStep
 import idp.authentication.application.SessionCookie
 import idp.federation.application.FederationService
-import idp.federation.application.PendingRequest
 import idp.federation.application.RequestReplayed
 import idp.sharedkernel.tenant.TenantContext
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.opensaml.saml.saml2.core.AuthnRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -29,7 +26,6 @@ const val RESUME_PATH = "/saml/resume"
 const val LOGIN_PAGE = "/login/"
 
 private const val SECRET_BYTES = 32
-private val HTML = MediaType("text", "html", Charsets.UTF_8).toString()
 
 private val securityEvents = LoggerFactory.getLogger("idp.security")
 
@@ -45,6 +41,7 @@ class SsoEndpoint(
     private val clock: Clock = Clock.systemUTC(),
 ) {
     private val validator = AuthnRequestValidator(federation::serviceProviderByEntityId, clock)
+    private val replies = SamlReplies(federation, clock)
     private val random = SecureRandom()
 
     @GetMapping(SSO_PATH)
@@ -69,14 +66,17 @@ class SsoEndpoint(
     ) {
         val secret = browser ?: newSecret()
         val pending = federation.claimRequest(id, secret) ?: return write(response, SamlPages.error())
-        val request = stored(pending)
+        val request = replies.stored(pending)
         val demands = checkNotNull(Demands.of(request))
         val access = authentication.startFlow(demands.continuation("$RESUME_PATH/$id"), session, secret)
         response.addHeader(HttpHeaders.SET_COOKIE, FlowCookie.issue(access.browserSecret))
         if (demands.passive && authentication.step(access).step != LoginStep.COMPLETE) {
             federation.discardRequest(id)
             val sp = federation.serviceProvider(pending.spId) ?: return write(response, SamlPages.error())
-            return write(response, reply(ReplyTo(sp, pending.acsUrl, checkNotNull(request.id), pending.relayState), SamlError.NO_PASSIVE))
+            return write(
+                response,
+                replies.error(ReplyTo(sp, pending.acsUrl, checkNotNull(request.id), pending.relayState), SamlError.NO_PASSIVE),
+            )
         }
         response.status = HttpServletResponse.SC_SEE_OTHER
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store")
@@ -104,23 +104,15 @@ class SsoEndpoint(
         replyTo: ReplyTo?,
     ): SamlPage {
         securityEvents.warn("event=saml.request_rejected reason={} tenant={}", rejection, TenantContext.current().tenantId)
-        val error = if (rejection == Rejection.NO_AUTHN_CONTEXT) SamlError.NO_AUTHN_CONTEXT else SamlError.REQUEST_DENIED
-        return replyTo?.let { reply(it, error) } ?: SamlPages.error()
+        val error =
+            when (rejection) {
+                Rejection.NO_AUTHN_CONTEXT -> SamlError.NO_AUTHN_CONTEXT
+                Rejection.INVALID_NAME_ID_POLICY -> SamlError.INVALID_NAME_ID_POLICY
+                Rejection.SUBJECT_REQUESTED -> SamlError.REQUEST_UNSUPPORTED
+                else -> SamlError.REQUEST_DENIED
+            }
+        return replyTo?.let { replies.error(it, error) } ?: SamlPages.error()
     }
-
-    private fun reply(
-        replyTo: ReplyTo,
-        error: SamlError,
-    ): SamlPage {
-        val issuer = federation.entityId() ?: return SamlPages.error()
-        val credential = federation.signingCredential()
-        val response = StatusResponse.write(issuer, replyTo, error, credential, replyTo.sp.settings.signatureAlgorithm, clock.instant())
-        return SamlPages.post(replyTo.acsUrl, response, replyTo.relayState)
-    }
-
-    /** Checked when it was taken, so only the fields are read. */
-    private fun stored(pending: PendingRequest): AuthnRequest =
-        OpenSaml.unmarshall(OpenSaml.parse(pending.xml).documentElement) as AuthnRequest
 
     private fun newSecret(): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(SECRET_BYTES).also(random::nextBytes))
@@ -128,11 +120,5 @@ class SsoEndpoint(
     private fun write(
         response: HttpServletResponse,
         page: SamlPage,
-    ) {
-        response.status = page.status
-        response.contentType = HTML
-        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store")
-        page.csp?.let { response.setHeader("Content-Security-Policy", it) }
-        response.writer.write(page.html)
-    }
+    ) = replies.write(response, page)
 }

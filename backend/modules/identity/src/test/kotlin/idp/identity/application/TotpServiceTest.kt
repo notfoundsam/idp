@@ -201,6 +201,19 @@ class TotpServiceTest :
                 }
             }
 
+            test("with a known secret stores that secret, and it still needs a confirmation") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+
+                    val enrollment = tenant.acting { enroll(user, "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP") }
+
+                    enrollment.secret shouldBe "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe false
+                    tenant.acting { confirm(user, secretOf(enrollment).current(), ADMIN) } shouldBe true
+                }
+            }
+
             test("the secret of the enrollment stays out of toString") {
                 TotpEnrollment("JBSWY3DPEHPK3PXP").toString() shouldBe "TotpEnrollment(***)"
             }

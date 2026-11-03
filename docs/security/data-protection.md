@@ -58,6 +58,12 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 - Random UUIDs, never reused. A user who comes back by the same address gets a new ID, so an SP cannot mistake them for the erased account.
 - Free to appear in logs, events, metrics, traces and the erasure journal.
 - The erasure journal keeps them for the backup retention plus a margin, under Object Lock.
+- A persistent SAML NameID is 256 random bits per user and SP, never the user ID. It goes with the user and with the SP.
+
+### Released to Service Providers
+
+- A Response carries the NameID and the attributes an admin released for that SP, none by default. The fields that are not released are not decrypted.
+- An assertion lives five minutes and names one SP as its audience.
 
 ## Deleting a tenant
 

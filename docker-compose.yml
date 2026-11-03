@@ -113,6 +113,11 @@ services:
     environment:
       SSP_ADMIN_PASSWORD: admin
       SSP_SECRET_SALT: local-development-only
+    volumes:
+      - ./dev-tools/simplesamlphp/authsources.php:/var/simplesamlphp/config/authsources.php:ro
+      - ./dev-tools/simplesamlphp/config-override.php:/var/simplesamlphp/config/config-override.php:ro
+      - ./dev-tools/simplesamlphp/whoami.php:/var/simplesamlphp/public/whoami.php:ro
+      - ./dev-tools/simplesamlphp/metadata:/var/simplesamlphp/metadata/idp:ro
     labels:
       - traefik.enable=true
       - traefik.http.routers.sp.rule=Host(`sp.idp.test`)
@@ -235,6 +240,7 @@ services:
       MAIL_PORT: "1025"
       MAIL_FROM: no-reply@idp.test
       ERASURE_JOURNAL_FILE: /var/lib/idp/erasures/journal
+      LOCAL_SP_METADATA: /fixtures/sp-metadata.xml
     depends_on:
       <<: *java-depends-on
       erasures-init:
@@ -248,6 +254,7 @@ services:
     volumes:
       - ./backend/worker/build/libs/worker.jar:/app/service.jar:ro
       - idp-erasures:/var/lib/idp/erasures
+      - ./dev-tools/simplesamlphp/sp-metadata.xml:/fixtures/sp-metadata.xml:ro
     ports:
       - "127.0.0.1:5006:5005"
 

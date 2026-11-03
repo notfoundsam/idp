@@ -11,7 +11,8 @@ How the project tests its code and with which tools. A change that adds a tool o
 | HTTP | The real application on a random port, called over HTTP | `app/src/test/.../login/FlowApiTest.kt` |
 | API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `OpsContractTest` |
 | Telemetry | The real application with spans kept in memory | `app/src/test/.../web/TracingTest.kt` |
-| SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest` |
+| SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest` |
+| SAML interoperability | SimpleSAMLphp in a container with the configuration of `dev-tools/simplesamlphp`, the login over the HTTP API | `app/src/test/.../saml/SamlInteropTest.kt` |
 | Servlet filter | One filter called directly with servlet mocks, where a limit is too large to reach over HTTP | `SamlThrottleFilterTest` |
 | Architecture | Module boundaries and the build graph | `architecture-tests` |
 | KMS and erasure journal | The AWS adapters against LocalStack | `*LocalStackTest` in `shared-kernel` |
@@ -20,7 +21,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 ## Tools
 
 - **Kotest** with `FunSpec` (`StringSpec` in a few specs) and `kotest-assertions`, on the JUnit Platform.
-- **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit and LocalStack. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs.
+- **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit, SimpleSAMLphp and LocalStack. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs.
 - **ArchUnit** for architecture rules.
 - **OpenTelemetry SDK testing** for `InMemorySpanExporter`.
 - **spring-test** only for its servlet mocks, `MockHttpServletRequest` and `MockFilterChain`.
