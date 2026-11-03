@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 68 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 72 |
 | Partial | Part of the control is merged, the listed tasks finish it | 60 |
-| Planned | The listed tasks build the control | 54 |
+| Planned | The listed tasks build the control | 50 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -34,7 +34,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V1.1.1 | 2 | Partial | T28 | JSON and base64url are decoded once, before validation (`FlowApiTest`), SAML base64 and DEFLATE remain |
+| V1.1.1 | 2 | Done | | JSON and base64url are decoded once, before validation (`FlowApiTest`). A SAML request is URL-decoded, base64-decoded and inflated once each, then checked (`AuthnRequestValidatorTest`) |
 | V1.1.2 | 2 | Partial | T29, T31 | Encoding at the sink: mail templates and jOOQ are merged, SAML form and SPA remain |
 | V1.2.1 | 1 | Partial | T29, T31 | HTML mail is escaped (`MailTemplatesTest`), SAML form and SPA remain |
 | V1.2.2 | 1 | Done | T27 | Mail links are `https` and built from the stored tenant host, never from a request (`RecoveryMailTest`). ACS URLs must be absolute `https` without user info or fragment, so `javascript:` and `data:` are refused (`ServiceProviderTest`, `MetadataImporterTest`) |
@@ -47,7 +47,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.2.9 | 2 | N/A | | Regular expressions are constants, input never becomes a pattern |
 | V1.3.1 | 1 | N/A | | No rich text input |
 | V1.3.2 | 1 | Partial | T31 | The backend has no `eval` or SpEL, CSP without `unsafe-eval` covers the SPA |
-| V1.3.3 | 2 | Partial | T28 | Control characters are stripped from mail (`MailTemplatesTest`), RelayState has a length limit |
+| V1.3.3 | 2 | Done | | Control characters are stripped from mail (`MailTemplatesTest`). RelayState is limited to 1 KiB and HTML-escaped in the form to the ACS (`AuthnRequestValidatorTest`, `SamlPagesTest`, `SsoApiTest`) |
 | V1.3.4 | 2 | N/A | | No user-supplied SVG |
 | V1.3.5 | 2 | N/A | | No user-supplied Markdown, CSS or XSL |
 | V1.3.6 | 2 | N/A | | No request goes to a user-supplied URL: SP metadata comes from a file, KMS addresses from configuration |
@@ -59,7 +59,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.4.1 | 2 | N/A | | JVM and JavaScript are memory safe, the application has no native code of its own |
 | V1.4.2 | 2 | Planned | T36 | Numeric API inputs have ranges in the contracts |
 | V1.4.3 | 2 | N/A | | Garbage-collected runtimes |
-| V1.5.1 | 1 | Partial | T28, T30 | XML parsers refuse DTDs and external entities, with negative tests. The metadata parser refuses DTDs, external entities and XInclude (`MetadataImporterTest`), AuthnRequest and the ops SP remain |
+| V1.5.1 | 1 | Partial | T30 | XML parsers refuse DTDs and external entities, with negative tests. The parser of metadata and AuthnRequests refuses DTDs, external entities and XInclude (`MetadataImporterTest`, `AuthnRequestValidatorTest`), the ops SP remains |
 | V1.5.2 | 2 | Done | T8 | Jackson binds fixed types without default typing, no Java serialization (`OutboxDispatcherTest`) |
 
 ## V2 Validation and Business Logic
@@ -76,7 +76,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
 | V2.3.4 | 2 | Done | T23, T24 | Invitation, reset and email change tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `AccountRecoveryTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
-| V2.4.1 | 2 | Partial | T28, T40 | The throttle decorator and the limits of the login are merged (`ThrottleTest`, `LoginLimitsTest`), SAML filter and WAF remain |
+| V2.4.1 | 2 | Partial | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`), WAF remains |
 
 ## V3 Web Frontend Security
 
@@ -100,7 +100,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.5.4 | 2 | Partial | T30, T40 | Each tenant has its own host (`TenantFilterTest`), `ops` is separate. Login and console form one application |
 | V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
 | V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
-| V3.7.2 | 2 | Partial | T28, T29 | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`), sending the Response remains |
+| V3.7.2 | 2 | Partial | T29 | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`). An ACS a request names counts only as registered, and an error goes there under a `form-action` limited to it, otherwise to an error page (`AuthnRequestValidatorTest`, `SsoApiTest`). Sending the Response remains |
 
 ## V4 API and Web Service
 
@@ -169,8 +169,8 @@ SP metadata import is the only file upload.
 | V6.6.2 | 2 | N/A | | No out-of-band factor, mail links serve recovery only |
 | V6.6.3 | 2 | N/A | | No out-of-band factor |
 | V6.8.1 | 2 | N/A | | `ops` trusts a single identity provider, `app` trusts none |
-| V6.8.2 | 2 | Planned | T28, T30 | `ops` refuses unsigned or invalid assertions, the IdP checks signed requests |
-| V6.8.3 | 2 | Planned | T28, T30 | Request IDs and `ops` assertion IDs are used once |
+| V6.8.2 | 2 | Partial | T30 | The IdP checks the signature of a request against the certificates of its SP, requires one where the SP signs, and refuses SHA-1 and wrapped signatures (`AuthnRequestValidatorTest`). `ops` refusing unsigned or invalid assertions remains |
+| V6.8.3 | 2 | Partial | T30 | A request ID is kept per SP for as long as its IssueInstant is accepted, and a repeat is refused (`SamlRequestsTest`, `SsoApiTest`). `ops` assertion IDs remain |
 | V6.8.4 | 2 | Planned | T29, T30 | The IdP states the real authentication context, `ops` requires a passkey context |
 
 ## V7 Session Management
@@ -194,7 +194,7 @@ SP metadata import is the only file upload.
 | V7.5.1 | 2 | Partial | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`), the factor messages remain |
 | V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
 | V7.6.1 | 2 | Planned | T29, T30 | SP session bounds are stated in the assertion and follow the document |
-| V7.6.2 | 2 | Planned | T28, T29 | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed |
+| V7.6.2 | 2 | Partial | T29 | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext` (`SsoApiTest`). The Response remains |
 
 ## V8 Authorization
 
@@ -214,7 +214,7 @@ SAML assertions are the self-contained tokens. The IdP issues them and `ops` con
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V9.1.1 | 1 | Planned | T28, T30 | Signatures are verified before content is used |
+| V9.1.1 | 1 | Partial | T30 | Signatures are verified before content is used: of a request only the Issuer is read to find the key (`AuthnRequestValidatorTest`). The ops SP remains |
 | V9.1.2 | 1 | Partial | T30 | Allowlist of signature algorithms, SHA-1 is refused. An SP setting names RSA-PSS or RSA with SHA-256 only, SHA-1 URIs are refused (`ServiceProviderTest`, `SignatureAlgorithmTest`), the ops SP remains |
 | V9.1.3 | 1 | Partial | T30 | Keys come from pre-registered metadata, never from the message. SP certificates are stored from uploaded metadata (`FederationServiceTest`), the ops SP remains |
 | V9.2.1 | 1 | Planned | T29, T30 | Validity window is issued and verified |
@@ -315,7 +315,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V14.1.1 | 2 | Done | T25 | [data-protection.md](data-protection.md) classifies data, by inspection |
 | V14.1.2 | 2 | Done | T25 | The same document sets encryption, integrity, retention, logging and access per class, by inspection |
-| V14.2.1 | 1 | Partial | T28, T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). SAML redirect parameters remain |
+| V14.2.1 | 1 | Partial | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page remains |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
 | V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
@@ -331,7 +331,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.1.2 | 2 | Partial | T42 | The dependency graph reaches GitHub from CI, a release SBOM remains |
 | V15.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists expensive operations |
 | V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
-| V15.2.2 | 2 | Partial | T28 | Throttling, the hash semaphore and the limits on flows and request size are merged (`HashLimitTest`, `LoginLimitsTest`), a DEFLATE size limit remains |
+| V15.2.2 | 2 | Done | | Throttling, the hash semaphore and the limits on flows, open SAML requests and request size are merged (`HashLimitTest`, `LoginLimitsTest`, `SamlRequestsTest`). An inflated request is cut at 32 KiB before parsing (`AuthnRequestValidatorTest`) |
 | V15.2.3 | 2 | Partial | T41 | Seed runs only in `local` (`LocalSeedTest`), production must never set that profile |
 | V15.3.1 | 1 | Partial | T32, T34, T36 | Audiences own responses (`OpsApiTest`, `FlowContractTest`), each API adds its own |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
@@ -339,7 +339,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.3.4 | 2 | Partial | T40, T41 | One trusted header (`ClientIpTest`), the edge must set it |
 | V15.3.5 | 2 | Partial | T31 | Kotlin is statically typed, the frontend needs strict TypeScript and `eqeqeq` |
 | V15.3.6 | 2 | Planned | T31 | `Map` and `Set` for keyed data, enforced by lint |
-| V15.3.7 | 2 | Partial | T28 | Each value of the API has one declared source (`FlowApiTest`), repeated SAML parameters remain |
+| V15.3.7 | 2 | Done | | Each value of the API has one declared source (`FlowApiTest`). A repeated SAML parameter, an encoded copy of its name, or one in the URL of a POST is refused (`AuthnRequestValidatorTest`, `SsoApiTest`) |
 
 ## V16 Security Logging and Error Handling
 
@@ -352,8 +352,8 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V16.2.4 | 2 | Planned | T38 | Structured JSON logs |
 | V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), request spans carry the tenant ID but no email, password or SAML message (`TracingTest`), `NoPiiInLogsTest` covers the rest |
 | V16.3.1 | 2 | Done | T23 | Successful and failed logins with the factor type (`FlowApiTest`) |
-| V16.3.2 | 2 | Partial | T28, T29 | Bus denials are audited (`BusDenialTest`), SAML denials remain |
-| V16.3.3 | 2 | Partial | T28, T38 | Denials are audited and a throttle refusal reaches the log of security events (`ThrottleTest`, `LoginLimitsTest`), refused SAML messages remain |
+| V16.3.2 | 2 | Partial | T29 | Bus denials are audited (`BusDenialTest`). A refused AuthnRequest reaches the log of security events and not the journal, since an anonymous caller sends it (`SsoApiTest`). The denial of an unassigned user remains |
+| V16.3.3 | 2 | Partial | T38 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`) |
 | V16.3.4 | 2 | Planned | T38 | Unexpected errors and backend TLS failures are logged and alerted |
 | V16.4.1 | 2 | Planned | T38 | The JSON encoder escapes log content |
 | V16.4.2 | 2 | Partial | T41 | Audit is append-only (`AuditTest`), log storage remains |

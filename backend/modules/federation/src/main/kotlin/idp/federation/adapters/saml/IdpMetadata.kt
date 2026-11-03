@@ -14,8 +14,6 @@ import org.opensaml.xmlsec.keyinfo.KeyInfoSupport
 import org.opensaml.xmlsec.signature.KeyInfo
 import java.security.cert.X509Certificate
 
-private const val SSO_PATH = "/saml/sso"
-
 internal object IdpMetadata {
     /** One signing key descriptor per published certificate, the signing one first. */
     fun write(

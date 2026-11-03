@@ -22,6 +22,8 @@ dependencies {
     runtimeOnly(libs.postgresql)
 
     testImplementation(testFixtures(project(":shared-kernel")))
+    testImplementation(testFixtures(project(":modules:federation")))
+    testImplementation(libs.spring.test)
     testImplementation(libs.webauthn4j.test)
     testImplementation(libs.webauthn4j.core)
     testImplementation(libs.opentelemetry.sdk.testing)

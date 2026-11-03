@@ -12,6 +12,10 @@ Valkey counts these in `app`, one bucket per message, and every key holds the te
 | Password, TOTP, recovery code, passkey, confirming an enrollment, using a token from a mail | 10 a minute | 1,000 a minute |
 | Asking for a password reset or an email change | 5 an hour | 500 an hour |
 | Any other message | 300 a minute, per user with a session, per address without | None |
+| SAML SSO, two requests for each login through an SP | 30 a minute | 6,000 a minute |
+| SAML metadata | 120 a minute | None, so nobody can keep the SPs of a tenant from it |
+
+SAML does not pass the bus, so `SamlThrottleFilter` counts its requests on the same port, after the tenant and the session are known.
 
 `THROTTLE_ENABLED=false` removes these for load tests, and `app` refuses to start that way in the `prod` profile. `ops` and the operator CLI have no such limits: VPN and IAM stand in front of them.
 
@@ -33,6 +37,7 @@ Postgres counts these, so they hold without Valkey and with `THROTTLE_ENABLED=fa
 | Subject | Limit | Beyond it |
 |---|---|---|
 | Open flows | 100,000 | `429` |
+| Accepted SAML requests waiting for the browser | 100,000 | `429` |
 
 A flow lives for 15 minutes and is one of the few rows an anonymous caller can add. The others are the challenge of a passkey, which needs a flow and expires in 5 minutes, and the event and the audit row of a reset request, which only the limits by caller bound. The tenant limit on starting flows lets in 90,000 in that time, so with Valkey up this limit cannot be reached, and nobody can shut logins out by filling it. It exists for the time Valkey is down, when it bounds the rows. Then a botnet can fill it, and every login of that tenant waits until flows expire. Other tenants do not notice, since each counts its own schema.
 
@@ -40,11 +45,16 @@ A flow lives for 15 minutes and is one of the few rows an anonymous caller can a
 
 | Subject | Limit | Beyond it |
 |---|---|---|
-| Body of an API request | 32 KiB, the same on every tenant | `413` |
+| Body of an API or SAML request | 32 KiB, the same on every tenant | `413` |
 | Body without a length | Refused, a browser always sends one | `411` |
 | Client version | At least `MIN_CLIENT_VERSION`, when set | `426` |
+| AuthnRequest, decoded and inflated | 32 KiB, counted while inflating | Error page |
+| RelayState | 1 KiB | Error page |
+| Age of an AuthnRequest | 3 minutes after IssueInstant, with 3 minutes of skew either way | SAML error at the ACS |
 
-The largest legitimate body is a passkey attestation of a few KiB.
+The largest legitimate body is a passkey attestation of a few KiB, and an AuthnRequest is about as large. SAML bindings ask for a RelayState of 80 bytes at most, which SPs that carry a return URL exceed.
+
+An accepted AuthnRequest waits 15 minutes for its browser, like a flow, and is one more row an anonymous caller can add: an unsigned request needs only the EntityID of an SP. Its ID stays for as long as its IssueInstant would be accepted, so a replay is refused within that time and an old copy is refused for its age.
 
 ## Expensive operations
 
@@ -57,4 +67,4 @@ The largest legitimate body is a passkey attestation of a few KiB.
 
 ## Logging
 
-A refusal by a limit reaches the log of security events as `event=throttle.rejected` with the message, the dimension and the tenant, and never the address. It does not reach the audit journal: a row per refusal would turn the flood it stops into writes on Postgres.
+A refusal by a limit reaches the log of security events as `event=throttle.rejected` with the message, the dimension and the tenant, and never the address. It does not reach the audit journal: a row per refusal would turn the flood it stops into writes on Postgres. A refused AuthnRequest goes the same way as `event=saml.request_rejected` with the reason and the tenant, and nothing of the request.

@@ -6,6 +6,7 @@ import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.erasure.ErasureJournal
 import idp.sharedkernel.erasure.adapter.FileErasureJournal
+import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.testing.TestMailpit
@@ -18,6 +19,7 @@ import idp.worker.offboarding.TenantOffboardingProcess
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.maps.shouldBeEmpty
@@ -82,6 +84,12 @@ class WorkerApplicationTest :
         "worker creates no Valkey adapter" {
             runApplication<WorkerApplication>(*arguments).use { context ->
                 context.getBeansOfType(RateLimiter::class.java).shouldBeEmpty()
+            }
+        }
+
+        "accepted SAML requests and their IDs are cleaned up by a job" {
+            runApplication<WorkerApplication>(*arguments).use { context ->
+                context.getBeansOfType(TenantCleanup::class.java).values.map { it.name } shouldContain "saml-requests"
             }
         }
 

@@ -119,6 +119,9 @@ class WorkerConfiguration {
     ) = FederationService(transaction, keys, audit, identity)
 
     @Bean
+    fun samlRequestCleanup(federation: FederationService): TenantCleanup = federation.requestCleanup
+
+    @Bean
     fun invitationCleanup(identity: IdentityService): TenantCleanup = identity.invitationCleanup
 
     @Bean

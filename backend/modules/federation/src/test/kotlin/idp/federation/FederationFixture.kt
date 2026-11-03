@@ -36,17 +36,19 @@ class RecordingAudit : AuditLog {
     fun of(action: String): List<AuditRecord> = changes.filter { it.action == action }
 }
 
-class Federation {
+class Federation(
+    maxOpenRequests: Int = 100_000,
+) {
     val database = TestDatabase.migrated()
     val sql = JdbcTemplate(database.owner())
     private val kms = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     private val runtime = database.pooled("app_runtime")
-    private val transaction = TenantTransaction(runtime)
+    val transaction = TenantTransaction(runtime)
     private val keys = KeyHierarchy(kms, transaction, PlatformTransaction(runtime), Duration.ofMinutes(1))
     val audit = RecordingAudit()
     val clock = MovableClock()
     val identity = IdentityService(transaction, keys, audit, OutboxPublisher(), clock)
-    val service = FederationService(transaction, keys, audit, identity, clock)
+    val service = FederationService(transaction, keys, audit, identity, clock, maxOpenRequests = maxOpenRequests)
 
     /** [host] stays apart from the tenant id: pooled schemas repeat their ids across clones. */
     fun tenant(host: String? = "acme.idp.test"): TenantContext {

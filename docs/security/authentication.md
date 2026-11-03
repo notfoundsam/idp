@@ -37,6 +37,24 @@ A check reserves the flow first, with a lease in Postgres. A parallel request ge
 
 Enrolling during a login is offered only at the step that asks for it, and proving a factor never allows adding one. Enrollment hands out recovery codes, because a user who enrolls during a login may have no other way back.
 
+## Login through an SP
+
+An AuthnRequest takes two steps. `/saml/sso` checks it and keeps it, then sends the browser on to `/saml/sso/{id}` by a page of its own. Only that second request reads the session and the `__Host-flow` cookie: a cross-site POST carries no `SameSite=Lax` cookie, a cross-site arrival carries no `Strict` one, and a navigation the page starts itself counts as same-site. A flow started without the secret of the browser would cut off its other tabs. The request is claimed once, by the first browser that comes back, and the flow returns to an opaque `/saml/resume/{id}`.
+
+Nothing of a request counts before its signature holds. The Issuer finds the SP and its certificates, and an SP that signs must sign every request: by the query in the Redirect binding, enveloped over the root in the POST binding. SHA-1 is refused. The ACS is the default one, one named by its index, or one named by a URL registered to the character, and only HTTP-POST. A request that fails before the ACS is known gets an error page that says nothing of the request. Once the SP, its signature and the ACS are checked, an error goes to that ACS as a signed Response without an assertion.
+
+The SP's demands become the demands of the flow, so a live session counts only where it meets them:
+
+| Request | Flow |
+|---|---|
+| `ForceAuthn` | A fresh login, the session counts for nothing |
+| `IsPassive` | No step at all. A flow that is not complete at once answers `NoPassive` |
+| `RequestedAuthnContext` with `PasswordProtectedTransport`, `Password`, `unspecified` or REFEDS SFA | A single factor |
+| `RequestedAuthnContext` with REFEDS MFA (`https://refeds.org/profile/mfa`) | Multi-factor |
+| `RequestedAuthnContext` with `urn:idp:ac:classes:passkey` | A passkey. No standard class names a phishing-resistant login, so this one belongs to the product |
+
+`exact` and `minimum` need the weakest listed class, `better` the next one above it, and `maximum` is met by any login. A request with only unknown classes or with declarations answers `NoAuthnContext`.
+
 ## Recovery
 
 Links in mail carry a token of 256 bits from `SecureRandom`. Only its SHA-256 is stored, it works once, and a new one replaces the old. An invitation lives for 72 hours, a password reset and an email change for one hour. The handler in `worker` issues the token, so it exists only in the mail. It stands in the URL fragment, which browsers keep out of requests, logs and `Referer`, and the page sends it in a request body. Any refused token goes to the audit journal as `recovery.token_refused` with its kind.
