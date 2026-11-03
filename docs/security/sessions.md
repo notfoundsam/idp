@@ -87,7 +87,8 @@ What this means for revoking access:
 | Action of an admin | IdP session | SP sessions already open |
 |---|---|---|
 | Withdrawing an SP assignment | Unchanged | Run on. The next login to that SP is refused |
-| Blocking a user or resetting a password | Revoked at once | Run on until the SP ends them or `SessionNotOnOrAfter` passes |
+| Blocking a user, resetting their MFA or password, or ending their sessions | Revoked at once | Run on until the SP ends them or `SessionNotOnOrAfter` passes |
+| Ending every session of the tenant | Revoked at once, the admin's own too | Run on, as above |
 | Suspending a tenant | Revoked at once, every request refused | Run on, as above |
 
 Removing access at the SP at once needs the SP's own tools until Single Logout or SCIM exists.

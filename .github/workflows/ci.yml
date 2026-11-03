@@ -100,6 +100,12 @@ jobs:
           base: .release/contracts/openapi/account.yaml
           revision: contracts/openapi/account.yaml
           fail-on: ERR
+      - if: steps.release.outputs.tag != '' && hashFiles('.release/contracts/openapi/admin.yaml') != ''
+        uses: oasdiff/oasdiff-action/breaking@9e56cf8b3aff7edb326d5767d3d23f96127e20c3 # v0.1.21
+        with:
+          base: .release/contracts/openapi/admin.yaml
+          revision: contracts/openapi/admin.yaml
+          fail-on: ERR
 
   dependency-review:
     if: github.event_name == 'pull_request'

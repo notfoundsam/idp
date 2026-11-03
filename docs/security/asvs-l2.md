@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 105 |
-| Partial | Part of the control is merged, the listed tasks finish it | 46 |
-| Planned | The listed tasks build the control | 31 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 112 |
+| Partial | Part of the control is merged, the listed tasks finish it | 41 |
+| Planned | The listed tasks build the control | 29 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -159,7 +159,7 @@ SP metadata import is the only file upload.
 | V6.4.1 | 1 | Done | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), and the first password is chosen by the user under the password policy (`RecoveryCommandsTest`, `RecoveryApiTest`) |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
 | V6.4.3 | 2 | Done | T24 | A reset never opens a session, and the next login still asks for the second factor (`RecoveryApiTest`, `RecoveryCommandsTest`) |
-| V6.4.4 | 2 | Partial | T34 | A lost factor comes back only through `IdentityService.resetMfa`, and the user enrolls again (`AccountRecoveryTest`, `RecoveryApiTest`). An only admin goes through the [runbook](tenant-admin-recovery-runbook.md) (`ReinviteAdminHandlerTest`). The admin command remains |
+| V6.4.4 | 2 | Done | T34 | A lost factor comes back only through an admin's MFA reset, which needs a login at most 10 minutes old, ends the user's sessions in the same transaction and is audited, and the user enrolls again (`AdminUsersApiTest`, `AccountRecoveryTest`, `RecoveryApiTest`). An only admin goes through the [runbook](tenant-admin-recovery-runbook.md) (`ReinviteAdminHandlerTest`) |
 | V6.5.1 | 2 | Done | T19 | TOTP codes and recovery codes work once (`TotpServiceTest`) |
 | V6.5.2 | 2 | Done | T19 | Recovery codes have 128 bits of entropy and are stored as SHA-256 (`RecoveryCodeTest`, `TotpServiceTest`) |
 | V6.5.3 | 2 | Done | T19 | Codes and seeds come from a CSPRNG (`RecoveryCodeTest`, `TotpCredentialTest`) |
@@ -187,10 +187,10 @@ SP metadata import is the only file upload.
 | V7.3.1 | 2 | Done | T22 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`) |
 | V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
 | V7.4.1 | 1 | Done | T32 | Logout revokes the session on the server, and a replayed token opens nothing (`AccountApiTest`, `SessionsTest`) |
-| V7.4.2 | 1 | Partial | T34 | A blocked user is refused on the next request, erasing a user deletes their sessions and flows with the row, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
+| V7.4.2 | 1 | Done | T34 | A blocked user is refused on the next request, and the admin's block ends their sessions and logins in progress in the same transaction. Erasing a user deletes their sessions and flows with the row (`AdminUsersApiTest`, `SessionsTest`, `SessionFilterTest`) |
 | V7.4.3 | 2 | Done | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`). After a factor change the fresh login lets the user end the other sessions at once, and a password change ends them in the same step when asked (`AccountApiTest`) |
 | V7.4.4 | 2 | Done | T33 | Every page of the console shares the layout with the logout button, only the page shown after a logout has none (`console.test.ts`, `account.spec.ts`) |
-| V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
+| V7.4.5 | 2 | Done | T34 | Admins end the sessions of one user or of the whole tenant, their own too, and each end is audited (`AdminUsersApiTest`) |
 | V7.5.1 | 2 | Done | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`). So does every message that adds, removes or renews a factor, while a password change asks for the current password instead (`AccountApiTest`) |
 | V7.5.2 | 2 | Done | T32, T33 | Users list their sessions and end one or all others only after a login at most 10 minutes old (`AccountApiTest`, `SessionsTest`). The console lists them with the current one marked, ends them, and sends an older login to `/login/?reauthenticate` (`console.test.ts`, `account.spec.ts`) |
 | V7.6.1 | 2 | Done | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` refuses an assertion without it and ends its own session there, idle after 30 minutes (`OpsSamlLoginTest`) |
@@ -202,10 +202,10 @@ SP metadata import is the only file upload.
 |---|---|---|---|---|
 | V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
 | V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
-| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`, each other audience adds its rules |
-| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`), the admin and operator audiences remain |
+| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages to `TENANT_ADMIN` only (`AdminUsersApiTest`), the operator audience adds its rules |
+| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`). An admin reaches only the users of the tenant whose schema holds the session, a user of another tenant reads as missing, and a session of another tenant counts as none (`AdminUsersApiTest`). The operator audience remains |
 | V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
-| V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), each audience adds its rules |
+| V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), and the admin API refuses an ordinary user and an admin of another tenant there (`AdminUsersApiTest`), the operator audience adds its rules |
 | V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), API and e2e isolation tests remain |
 
 ## V9 Self-contained Tokens

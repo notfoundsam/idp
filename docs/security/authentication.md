@@ -82,7 +82,7 @@ A reset spends the token, stores the password and revokes every session in one t
 
 Changing the email needs a session whose full login is at most 10 minutes old. A flow that only continues a session does not count, so a client walks one with `reauthenticate`. The request stays sealed in `email_changes` until the new address confirms it, and an address that belongs to someone else is refused only there, so a request cannot probe who has an account. Confirming moves the address and its blind index and cancels a reset whose link went to the old address. The old address is kept in `email_change_notices` until the notice has gone out, for 7 days at most. Of two quick changes the first address gets the notice, because its owner is the one who may not have asked.
 
-A user who lost every factor has no way back alone: no recovery route removes or adds a factor. `IdentityService.resetMfa` removes TOTP, recovery codes and passkeys, and the tenant admin calls it after confirming who asks. An only admin who lost everything goes through the operator, see the [runbook](tenant-admin-recovery-runbook.md).
+A user who lost every factor has no way back alone: no recovery route removes or adds a factor. `IdentityService.resetMfa` removes TOTP, recovery codes and passkeys, and the tenant admin calls it after confirming who asks. The admin's reset needs a login at most 10 minutes old and ends the user's sessions and logins in progress in the same transaction, so nothing proved with the old factors outlives them. An only admin who lost everything goes through the operator, see the [runbook](tenant-admin-recovery-runbook.md).
 
 ## Factors in the account
 

@@ -12,7 +12,7 @@ A map of the code: where things live and how a request moves through them. Decis
 | `backend/audience/<audience>` | `login`, `account`, `admin`, `operator`: commands, queries, controllers, `*SecurityConfig`, `*ThrottleConfig`, responses |
 | `backend/{app,ops,worker,migrator}` | Deployables, see below |
 | `backend/architecture-tests` | ArchUnit rules, the build graph and `tableOwners` |
-| `contracts/openapi` | `auth.yaml` and `account.yaml` for `app`, `ops.yaml` for `ops` |
+| `contracts/openapi` | `auth.yaml`, `account.yaml` and `admin.yaml` for `app`, `ops.yaml` for `ops` |
 | `frontend` | Apps `login` and `console`, packages `api-client` with types generated from `contracts/openapi` and `ui`, end-to-end tests in `e2e` |
 | `infra/web` | Security headers of the static files in `security-headers.json`, and the local nginx config rendered from them |
 | `dev-tools`, `docker-compose.yml` | Local environment, see `dev-tools/README.md` |

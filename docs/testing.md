@@ -9,7 +9,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | Domain | Plain Kotlin, no Spring and no database | `modules/identity/src/test/.../domain/UserTest.kt` |
 | Application services | The service against a real Postgres, ports outside the database replaced by hand-written fakes | `IdentityServiceTest`, `SessionsTest` |
 | HTTP | The real application on a random port, called over HTTP | `app/src/test/.../login/FlowApiTest.kt` |
-| API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `AccountContractTest`, `OpsContractTest` |
+| API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest` |
 | Telemetry | The real application with spans kept in memory | `app/src/test/.../web/TracingTest.kt` |
 | SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest` |
 | SAML login of `ops` | Responses a fake IdP writes and signs, each bent in one way, posted to the ACS of the real `ops` | `ops/src/test/.../security/OpsSamlLoginTest.kt` |
@@ -69,6 +69,7 @@ Not used: MockMvc, the Spring test context, Mockito and MockK.
 - `TestDatabase.create()` gives an empty database, for tests of the migrations.
 - `tenantSchema()` hands out a migrated tenant schema that `platform.tenants` does not know yet. The test adds the row. Clones hand out the same tenant ids, so a test that keeps tenant data in OpenBao or Valkey names it on its own.
 - `pooled(role)` connects through PgBouncer with the configuration from `dev-tools`, as the application does.
+- A test that proves one transaction over the real HTTP path makes the last write fail with a trigger that raises, limited to the rows of its user, and drops the trigger in `finally`. The first write must then be gone. See `revokingFails` in `AdminUsersApiTest`.
 
 ## Commands
 

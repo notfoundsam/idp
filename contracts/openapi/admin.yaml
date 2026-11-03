@@ -1,0 +1,310 @@
+openapi: 3.1.0
+info:
+  title: IdP admin API
+  version: 1.0.0
+  description: >-
+    The tenant admin area. Every call needs a live session of a `TENANT_ADMIN` of the tenant the host names, and anyone else gets 403.
+    A session belongs to its tenant, so a session of another tenant counts as none and gets 401, and a user of another tenant reads as
+    missing. A call that changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Erasing a user
+    and resetting their MFA need a session whose full login is at most 10 minutes old: otherwise the answer is 403 with
+    `reauthentication_required`, and the client walks a flow of the login API started with `reauthenticate`, then repeats the call. A
+    client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and a client older than
+    the minimum gets 426.
+paths:
+  /api/admin/users:
+    post:
+      operationId: inviteUser
+      summary: Create a user who waits for the invitation that is mailed to them
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationRequest"
+      responses:
+        "201":
+          description: The user is created and the mail is on its way
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitedUser"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The address is not valid, or the tenant already has a user with it. The answer does not say which
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/invitation:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: resendInvitation
+      summary: Mail a new invitation, which voids the link of the one before
+      responses:
+        "204":
+          description: The mail is on its way
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user has already accepted an invitation
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/role:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      operationId: changeRole
+      summary: Change the role of a user, which a live session of theirs follows on its next request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleChangeRequest"
+      responses:
+        "204":
+          description: The user has the role
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/LastAdmin"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/block:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: blockUser
+      summary: Block an active user. Their sessions and logins in progress end in the same step
+      responses:
+        "204":
+          description: The user is blocked
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user is not active, or is the last admin who can act
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/unblock:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: unblockUser
+      summary: Let a blocked user log in again
+      responses:
+        "204":
+          description: The user is active
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user is not blocked
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/mfa-reset:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: resetMfa
+      summary: >-
+        Remove every TOTP, passkey and recovery code of a user who lost them, so the next login enrolls again. Their sessions and logins
+        in progress end in the same step
+      responses:
+        "204":
+          description: The factors are gone
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: eraseUser
+      summary: Erase a user with their data and sessions. The ID is never given out again
+      responses:
+        "204":
+          description: The user is erased
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "422":
+          $ref: "#/components/responses/LastAdmin"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: endUserSessions
+      summary: >-
+        End every session of a user and their logins in progress. An admin who names themselves keeps the session of the request
+      responses:
+        "204":
+          description: The sessions are ended
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/sessions:
+    delete:
+      operationId: endAllSessions
+      summary: End every session of the tenant, the one of the request too
+      responses:
+        "204":
+          description: The sessions are ended
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: The request is malformed or names an unknown field
+    NoSession:
+      description: The request has no live session of this tenant
+    Forbidden:
+      description: The user of the session is not an admin, or the CSRF token is missing
+    Refused:
+      description: >-
+        The user of the session is not an admin or the CSRF token is missing, with no body, or the login is too old, with
+        `reauthentication_required` in the body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ReauthenticationRequired"
+    UserNotFound:
+      description: The tenant has no such user
+    LastAdmin:
+      description: The user is the last admin who can act, so the tenant would be left without one
+    TooLarge:
+      description: The request is over the size limit
+    UpgradeRequired:
+      description: The client is older than the minimum version, so it has to reload
+    TooManyRequests:
+      description: Over a limit
+      headers:
+        Retry-After:
+          description: Seconds to wait
+          schema:
+            type: integer
+  schemas:
+    Role:
+      type: string
+      enum: [TENANT_ADMIN, USER]
+    InvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+    RoleChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/Role"
+    InvitedUser:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    ReauthenticationRequired:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [reauthentication_required]
