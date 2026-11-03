@@ -55,11 +55,11 @@ async function passkey(credentials: CredentialsContainer) {
         pattern="[0-9 ]*"
         required
       />
-      <ProblemMessage :login="login" />
+      <ProblemMessage :state="login.state" />
       <button type="submit" :disabled="login.state.busy">Confirm</button>
     </form>
     <template v-else>
-      <ProblemMessage :login="login" />
+      <ProblemMessage :state="login.state" />
       <button v-if="factors.includes('PASSKEY') && credentials" type="button" :disabled="login.state.busy" @click="passkey(credentials)">
         Register a passkey
       </button>

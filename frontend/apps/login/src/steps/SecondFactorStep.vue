@@ -48,7 +48,7 @@ async function passkey(credentials: CredentialsContainer) {
   <section data-step="SECOND_FACTOR">
     <div v-if="chosen === 'PASSKEY' && credentials">
       <p>Confirm with your passkey.</p>
-      <ProblemMessage :login="login" />
+      <ProblemMessage :state="login.state" />
       <button type="button" :disabled="login.state.busy" @click="passkey(credentials)">Use passkey</button>
     </div>
     <form v-else-if="chosen === 'TOTP'" @submit.prevent="submitCode">
@@ -63,7 +63,7 @@ async function passkey(credentials: CredentialsContainer) {
         pattern="[0-9 ]*"
         required
       />
-      <ProblemMessage :login="login" />
+      <ProblemMessage :state="login.state" />
       <button type="submit" :disabled="login.state.busy">Verify</button>
     </form>
     <form v-else-if="chosen === 'RECOVERY_CODE'" @submit.prevent="submitCode">
@@ -78,7 +78,7 @@ async function passkey(credentials: CredentialsContainer) {
         spellcheck="false"
         required
       />
-      <ProblemMessage :login="login" />
+      <ProblemMessage :state="login.state" />
       <button type="submit" :disabled="login.state.busy">Verify</button>
     </form>
     <p v-else role="alert">This browser cannot use any of the methods your account has.</p>

@@ -37,10 +37,10 @@ export function fakeNavigation(search = '') {
   const navigation = {
     search,
     assigned: [] as string[],
-    query: null as string | null,
+    replaced: null as string | null,
     assign: (url: string) => navigation.assigned.push(url),
-    replaceQuery: (query: string) => {
-      navigation.query = query
+    replace: (url: string) => {
+      navigation.replaced = url
     },
   }
   return navigation

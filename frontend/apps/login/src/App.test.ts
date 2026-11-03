@@ -1,15 +1,29 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, test, vi } from 'vitest'
 import App from './App.vue'
-import { flowAt, loginWith, refused } from './testing'
+import { LINK_REFUSED, PASSWORD_LINK_REFUSED } from './messages'
+import type { Page } from './pages'
+import { FLOW_ID, flowAt, loginWith, refused } from './testing'
 
-async function mounted(setup: ReturnType<typeof loginWith>, credentials: CredentialsContainer | null = null) {
+async function mounted(
+  setup: ReturnType<typeof loginWith>,
+  credentials: CredentialsContainer | null = null,
+  page: Page = 'login',
+  token: string | null = null,
+) {
   const reloadPage = vi.fn()
   const wrapper = mount(App, {
-    props: { login: setup.login, release: setup.release, credentials, host: 'acme.idp.test', reloadPage },
+    props: { login: setup.login, release: setup.release, credentials, host: 'acme.idp.test', reloadPage, page, token },
   })
   await settled()
   return { wrapper, reloadPage }
+}
+
+const onPage = (setup: ReturnType<typeof loginWith>, page: Page, token: string | null = null) => mounted(setup, null, page, token)
+
+async function submitted(wrapper: Awaited<ReturnType<typeof mounted>>['wrapper']) {
+  await wrapper.get('form').trigger('submit')
+  await settled()
 }
 
 async function settled() {
@@ -105,6 +119,133 @@ describe('steps on screen', () => {
     setup.answer('getFlow', refused(410))
     const { wrapper } = await mounted(setup)
     expect(wrapper.get('a').attributes('href')).toBe('/login/')
+  })
+})
+
+describe('pages of mail links', () => {
+  test('an invitation asks for a password under the rules of the policy and recommends 15 characters', async () => {
+    const { wrapper } = await onPage(loginWith(), 'invite', 'mail-token')
+    expect(wrapper.get('h1').text()).toBe('Accept your invitation')
+    const field = wrapper.get('#new-password')
+    expect(field.attributes('type')).toBe('password')
+    expect(field.attributes('autocomplete')).toBe('new-password')
+    expect(field.attributes('minlength')).toBe('8')
+    expect(wrapper.get('#password-rules').text()).toContain('15 or more is recommended')
+  })
+
+  test('an accepted invitation goes on to the step the policy asks for', async () => {
+    const setup = loginWith()
+    setup.answer('startFlow', flowAt('IDENTIFY'))
+    setup.answer('acceptInvitation', flowAt('ENROLL_MFA', ['TOTP']))
+    const { wrapper } = await onPage(setup, 'invite', 'mail-token')
+    await wrapper.get('#new-password').setValue('first password of mine')
+    await submitted(wrapper)
+    expect(setup.calls.at(-1)).toEqual({ operation: 'acceptInvitation', args: [FLOW_ID, 'mail-token', 'first password of mine'] })
+    expect(wrapper.find('[data-step="ENROLL_MFA"]').exists()).toBe(true)
+  })
+
+  test('a refused invitation names both causes, because the answer does not tell them apart', async () => {
+    const setup = loginWith()
+    setup.answer('startFlow', flowAt('IDENTIFY'))
+    setup.answer('acceptInvitation', refused(422))
+    const { wrapper } = await onPage(setup, 'invite', 'mail-token')
+    await wrapper.get('#new-password').setValue('password')
+    await submitted(wrapper)
+    expect(wrapper.get('[role="alert"]').text()).toBe(PASSWORD_LINK_REFUSED)
+    expect(wrapper.find('#new-password').exists()).toBe(true)
+  })
+
+  test('an invitation link without its token says so and calls nothing', async () => {
+    const setup = loginWith()
+    const { wrapper } = await onPage(setup, 'invite')
+    expect(wrapper.get('[role="alert"]').text()).toContain('link is incomplete')
+    expect(setup.calls).toEqual([])
+  })
+
+  test('a reset link sets the new password with its token and sends the user to sign in', async () => {
+    const setup = loginWith()
+    setup.answer('confirmPasswordReset', null)
+    const { wrapper } = await onPage(setup, 'reset-password', 'mail-token')
+    expect(wrapper.get('#password-rules').text()).toContain('15 or more')
+    await wrapper.get('#new-password').setValue('a new password of mine')
+    await submitted(wrapper)
+    expect(setup.calls).toEqual([{ operation: 'confirmPasswordReset', args: ['mail-token', 'a new password of mine'] }])
+    expect(wrapper.get('[data-testid="password-changed"]').text()).toContain('signed out')
+    expect(wrapper.get('a').attributes('href')).toBe('/login/')
+  })
+
+  test('a refused reset keeps the form and offers a new link', async () => {
+    const setup = loginWith()
+    setup.answer('confirmPasswordReset', refused(422))
+    const { wrapper } = await onPage(setup, 'reset-password', 'mail-token')
+    await wrapper.get('#new-password').setValue('password')
+    await submitted(wrapper)
+    expect(wrapper.get('[role="alert"]').text()).toBe(PASSWORD_LINK_REFUSED)
+    expect((wrapper.get('#new-password').element as HTMLInputElement).value).toBe('password')
+    expect(wrapper.get('a').attributes('href')).toBe('/login/forgot-password')
+  })
+
+  test('a reset link without its token shows no form', async () => {
+    const { wrapper } = await onPage(loginWith(), 'reset-password')
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('link is incomplete')
+  })
+
+  test('a new address is confirmed only when the user asks, not when the link opens', async () => {
+    const setup = loginWith()
+    setup.answer('confirmEmailChange', null)
+    const { wrapper } = await onPage(setup, 'confirm-email', 'mail-token')
+    expect(setup.calls).toEqual([])
+    await submitted(wrapper)
+    expect(setup.calls).toEqual([{ operation: 'confirmEmailChange', args: ['mail-token'] }])
+    expect(wrapper.find('[data-testid="email-changed"]').exists()).toBe(true)
+  })
+
+  test('a spent confirmation link says so', async () => {
+    const setup = loginWith()
+    setup.answer('confirmEmailChange', refused(422))
+    const { wrapper } = await onPage(setup, 'confirm-email', 'mail-token')
+    await submitted(wrapper)
+    expect(wrapper.get('[role="alert"]').text()).toBe(LINK_REFUSED)
+  })
+})
+
+describe('forgotten passwords', () => {
+  test('the password step leads to the reset form', async () => {
+    const setup = loginWith()
+    setup.answer('startFlow', flowAt('PASSWORD'))
+    const { wrapper } = await mounted(setup)
+    expect(wrapper.get('a').attributes('href')).toBe('/login/forgot-password')
+  })
+
+  test('the form asks for a mail and answers the same whoever the login belongs to', async () => {
+    const setup = loginWith()
+    setup.answer('requestPasswordReset', null)
+    const { wrapper } = await onPage(setup, 'forgot-password')
+    await wrapper.get('#login').setValue(' alice@acme.test ')
+    await submitted(wrapper)
+    expect(setup.calls).toEqual([{ operation: 'requestPasswordReset', args: ['alice@acme.test'] }])
+    expect(wrapper.get('[data-testid="reset-requested"]').text()).toContain('If an account uses this address')
+    expect(wrapper.find('form').exists()).toBe(false)
+  })
+
+  test('a limit on mails says how long to wait and keeps the form', async () => {
+    const setup = loginWith()
+    setup.answer('requestPasswordReset', refused(429, 600))
+    const { wrapper } = await onPage(setup, 'forgot-password')
+    await wrapper.get('#login').setValue('alice@acme.test')
+    await submitted(wrapper)
+    expect(wrapper.get('[role="alert"]').text()).toContain('600 s')
+    expect(wrapper.find('form').exists()).toBe(true)
+  })
+
+  test('a server that cannot be reached is told apart from a refusal', async () => {
+    const setup = loginWith()
+    setup.answer('requestPasswordReset', new TypeError('Failed to fetch'))
+    const { wrapper } = await onPage(setup, 'forgot-password')
+    await wrapper.get('#login').setValue('alice@acme.test')
+    await submitted(wrapper)
+    expect(wrapper.get('[role="alert"]').text()).toContain('could not be reached')
   })
 })
 

@@ -122,6 +122,9 @@ check "unknown path stays on Traefik" expect_status acme.idp.test /nothing 404
 check "login page with its policy" login_page_has_policy
 check "deep link of the login falls back to the page" expect_status acme.idp.test /login/any/path 200
 check "static files not listed" expect_status acme.idp.test /login/assets/ 404
+check "invitation link opens the login" expect_status acme.idp.test /invite 200
+check "reset link opens the login" expect_status acme.idp.test /reset-password 200
+check "confirmation link opens the login" expect_status acme.idp.test /confirm-email 200
 check "/ leads to the console" root_leads_to_console
 check "postgres through pgbouncer" pgbouncer_query
 check "platform schema migrated" platform_migrated

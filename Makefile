@@ -49,10 +49,12 @@ test-frontend: frontend-install
 	$(FRONTEND) -r --filter '!e2e' test
 	docker compose run --rm frontend node --test /app/infra/web/render-nginx.test.mjs
 
-# Runs against the environment of `make up`. SimpleSAMLphp needs the metadata of acme, and Node in the container the mkcert CA.
+# Runs against the environment of `make up`. SimpleSAMLphp needs the metadata of acme, Node in the container the mkcert CA, and the
+# invitation test a fresh invitation.
 test-e2e: frontend-install
 	dev-tools/simplesamlphp/fetch-idp-metadata.sh
 	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	dev-tools/e2e-invitation.sh
 	docker compose run --rm e2e
 
 lint: lint-backend lint-frontend

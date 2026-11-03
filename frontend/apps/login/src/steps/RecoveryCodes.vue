@@ -13,7 +13,7 @@ defineProps<{ login: Login }>()
         <code>{{ code }}</code>
       </li>
     </ol>
-    <ProblemMessage :login="login" />
+    <ProblemMessage :state="login.state" />
     <button type="button" :disabled="login.state.busy" @click="login.codesSaved()">I have saved them</button>
   </section>
 </template>

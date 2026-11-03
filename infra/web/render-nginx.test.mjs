@@ -70,6 +70,15 @@ test('the transport, sniffing and referrer headers match those of the backend', 
   assert.equal(headers['Referrer-Policy'], 'no-referrer')
 })
 
+test('the links of mails get the login page, uncached, and nothing below them', async () => {
+  const config = await renderFiles()
+  const block = config.slice(config.indexOf('location ~ ^/(invite|reset-password|confirm-email)$ {'))
+  assert.notEqual(block, config)
+  const body = block.slice(0, block.indexOf('}'))
+  assert.match(body, /try_files \/login\/index\.html =404;/)
+  assert.match(body, /add_header Cache-Control "no-cache";/)
+})
+
 test('each header line keeps the indentation of its placeholder', () => {
   const rendered = render('a {\n    {{security_headers}}\n}', { 'X-One': '1', 'X-Two': "'self'" })
   assert.equal(rendered, `a {\n    add_header X-One "1" always;\n    add_header X-Two "'self'" always;\n}`)

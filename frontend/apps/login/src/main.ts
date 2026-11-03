@@ -2,8 +2,10 @@ import { browserPage, createClient, createReloader, Release, reloadOnChunkError 
 import { createApp, reactive } from 'vue'
 import App from './App.vue'
 import { browserNavigation, createLogin } from './login'
+import { pageAt, takeToken } from './pages'
 import { passkeysSupported } from './webauthn'
 
+const token = takeToken(window)
 const release = reactive(new Release(__APP_VERSION__))
 const reload = createReloader(browserPage(window))
 reloadOnChunkError(window, reload)
@@ -20,4 +22,6 @@ createApp(App, {
   credentials: passkeysSupported(window) ? window.navigator.credentials : null,
   host: window.location.hostname,
   reloadPage: () => window.location.reload(),
+  page: pageAt(window.location.pathname),
+  token,
 }).mount('#app')

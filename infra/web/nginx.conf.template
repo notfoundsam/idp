@@ -33,6 +33,13 @@ server {
         try_files $uri /$1/index.html =404;
     }
 
+    # Links in mails, kept short. The login app serves them, and the token stays in the fragment.
+    location ~ ^/(invite|reset-password|confirm-email)$ {
+        {{security_headers}}
+        add_header Cache-Control "no-cache";
+        try_files /login/index.html =404;
+    }
+
     location / {
         return 404;
     }

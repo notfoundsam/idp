@@ -79,6 +79,8 @@ export function createClient(options: ClientOptions) {
     getFlow: (id: string) => call<Flow>('GET', flow(id)),
     submitLogin: (id: string, login: string) => call<Flow>('POST', flow(id, '/login'), { login }),
     submitPassword: (id: string, password: string) => call<Flow>('POST', flow(id, '/password'), { password }),
+    acceptInvitation: (id: string, token: string, password: string) =>
+      call<Flow>('POST', flow(id, '/invitation'), { token, password }),
     submitTotp: (id: string, code: string) => call<Flow>('POST', flow(id, '/totp'), { code }),
     submitRecoveryCode: (id: string, code: string) => call<Flow>('POST', flow(id, '/recovery-code'), { code }),
     beginPasskeyLogin: (id: string) => call<PasskeyLoginOptions>('POST', flow(id, '/passkey/options')),
@@ -90,6 +92,10 @@ export function createClient(options: ClientOptions) {
     finishPasskeyEnrollment: (id: string, answer: PasskeyEnrollmentRequest) =>
       call<EnrolledFlow>('POST', flow(id, '/enrollment/passkey'), answer),
     completeFlow: (id: string) => call<Completed>('POST', flow(id, '/complete')),
+    requestPasswordReset: (login: string) => call<undefined>('POST', '/api/password-reset', { login }),
+    confirmPasswordReset: (token: string, password: string) =>
+      call<undefined>('POST', '/api/password-reset/confirmation', { token, password }),
+    confirmEmailChange: (token: string) => call<undefined>('POST', '/api/email-change/confirmation', { token }),
   }
 }
 

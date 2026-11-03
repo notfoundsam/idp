@@ -1,18 +1,20 @@
-import { ApiError, UPGRADE_REQUIRED, type Client, type EnrolledFlow, type Flow, type Release, type Step } from '@idp/api-client'
+import { ApiError, type Client, type EnrolledFlow, type Flow, type Release, type Step } from '@idp/api-client'
 import { reactive } from 'vue'
+import { troubleOf } from './messages'
+import { LOGIN_PATH } from './pages'
 
 export const DIRECT_LOGIN_TARGET = '/console/'
 
 const KNOWN_STEPS: ReadonlySet<string> = new Set<Step>(['IDENTIFY', 'PASSWORD', 'SECOND_FACTOR', 'ENROLL_MFA', 'COMPLETE'])
 
-export type Phase = 'loading' | 'step' | 'recovery-codes' | 'leaving' | 'expired' | 'failed'
+export type Phase = 'loading' | 'invitation' | 'step' | 'recovery-codes' | 'leaving' | 'expired' | 'failed'
 
-export type Problem = 'rejected' | 'throttled' | 'outdated' | 'unreachable' | 'unexpected'
+export type Problem = 'rejected' | 'throttled' | 'outdated' | 'unreachable' | 'broken-link' | 'unexpected'
 
 export interface Navigation {
   search: string
   assign(url: string): void
-  replaceQuery(query: string): void
+  replace(url: string): void
 }
 
 export interface LoginDependencies {
@@ -36,9 +38,11 @@ export function browserNavigation(window: Window): Navigation {
   return {
     search: window.location.search,
     assign: (url) => window.location.assign(url),
-    replaceQuery: (query) => window.history.replaceState(window.history.state, '', `${window.location.pathname}?${query}`),
+    replace: (url) => window.history.replaceState(window.history.state, '', url),
   }
 }
+
+const flowUrl = (id: string) => `${LOGIN_PATH}?${new URLSearchParams({ flow: id }).toString()}`
 
 /**
  * Walks a flow the way the server leads it. A new release is loaded with a full reload when the page moves to another step, so a
@@ -55,14 +59,40 @@ export function createLogin({ client, release, reload, navigation }: LoginDepend
     login: null,
   })
   let afterCodes: Flow | null = null
+  let invitation: string | null = null
+  let invitationFlow: string | null = null
 
   async function begin(): Promise<void> {
     const id = new URLSearchParams(navigation.search).get('flow')
     await attempt(async () => {
       if (id !== null) return show(await client.getFlow(id))
       const started = await client.startFlow()
-      navigation.replaceQuery(new URLSearchParams({ flow: started.id }).toString())
+      navigation.replace(flowUrl(started.id))
       return show(started)
+    })
+  }
+
+  /** The token stays in memory only, so a reload before the password is set asks for the link again. */
+  function beginInvitation(token: string | null): void {
+    if (token === null) return fail('broken-link')
+    invitation = token
+    state.phase = 'invitation'
+  }
+
+  /**
+   * A browser with a live session would be past the first step, so the flow ignores the session. Once the password is set, the
+   * flow moves into the URL like any other, and the steps the policy asks for next survive a reload.
+   */
+  async function acceptInvitation(password: string): Promise<void> {
+    const token = invitation
+    if (token === null) return
+    await attempt(async () => {
+      const id = invitationFlow ?? (await client.startFlow({ reauthenticate: true })).id
+      invitationFlow = id
+      const next = await client.acceptInvitation(id, token, password)
+      invitation = null
+      navigation.replace(flowUrl(next.id))
+      await show(next)
     })
   }
 
@@ -134,36 +164,27 @@ export function createLogin({ client, release, reload, navigation }: LoginDepend
   }
 
   async function recover(error: unknown): Promise<void> {
-    if (!(error instanceof ApiError)) {
-      if (error instanceof DOMException) return problem('rejected')
-      return problem('unreachable')
-    }
-    switch (error.status) {
-      case 409: {
-        const id = state.flow?.id
-        if (id === undefined) return fail('unexpected')
-        try {
-          return await show(await client.getFlow(id))
-        } catch (again) {
-          return again instanceof ApiError && again.status === 410 ? expire() : fail('unexpected')
-        }
+    if (error instanceof ApiError && error.status === 409) {
+      const id = state.flow?.id
+      if (id === undefined) return fail('unexpected')
+      try {
+        return await show(await client.getFlow(id))
+      } catch (again) {
+        return again instanceof ApiError && again.status === 410 ? expire() : fail('unexpected')
       }
-      case 410:
-        return expire()
-      case 422:
-        return problem('rejected')
-      case 429:
-        return problem('throttled', error.retryAfter)
-      case UPGRADE_REQUIRED:
-        return problem('outdated')
-      default:
-        return problem('unexpected')
     }
+    if (error instanceof ApiError && error.status === 410) {
+      if (state.phase !== 'invitation') return expire()
+      invitationFlow = null
+      return problem('unexpected')
+    }
+    const trouble = troubleOf(error)
+    problem(trouble.problem, trouble.retryAfter)
   }
 
   function problem(kind: Problem, retryAfter: number | null = null): void {
     if (state.phase === 'leaving' && state.flow !== null) state.phase = 'step'
-    if (state.phase !== 'step' && state.phase !== 'recovery-codes') state.phase = 'failed'
+    if (state.phase !== 'step' && state.phase !== 'recovery-codes' && state.phase !== 'invitation') state.phase = 'failed'
     state.problem = kind
     state.retryAfter = retryAfter
   }
@@ -187,7 +208,7 @@ export function createLogin({ client, release, reload, navigation }: LoginDepend
     state.login = login
   }
 
-  return { state, client, begin, submit, enroll, fetchFor, codesSaved, remember }
+  return { state, client, begin, beginInvitation, acceptInvitation, submit, enroll, fetchFor, codesSaved, remember }
 }
 
 export type Login = ReturnType<typeof createLogin>

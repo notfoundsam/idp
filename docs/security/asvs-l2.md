@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 90 |
-| Partial | Part of the control is merged, the listed tasks finish it | 48 |
-| Planned | The listed tasks build the control | 44 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 98 |
+| Partial | Part of the control is merged, the listed tasks finish it | 45 |
+| Planned | The listed tasks build the control | 39 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -140,13 +140,13 @@ SP metadata import is the only file upload.
 | V6.1.1 | 1 | Done | T23 | `docs/security/authentication.md` covers rate limits and malicious lockout |
 | V6.1.2 | 2 | Done | T23 | Context-specific words are refused (`PasswordPolicyTest`) and listed in the same document |
 | V6.1.3 | 2 | Done | T23 | The same document lists every pathway with its strength |
-| V6.2.1 | 1 | Partial | T31, T33 | At least 8 characters (`PasswordPolicyTest`), the UI hint for 15 remains |
+| V6.2.1 | 1 | Partial | T33 | At least 8 characters (`PasswordPolicyTest`). The login pages that set a password recommend 15 characters (`App.test.ts`, `login.spec.ts`), the change of password in the console remains |
 | V6.2.2 | 1 | Planned | T32 | Users change their password in the account area |
 | V6.2.3 | 1 | Planned | T32 | The change requires the current password |
 | V6.2.4 | 1 | Done | T18 | Top passwords are refused (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.2.5 | 1 | Done | T18 | No composition rules (`PasswordPolicyTest`) |
-| V6.2.6 | 1 | Planned | T31 | `type=password` with an optional reveal |
-| V6.2.7 | 1 | Planned | T31 | Paste and password managers work |
+| V6.2.6 | 1 | Done | T31 | Every password field of the login has `type=password`, without a reveal (`App.test.ts`, `login.spec.ts`) |
+| V6.2.7 | 1 | Done | T31 | Nothing blocks paste, and the fields carry `autocomplete` `current-password` or `new-password` with the login beside them for password managers. `login.spec.ts` pastes both kinds from the clipboard |
 | V6.2.8 | 1 | Done | T18 | The password is verified exactly as received (`PasswordHasherTest`) |
 | V6.2.9 | 2 | Done | T18 | Up to 128 characters are accepted (`PasswordPolicyTest`) |
 | V6.2.10 | 2 | Partial | T34 | A credential has no expiry (`PasswordCredential`), the test that the policy offers none remains |
@@ -315,7 +315,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V14.1.1 | 2 | Done | T25 | [data-protection.md](data-protection.md) classifies data, by inspection |
 | V14.1.2 | 2 | Done | T25 | The same document sets encryption, integrity, retention, logging and access per class, by inspection |
-| V14.2.1 | 1 | Partial | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page remains |
+| V14.2.1 | 1 | Done | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page takes the token from the fragment and drops the fragment from the address before it calls the API (`pages.test.ts`, `login.spec.ts`) |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
 | V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |

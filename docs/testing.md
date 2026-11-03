@@ -20,7 +20,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | Frontend | Unit tests, and the committed API types against a fresh generation from `contracts/openapi` | `frontend/packages/api-client/src/generated.test.ts` |
 | Frontend components | A page mounted in happy-dom with a scripted API client, which answers each operation from a queue | `frontend/apps/login/src/App.test.ts` |
 | Lint rules | Each security rule of `frontend/eslint.config.js` against a snippet that breaks it | `frontend/lint/lint.test.ts` |
-| End to end | Chromium against the environment of `make up`, through Traefik, nginx, `app` and SimpleSAMLphp | `frontend/e2e/login.spec.ts` |
+| End to end | Chromium against the environment of `make up`, through Traefik, nginx, `app` and SimpleSAMLphp, with the links of mails read from Mailpit | `frontend/e2e/login.spec.ts` |
 | Static files | The nginx config rendered from `infra/web/security-headers.json`, and the policy in that file | `infra/web/render-nginx.test.mjs` |
 
 ## Tools
@@ -52,7 +52,7 @@ Not used: MockMvc, the Spring test context, Mockito and MockK.
 - **Architecture rules.** Each rule has a fixture with a violation in `architecture-tests/src/test/kotlin/archfixtures`, and a new table needs an entry in `tableOwners`.
 - **Spans.** The services export nothing without an OTLP endpoint, so tests send nothing out. A test that reads spans passes a bean class with an `InMemorySpanExporter` as an extra source, sets `management.tracing.sampling.probability=1.0`, and flushes `SdkTracerProvider` before reading. The class has no `@Configuration`, or the component scan of every other spec in the module would pick it up.
 - **Hostile XML.** A parser of XML from outside has negative tests for a DOCTYPE with external or nested entities, XInclude, a foreign schema and the size limit. See `MetadataImporterTest`.
-- **End to end.** The specs share the fixtures of `acme`, so they run one at a time. A TOTP code counts once, and `enterTotp` waits for the next window when an earlier run spent the current one. A page that should work within the CSP collects its violations from the console and expects none.
+- **End to end.** The specs share the fixtures of `acme`, so they run one at a time. A TOTP code counts once, and `enterTotp` waits for the next window when an earlier run spent the current one. A page that should work within the CSP collects its violations from the console and expects none. An invitation works once, so `make test-e2e` first runs `dev-tools/e2e-invitation.sh`: the operator CLI reinvites `invitee@acme.test`, which leaves it without a password or factors, and older mails to it are deleted. The tests of that user follow one another in a `describe.serial`. `linkFromMail` polls the Mailpit API for a mail newer than the action that sent it.
 - **API contract.** A contract test built on `OpenApiContract` fails when the controllers and the contract list different operations, so a new endpoint needs its contract first. Responses, refusals included, are checked against the contract's schemas.
 
 ## Database

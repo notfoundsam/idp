@@ -38,7 +38,7 @@ async function passkey(credentials: CredentialsContainer) {
       spellcheck="false"
       required
     />
-    <ProblemMessage :login="login" />
+    <ProblemMessage :state="login.state" />
     <button type="submit" :disabled="login.state.busy">Next</button>
   </form>
   <button v-if="credentials" type="button" :disabled="login.state.busy" @click="passkey(credentials)">

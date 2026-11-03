@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Page } from '@playwright/test'
 import { totp } from './totp'
 
 export const ACME = 'https://acme.idp.test'
@@ -7,6 +7,23 @@ export const SP_WHOAMI = 'https://sp.idp.test/simplesaml/whoami.php'
 /** The fixtures of `acme`, see dev-tools/README.md. */
 export const ALICE = { login: 'alice@acme.test', password: 'local-fixture-password-acme', totp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' }
 export const BOB = { login: 'bob@acme.test', password: 'local-fixture-password-acme', totp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' }
+
+/** Invited anew by `dev-tools/e2e-invitation.sh` before every run, so it starts without a password or factors. */
+export const INVITEE = 'invitee@acme.test'
+
+export async function sessionCookie(context: BrowserContext) {
+  return (await context.cookies(ACME)).find((it) => it.name === '__Host-session')
+}
+
+/** Types nothing: the text comes from the clipboard, as from a password manager. */
+export async function paste(page: Page, label: string, text: string) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ACME })
+  await page.evaluate((value) => navigator.clipboard.writeText(value), text)
+  const field = page.getByLabel(label, { exact: true })
+  await field.focus()
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect(field).toHaveValue(text)
+}
 
 /** Collects what the CSP blocks, so a test can tell that a page worked within it. */
 export function cspViolations(page: Page): string[] {

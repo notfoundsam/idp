@@ -385,7 +385,7 @@ services:
         condition: service_healthy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.web.rule=HostRegexp(`^[a-z0-9-]+\.idp\.test$`) && (Path(`/`) || PathPrefix(`/login`) || PathPrefix(`/console`))
+      - traefik.http.routers.web.rule=HostRegexp(`^[a-z0-9-]+\.idp\.test$`) && (Path(`/`) || PathPrefix(`/login`) || PathPrefix(`/console`) || Path(`/invite`) || Path(`/reset-password`) || Path(`/confirm-email`))
       # Below the hosts of the tools and ops, whose routers take every path.
       - traefik.http.routers.web.priority=10
       - traefik.http.services.web.loadbalancer.server.port=80

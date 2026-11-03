@@ -70,6 +70,28 @@ describe('requests', () => {
     expect(nth(sent, 0).path).toBe('/api/flows/..%2F..%2Fpassword-reset')
   })
 
+  test('a token from a mail travels in the body, never in the path', async () => {
+    const { client, sent } = recording(() => new Response(null, { status: 204 }))
+    await client.confirmPasswordReset('mail-token', 'new password')
+    await client.confirmEmailChange('mail-token')
+    expect(sent.map((it) => it.path)).toEqual(['/api/password-reset/confirmation', '/api/email-change/confirmation'])
+    expect(sent.map((it) => it.init.body)).toEqual(['{"token":"mail-token","password":"new password"}', '{"token":"mail-token"}'])
+  })
+
+  test('an invitation is accepted on the flow it signs in with', async () => {
+    const { client, sent } = recording(() => json(flow))
+    expect(await client.acceptInvitation(flow.id, 'mail-token', 'first password')).toEqual(flow)
+    expect(nth(sent, 0).path).toBe(`/api/flows/${flow.id}/invitation`)
+    expect(nth(sent, 0).init.body).toBe('{"token":"mail-token","password":"first password"}')
+  })
+
+  test('asking for a reset mail is accepted without a body', async () => {
+    const { client, sent } = recording(() => new Response(null, { status: 202 }))
+    await expect(client.requestPasswordReset('alice@acme.test')).resolves.toBeUndefined()
+    expect(nth(sent, 0).path).toBe('/api/password-reset')
+    expect(nth(sent, 0).init.body).toBe('{"login":"alice@acme.test"}')
+  })
+
   test('starting a flow sends what it asks for', async () => {
     const { client, sent } = recording(() => json(flow, 201))
     await client.startFlow({ reauthenticate: true })

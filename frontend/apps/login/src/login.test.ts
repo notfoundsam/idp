@@ -16,7 +16,7 @@ describe('starting', () => {
     const { login, answer, navigation } = loginWith()
     answer('startFlow', flowAt('IDENTIFY'))
     await login.begin()
-    expect(navigation.query).toBe(`flow=${FLOW_ID}`)
+    expect(navigation.replaced).toBe(`/login/?flow=${FLOW_ID}`)
     expect(login.state.flow?.step).toBe('IDENTIFY')
   })
 
@@ -152,6 +152,67 @@ describe('steps', () => {
     await login.codesSaved()
     expect(login.state.recoveryCodes).toEqual([])
     expect(navigation.assigned).toEqual([DIRECT_LOGIN_TARGET])
+  })
+})
+
+describe('invitations', () => {
+  test('the first password goes with the token on a flow that ignores a live session', async () => {
+    const { login, answer, calls } = loginWith()
+    answer('startFlow', flowAt('IDENTIFY'))
+    answer('acceptInvitation', flowAt('ENROLL_MFA', ['TOTP']))
+    login.beginInvitation('mail-token')
+    expect(login.state.phase).toBe('invitation')
+    await login.acceptInvitation('first password')
+    expect(calls).toEqual([
+      { operation: 'startFlow', args: [{ reauthenticate: true }] },
+      { operation: 'acceptInvitation', args: [FLOW_ID, 'mail-token', 'first password'] },
+    ])
+    expect(login.state.phase).toBe('step')
+    expect(login.state.flow?.step).toBe('ENROLL_MFA')
+  })
+
+  test('once the password is set the flow is in the URL, so a reload goes on with the next step', async () => {
+    const { login, answer, navigation } = loginWith()
+    answer('startFlow', flowAt('IDENTIFY'))
+    answer('acceptInvitation', flowAt('ENROLL_MFA', ['TOTP']))
+    login.beginInvitation('mail-token')
+    expect(navigation.replaced).toBeNull()
+    await login.acceptInvitation('first password')
+    expect(navigation.replaced).toBe(`/login/?flow=${FLOW_ID}`)
+  })
+
+  test('a refused password keeps the form and tries again on the same flow', async () => {
+    const { login, answer, calls } = loginWith()
+    answer('startFlow', flowAt('IDENTIFY'))
+    answer('acceptInvitation', refused(422), flowAt('COMPLETE'))
+    answer('completeFlow', { returnUrl: null })
+    login.beginInvitation('mail-token')
+    await login.acceptInvitation('weak')
+    expect(login.state.phase).toBe('invitation')
+    expect(login.state.problem).toBe('rejected')
+    await login.acceptInvitation('a much better password')
+    expect(calls.filter((it) => it.operation === 'startFlow')).toHaveLength(1)
+  })
+
+  test('a flow that expired while the form was open is replaced on the next try', async () => {
+    const { login, answer, calls } = loginWith()
+    answer('startFlow', flowAt('IDENTIFY'), flowAt('IDENTIFY'))
+    answer('acceptInvitation', refused(410), flowAt('ENROLL_MFA', ['TOTP']))
+    login.beginInvitation('mail-token')
+    await login.acceptInvitation('first password')
+    expect(login.state.phase).toBe('invitation')
+    expect(login.state.problem).toBe('unexpected')
+    await login.acceptInvitation('first password')
+    expect(calls.filter((it) => it.operation === 'startFlow')).toHaveLength(2)
+    expect(login.state.flow?.step).toBe('ENROLL_MFA')
+  })
+
+  test('a link without a token fails the page before any call', () => {
+    const { login, calls } = loginWith()
+    login.beginInvitation(null)
+    expect(login.state.phase).toBe('failed')
+    expect(login.state.problem).toBe('broken-link')
+    expect(calls).toEqual([])
   })
 })
 

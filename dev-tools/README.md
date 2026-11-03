@@ -34,7 +34,9 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 The headers of the static files live in `infra/web/security-headers.json`, and `nginx-config` renders them into the nginx config on every `up`. After changing either file run `docker compose up -d --force-recreate nginx-config nginx`.
 
-`make test-e2e` runs the Playwright tests of `frontend/e2e` in the `e2e` container against the running environment. It first hands SimpleSAMLphp the metadata of `acme` and copies the mkcert CA into `dev-tools/certs`. A report of a failed run stays in `frontend/e2e/playwright-report`.
+The links of mails, `/invite`, `/reset-password` and `/confirm-email`, get the `index.html` of the login app, which reads the token from the URL fragment.
+
+`make test-e2e` runs the Playwright tests of `frontend/e2e` in the `e2e` container against the running environment. It first hands SimpleSAMLphp the metadata of `acme`, copies the mkcert CA into `dev-tools/certs` and runs `dev-tools/e2e-invitation.sh`, which reinvites `invitee@acme.test` as an admin of `acme` through the operator CLI. A report of a failed run stays in `frontend/e2e/playwright-report`. Asking for a password reset is limited to 5 an hour from one address, and every local request comes from the same one, so more than five runs an hour fail at the reset test.
 
 The API types in `packages/api-client` are generated from `contracts/openapi` and committed. After a contract change run `docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate`, or `make test-frontend` fails.
 
