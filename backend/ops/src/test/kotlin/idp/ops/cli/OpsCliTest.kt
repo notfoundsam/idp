@@ -261,7 +261,7 @@ class OpsCliTest :
                 fresh.sql.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 0
             }
 
-            test("applies and approves the service tenant the usual way, and a second run is refused") {
+            test("applies and approves the service tenant the usual way, asks worker to set it up for ops, and a second run is refused") {
                 fresh.sql.update("DELETE FROM platform.operator_audit")
 
                 bootstrap.run(listOf("bootstrap", "Platform", CONTACT)) shouldBe 0
@@ -272,14 +272,14 @@ class OpsCliTest :
                     String::class.java,
                     tenant,
                 ) shouldBe "ops-sso.idp.test"
-                fresh.events(tenant).shouldContainExactly(TenancyEvents.APPROVED)
+                fresh.events(tenant).shouldContainExactlyInAnyOrder(TenancyEvents.APPROVED, TenancyEvents.SERVICE_TENANT_BOOTSTRAPPED)
                 fresh.audit().map { it["action"] }.shouldContainExactlyInAnyOrder("tenant.application.submitted", "tenant.approved")
                 fresh.audit().forEach { it["actor"] shouldBe IAM_ACTOR }
 
                 bootstrap.run(listOf("bootstrap", "Platform", CONTACT)) shouldBe 1
 
                 err.toString().trim() shouldBe "refused: SubdomainTaken"
-                fresh.events(tenant).shouldHaveSize(1)
+                fresh.events(tenant).shouldHaveSize(2)
                 fresh.sql.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 1
             }
         }

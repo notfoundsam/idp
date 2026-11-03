@@ -25,6 +25,8 @@ internal class TenantPolicy(
         if (!sessionIdleTimeout.isPositive || sessionAbsoluteTimeout < sessionIdleTimeout) throw SessionTimeoutsNotValid()
     }
 
+    fun withPasskeysRequired() = TenantPolicy(mfaForUsers, true, sessionIdleTimeout, sessionAbsoluteTimeout, version)
+
     fun assuranceFor(role: UserRole): Assurance =
         when {
             passkeyRequired -> Assurance.PASSKEY

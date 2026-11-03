@@ -14,15 +14,11 @@ class BootstrapServiceTenant(
     override val transaction = TransactionScope.PLATFORM
 }
 
-/** One transaction holds both steps, so a failed run leaves the reserved name free for the next one. */
 class BootstrapServiceTenantHandler(
     private val tenancy: TenancyService,
 ) : MessageHandler<BootstrapServiceTenant, UUID> {
     override val messageType = BootstrapServiceTenant::class
 
-    override fun handle(message: BootstrapServiceTenant): UUID {
-        val application = tenancy.submitServiceTenant(message.companyName, message.contact, operator(), operatorIp())
-        tenancy.approve(application, operator(), operatorIp())
-        return application
-    }
+    override fun handle(message: BootstrapServiceTenant): UUID =
+        tenancy.bootstrapServiceTenant(message.companyName, message.contact, operator(), operatorIp())
 }

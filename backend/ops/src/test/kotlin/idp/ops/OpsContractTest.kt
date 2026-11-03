@@ -14,8 +14,8 @@ class OpsContractTest :
     FunSpec({
         val contract = OpenApiContract(File("../../contracts/openapi/ops.yaml"))
         val environment = OpsEnvironment()
-        val application = runApplication<OpsApplication>(*environment.localArguments)
-        val api = OpsClient(application.environment.getProperty("local.server.port"))
+        val application = runApplication<OpsApplication>(*environment.arguments)
+        val api = OpsClient(application.environment.getProperty("local.server.port")).also { it.login(environment.idp) }
 
         afterSpec { application.close() }
 
@@ -122,6 +122,15 @@ class OpsContractTest :
             api.post("/api/tenants/$unknown/suspend").conforms("POST", "/api/tenants/{id}/suspend").status shouldBe 404
             api.post("/api/tenants/$unknown/resume").conforms("POST", "/api/tenants/{id}/resume").status shouldBe 404
             api.post("/api/applications", body("INVALID!")).conforms("POST", "/api/applications").status shouldBe 422
+        }
+
+        test("a change without the CSRF token answers as the contract says") {
+            val forged = OpsClient(application.environment.getProperty("local.server.port"))
+            forged.login(environment.idp)
+            forged.get("/api/tenants/${UUID.randomUUID()}")
+            forged.cookies.remove(CSRF_COOKIE)
+
+            forged.post("/api/tenants/${UUID.randomUUID()}/suspend").conforms("POST", "/api/tenants/{id}/suspend").status shouldBe 403
         }
 
         test("a request without a principal answers as the contract says") {

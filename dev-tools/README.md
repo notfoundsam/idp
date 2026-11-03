@@ -23,6 +23,7 @@ After a backend change run `make jars`, then `docker compose restart app`.
 | https://sp.idp.test/simplesaml/ | SimpleSAMLphp, test Service Provider (`admin` / `admin`) |
 | https://ops.idp.test | `ops` |
 | https://acme.idp.test, https://globex.idp.test | Tenants, `/api` and `/saml` go to `app` |
+| https://ops-sso.idp.test | Service tenant, the IdP of `ops`, routed to `app` like any tenant |
 | http://localhost:3000 | Grafana, only after `make up-observability` |
 
 Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0.1:5432`.
@@ -43,7 +44,7 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 `worker` records erased users and deleted tenants by ID in a file in the `idp-erasures` volume, apart from the database. After restoring the database, apply them again with `docker compose run --rm -e REAPPLY_ERASURES=true migrator`, see [the runbook](../docs/security/restore-runbook.md).
 
-In the `local` profile `worker` applies for the tenants `acme` and `globex` and approves them as `ops` would, then provisions them from the outbox event like any other tenant. `make up` returns after that, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
+In the `local` profile `worker` applies for the tenants `acme` and `globex` and approves them as `ops` would, bootstraps the service tenant `ops-sso`, see [Operator](#operator), then provisions them from the outbox event like any other tenant. `make up` returns after that, because the health check of `worker` waits for it. A new or changed tenant reaches `app` within `idp.tenants.cache-ttl`, 30 seconds by default.
 
 `worker` then adds fixtures to `acme`, once, so a restart changes nothing:
 
@@ -66,7 +67,11 @@ Then https://sp.idp.test/simplesaml/whoami.php logs in through `acme` and shows 
 
 ## Operator
 
-In the `local` profile the API of `ops` acts as the fixed operator `local-operator`, because SAML arrives in a later task. Elsewhere a request without a principal gets 401. Until then the API stays inside compose.
+The API of `ops` needs a SAML login at the service tenant `ops-sso`: https://ops.idp.test/saml2/authenticate/ops-sso starts it, and a request without a session gets 401. The service tenant requires a passkey, so the login works once the login UI exists. `ops` answers on `ops.idp.test` only.
+
+`worker` seeds the service tenant like `acme`, through the same bootstrap as the CLI. Its first operator is `operator@ops-sso.test`, whose invitation is in Mailpit. `worker` then registers `ops` there as an SP with the email as NameID, assigns the first operator and requires passkeys. `ops` trusts the keys of a metadata file it is given, never ones it fetches itself. Locally `ops-idp-metadata` copies `https://ops-sso.idp.test/saml/metadata` into a volume on every `up`, so after a key rotation run `docker compose up -d --force-recreate ops-idp-metadata ops`.
+
+In production the operator does the same by hand: run the CLI `bootstrap`, wait until the tenant is active, store its `/saml/metadata` where `IDP_METADATA_FILE` points, and start `ops`. `ops` does not start without the file or with the metadata of another IdP. After a key rotation at the service tenant the file is replaced between starting and completing the rotation.
 
 The CLI is a one-off run of the same image. In production IAM decides who may start it and `sts:GetCallerIdentity` names the actor. Locally the actor is `local-operator`.
 

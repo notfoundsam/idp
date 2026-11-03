@@ -11,6 +11,9 @@ spring:
   servlet:
     encoding:
       force-response: true
+  autoconfigure:
+    # Operators log in through SAML alone, so Spring Boot must not create a user with a generated password.
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
 
 idp:
   tenants:
@@ -19,6 +22,10 @@ idp:
     offboarding-grace: P30D
   client-ip:
     trusted-header: ${CLIENT_IP_HEADER:}
+  saml:
+    # A file with the metadata of the service tenant, taken from its /saml/metadata after the bootstrap and after each key rotation.
+    # The CLI does not read it.
+    idp-metadata: ${IDP_METADATA_FILE:}
   kms:
     new-keys: ${KMS_NEW_KEYS}
     platform-kek-uri: ${PLATFORM_KEK_URI}
@@ -31,6 +38,16 @@ idp:
 
 server:
   port: 8080
+  servlet:
+    session:
+      # Idle. The absolute end is the SessionNotOnOrAfter of the assertion.
+      timeout: 30m
+      cookie:
+        name: __Host-ops-session
+        secure: true
+        http-only: true
+        # The IdP lives on a sibling host, so its form post to the ACS is same-site and carries the cookie.
+        same-site: strict
 
 management:
   server:

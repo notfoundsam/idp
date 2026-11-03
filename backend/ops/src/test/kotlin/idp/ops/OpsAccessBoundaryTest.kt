@@ -21,8 +21,8 @@ class OpsAccessBoundaryTest :
     FunSpec({
         val environment = OpsEnvironment()
         val runtime = JdbcTemplate(environment.database.role("ops_runtime"))
-        val application = runApplication<OpsApplication>(*environment.localArguments)
-        val api = OpsClient(application.environment.getProperty("local.server.port"))
+        val application = runApplication<OpsApplication>(*environment.arguments)
+        val api = OpsClient(application.environment.getProperty("local.server.port")).also { it.login(environment.idp) }
 
         afterSpec { application.close() }
 

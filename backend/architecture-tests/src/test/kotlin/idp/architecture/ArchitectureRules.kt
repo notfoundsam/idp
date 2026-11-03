@@ -331,16 +331,22 @@ object ArchitectureRules {
             .should()
             .haveNameMatching(""".*\.(${tableOwners.keys.joinToString("|")})(\$.*)?""")
 
+    /**
+     * These rules check each context, audience or deployable on its own. A fixture holds a violation in one of them only, and a part
+     * of the real code may have no classes yet, like the `account` audience. Every other rule must check something.
+     */
+    private fun partsMayBeEmpty(rule: (String) -> ArchRule): (String) -> ArchRule = { root -> rule(root).allowEmptyShould(true) }
+
     val all: Map<String, (String) -> ArchRule> =
         mapOf(
             "contextapi" to ::contextApi,
-            "contextgraph" to ::contextGraph,
+            "contextgraph" to partsMayBeEmpty(::contextGraph),
             "sharedkernelindependent" to ::sharedKernelIndependent,
             "domainpurity" to ::domainPurity,
             "awssdk" to ::awsSdk,
             "contextsignoreaudiences" to ::contextsIgnoreAudiences,
-            "audienceisolation" to ::audienceIsolation,
-            "deployableaudiences" to ::deployableAudiences,
+            "audienceisolation" to partsMayBeEmpty(::audienceIsolation),
+            "deployableaudiences" to partsMayBeEmpty(::deployableAudiences),
             "nocontrollers" to ::noControllersInContexts,
             "workerisolation" to ::workerAndMigratorIsolation,
             "contextmessages" to ::noMessagesInContexts,
@@ -350,5 +356,5 @@ object ArchitectureRules {
             "jooqusage" to ::jooqUsage,
             "tableowner" to ::tableOwner,
             "tableunmapped" to ::tableUnmapped,
-        ).mapValues { (_, rule) -> { root: String -> rule(root).allowEmptyShould(true) } }
+        )
 }

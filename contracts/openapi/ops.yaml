@@ -2,7 +2,10 @@ openapi: 3.1.0
 info:
   title: IdP operator API
   version: 1.0.0
-  description: Operators manage tenants here and see no customer data.
+  description: >-
+    Operators manage tenants here and see no customer data. An operator logs in with a passkey through the service tenant: the
+    browser opens `/saml2/authenticate/ops-sso` and comes back with the `__Host-ops-session` cookie. A call that changes something
+    echoes the `XSRF-TOKEN` cookie in `X-XSRF-TOKEN`, and gets 403 without it.
 paths:
   /api/applications:
     post:
@@ -222,9 +225,9 @@ components:
     BadRequest:
       description: The request is malformed
     Unauthorized:
-      description: The request has no principal
+      description: The request has no live operator session
     Forbidden:
-      description: The role of the principal does not allow this action
+      description: The role of the operator does not allow this action, or the CSRF token is missing
     NotFound:
       description: No such tenant or application
     Conflict:

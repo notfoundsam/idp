@@ -12,6 +12,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `OpsContractTest` |
 | Telemetry | The real application with spans kept in memory | `app/src/test/.../web/TracingTest.kt` |
 | SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest` |
+| SAML login of `ops` | Responses a fake IdP writes and signs, each bent in one way, posted to the ACS of the real `ops` | `ops/src/test/.../security/OpsSamlLoginTest.kt` |
 | SAML interoperability | SimpleSAMLphp in a container with the configuration of `dev-tools/simplesamlphp`, the login over the HTTP API | `app/src/test/.../saml/SamlInteropTest.kt` |
 | Servlet filter | One filter called directly with servlet mocks, where a limit is too large to reach over HTTP | `SamlThrottleFilterTest` |
 | Architecture | Module boundaries and the build graph | `architecture-tests` |
@@ -26,6 +27,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **OpenTelemetry SDK testing** for `InMemorySpanExporter`.
 - **spring-test** only for its servlet mocks, `MockHttpServletRequest` and `MockFilterChain`.
 - **`TestSp`** in the `federation` test fixtures: an SP with its own key that writes an AuthnRequest by hand, so a test can bend any part of it, and signs or encodes it for either binding.
+- **`FakeIdp`** and **`OpsClient`** in the tests of `ops`: the service tenant with a key of its own, whose metadata file `ops` is given, and a browser that names the host `ops.idp.test`, keeps cookies, echoes the CSRF cookie and logs in through the fake IdP. The host is a restricted header of the JDK client, so the test JVM sets `jdk.httpclient.allowRestrictedHeaders=host`.
 - **Vitest** for the frontend.
 - **oasdiff** in CI for breaking changes in the API contracts.
 

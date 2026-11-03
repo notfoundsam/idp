@@ -1,6 +1,7 @@
 package idp.ops.bus
 
 import idp.ops.OpsApplication
+import idp.ops.OpsClient
 import idp.ops.OpsEnvironment
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.Command
@@ -25,10 +26,6 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.reflect.KClass
 
@@ -106,14 +103,9 @@ class OpsBusTest :
         }
 
         test("a denial without a principal is recorded as anonymous and answers 401") {
-            val port = application.environment.getProperty("local.server.port")
-            val response =
-                HttpClient.newHttpClient().send(
-                    HttpRequest.newBuilder(URI("http://localhost:$port/probe")).build(),
-                    HttpResponse.BodyHandlers.ofString(),
-                )
+            val response = OpsClient(application.environment.getProperty("local.server.port")).get("/probe")
 
-            response.statusCode() shouldBe 401
+            response.status shouldBe 401
             column("actor") shouldBe "anonymous"
         }
 

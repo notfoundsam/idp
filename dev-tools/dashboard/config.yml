@@ -25,6 +25,9 @@ services:
       - name: Tenant globex
         subtitle: API
         url: https://globex.idp.test/api
+      - name: Service tenant
+        subtitle: The IdP of ops, SAML metadata
+        url: https://ops-sso.idp.test/saml/metadata
       - name: Operator
-        subtitle: ops
-        url: https://ops.idp.test
+        subtitle: ops, SAML login through ops-sso
+        url: https://ops.idp.test/saml2/authenticate/ops-sso

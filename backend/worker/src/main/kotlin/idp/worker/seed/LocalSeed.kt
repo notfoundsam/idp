@@ -22,12 +22,14 @@ import java.time.Instant
 import java.util.UUID
 
 private val TENANTS = mapOf("acme" to "Acme", "globex" to "Globex")
+private const val LOCAL_OPERATOR_CONTACT = "operator@ops-sso.test"
 private val OPERATOR = Actor.Operator("local-seed")
 private val TIMEOUT: Duration = Duration.ofMinutes(2)
 private val POLL_INTERVAL: Duration = Duration.ofMillis(100)
 
 /**
- * Applies and approves as `ops` does, so a local tenant is provisioned from the same event as a real one.
+ * Applies and approves as `ops` does, so a local tenant is provisioned from the same event as a real one. The same goes for the
+ * service tenant, whose first operator is `operator@ops-sso.test`.
  * The wait holds readiness back, which keeps `make up` from returning before the tenants exist.
  */
 @Component
@@ -53,8 +55,19 @@ class LocalSeed(
         )
 
     override fun run(args: ApplicationArguments) {
-        awaitActive(TENANTS.mapNotNull { (subdomain, name) -> approve(subdomain, name) })
+        awaitActive(TENANTS.mapNotNull { (subdomain, name) -> approve(subdomain, name) } + listOfNotNull(bootstrap()))
     }
+
+    /** The service tenant, as the bootstrap of the CLI makes it, so `ops` has an IdP once `make up` returns. */
+    private fun bootstrap(): UUID? =
+        try {
+            platform.execute {
+                val application = operator.bootstrapServiceTenant("Platform", LOCAL_OPERATOR_CONTACT, OPERATOR)
+                checkNotNull(operator.application(application)).tenantId
+            }
+        } catch (_: DomainRuleViolation) {
+            null
+        }
 
     /** Null when the subdomain is taken, which means an earlier start got here first. */
     private fun approve(

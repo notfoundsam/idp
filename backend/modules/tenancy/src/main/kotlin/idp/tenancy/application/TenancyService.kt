@@ -95,13 +95,24 @@ class TenancyService(
         ip: String? = null,
     ): UUID = add(application.companyName, Subdomain.of(application.subdomain), application.contact, actor, ip)
 
-    /** The only way to a reserved name, so only the bootstrap of `ops` may call it. */
-    fun submitServiceTenant(
+    /**
+     * The only way to the reserved name, so only the bootstrap of `ops` may call it. `ops` cannot reach a tenant schema, so the event
+     * asks `worker` to make the tenant the IdP of `ops` once it is provisioned. One transaction holds every step, so a failed run leaves
+     * the name free for the next one.
+     */
+    fun bootstrapServiceTenant(
         companyName: String,
         contact: String,
         actor: Actor.Operator,
         ip: String? = null,
-    ): UUID = add(companyName, Subdomain.serviceTenant(), contact, actor, ip)
+    ): UUID =
+        transaction.execute { dsl ->
+            val application = add(companyName, Subdomain.serviceTenant(), contact, actor, ip)
+            approve(application, actor, ip)
+            val tenant = load(dsl, checkNotNull(applications.find(dsl, application)).tenantId)
+            publish(dsl, tenant, tenant.version, TenancyEvents.SERVICE_TENANT_BOOTSTRAPPED)
+            application
+        }
 
     fun approve(
         applicationId: UUID,

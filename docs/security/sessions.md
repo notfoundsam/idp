@@ -79,3 +79,7 @@ What this means for revoking access:
 | Suspending a tenant | Revoked at once, every request refused | Run on, as above |
 
 Removing access at the SP at once needs the SP's own tools until Single Logout or SCIM exists.
+
+## The session of `ops`
+
+`ops` is an SP of the service tenant `ops-sso` and honours `SessionNotOnOrAfter`: its session ends there, and after 30 idle minutes. The session lives in memory under the `__Host-ops-session` cookie, `SameSite=Strict`, with a new ID after the login. A restart of `ops` ends every operator session, and more than one instance needs sticky sessions. The service tenant requires a passkey for every role, and `ops` refuses an assertion without the passkey class. Blocking an operator in the service tenant takes effect in `ops` at the latest when the IdP session would have ended.

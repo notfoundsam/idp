@@ -49,6 +49,7 @@ Every key, algorithm and certificate the IdP uses, what each may protect, and ho
 | Public TLS of the product domain | ACM | CloudFront and ALB (task 40) | Automatic in ACM |
 | SAML signing certificate of a tenant | Self-signed with `SHA256withRSA` for the tenant host, valid 5 years. SPs pin it from metadata, so its own signature and dates carry no trust | `saml_signing_keys.certificate`, published at `/saml/metadata` | With its key by a rotation |
 | SAML certificates of Service Providers | The SP | `service_providers.signing_certificates`, from uploaded metadata | The tenant admin uploads new metadata |
+| SAML signing certificate of the service tenant, as `ops` trusts it | The service tenant | The metadata file at `IDP_METADATA_FILE`, never fetched by `ops`. Only RSA-PSS with SHA-256 is accepted | An operator replaces the file during a rotation of the service tenant |
 
 ## Rotating a KEK
 

@@ -11,6 +11,7 @@ import org.springframework.core.env.Environment
 import org.springframework.core.env.Profiles
 
 const val LOCAL = "local"
+const val LOCAL_OPERATOR = "local-operator"
 private const val PROD = "prod"
 
 @Configuration(proxyBeanMethods = false)
@@ -24,15 +25,13 @@ class WebConfiguration {
     ) = ClientIpFilter(ClientIpResolver(trustedHeader.ifBlank { null }))
 }
 
+/** The CLI names its caller `local-operator` in this profile instead of asking IAM. */
 @Configuration(proxyBeanMethods = false)
 @Profile(LOCAL)
-class LocalPrincipalConfiguration(
+class LocalProfileGuard(
     environment: Environment,
 ) {
     init {
-        check(!environment.acceptsProfiles(Profiles.of(PROD))) { "The fixed principal is refused in the $PROD profile" }
+        check(!environment.acceptsProfiles(Profiles.of(PROD))) { "The $LOCAL profile is refused beside the $PROD one" }
     }
-
-    @Bean
-    fun localPrincipalFilter() = LocalPrincipalFilter()
 }

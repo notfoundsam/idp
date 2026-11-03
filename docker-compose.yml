@@ -263,7 +263,7 @@ services:
     environment:
       <<: *otel-environment
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
-      # Stands in for SAML with a fixed operator. This is why the API stays inside compose.
+      # The CLI names its caller local-operator instead of asking IAM. The API needs a SAML login through ops-sso either way.
       SPRING_PROFILES_ACTIVE: local
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: ops_runtime
@@ -273,8 +273,14 @@ services:
       PLATFORM_KEK_URI: hcvault://transit/platform-contacts
       OPENBAO_ADDRESS: http://openbao:8200
       OPENBAO_TOKEN: local-ops-token
+      IDP_METADATA_FILE: /idp/metadata.xml
     volumes:
       - ./backend/ops/build/libs/ops.jar:/app/service.jar:ro
+      - idp-ops-metadata:/idp:ro
+    depends_on:
+      <<: *java-depends-on
+      ops-idp-metadata:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:5007:5005"
     labels:
@@ -282,6 +288,25 @@ services:
       - traefik.http.routers.ops.rule=Host(`ops.idp.test`)
       - traefik.http.routers.ops.priority=100
       - traefik.http.services.ops.loadbalancer.server.port=8080
+
+  # ops trusts the keys of a file it is given. Locally the file comes from the service tenant over the compose network, on every
+  # `up`, so it follows a key rotation after a restart. In production an operator puts it in place, see dev-tools/README.md.
+  ops-idp-metadata:
+    image: amazoncorretto:25.0.5-al2023-headless
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - >-
+        curl -fsS --max-time 5 --retry 30 --retry-delay 2 --retry-all-errors -H 'Host: ops-sso.idp.test'
+        http://app:8080/saml/metadata -o /idp/metadata.xml
+    volumes:
+      - idp-ops-metadata:/idp
+    depends_on:
+      app:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
 
   # Grafana with Tempo, Prometheus and Loki behind one OTLP endpoint. It takes a lot of memory, so it runs only on request.
   lgtm:
@@ -307,6 +332,7 @@ volumes:
   idp-postgres:
   idp-openbao:
   idp-erasures:
+  idp-ops-metadata:
   idp-lgtm:
   idp-frontend-node-modules:
   idp-corepack-cache:

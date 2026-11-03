@@ -21,7 +21,7 @@ A map of the code: where things live and how a request moves through them. Decis
 | Deployable | Runs | Database role |
 |---|---|---|
 | `app` | Audiences `login`, `account`, `admin`, the web filters, the bus with Throttle, SAML endpoints | `app_runtime` |
-| `ops` | Audience `operator`, the bus without Throttle, the operator CLI | `ops_runtime`, `platform` only |
+| `ops` | Audience `operator`, the bus without Throttle, the SAML SP of the service tenant, the operator CLI | `ops_runtime`, `platform` only |
 | `worker` | `OutboxDispatcher`, scheduled jobs, tenant provisioning and offboarding, mail, key rotation | `worker_runtime`, provisioning as `idp_owner` |
 | `migrator` | Migrations, then `ReapplyErasuresJob` after a restore | `idp_owner` |
 
@@ -46,7 +46,7 @@ Handlers and jobs call services directly, without the bus.
 
 ## Actors
 
-A `Principal` pairs an `Actor` with a role. Service methods that write audit records take the `Actor` explicitly: `User`, `Operator`, `System` for `worker` and `migrator`, or `Anonymous` for a failed login. In `ops` the operator CLI builds the principal from its caller's identity, and the `local` profile and tests use a fixed operator.
+A `Principal` pairs an `Actor` with a role. Service methods that write audit records take the `Actor` explicitly: `User`, `Operator`, `System` for `worker` and `migrator`, or `Anonymous` for a failed login. In `ops` the API takes the operator from a SAML login at the service tenant `ops-sso`, named by the email in the NameID, and the operator CLI builds the principal from its caller's identity.
 
 ## Where things go
 
