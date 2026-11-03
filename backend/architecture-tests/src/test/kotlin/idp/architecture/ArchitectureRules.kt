@@ -1,6 +1,9 @@
 package idp.architecture
 
+import com.tngtech.archunit.base.DescribedPredicate.not
 import com.tngtech.archunit.core.domain.JavaClass
+import com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage
+import com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage
 import com.tngtech.archunit.core.domain.JavaPackage
 import com.tngtech.archunit.lang.ArchCondition
 import com.tngtech.archunit.lang.ArchRule
@@ -54,6 +57,11 @@ object ArchitectureRules {
             "TenantPolicies" to listOf("authentication"),
             "SsoSessions" to listOf("authentication"),
             "Flows" to listOf("authentication"),
+            "SamlIdentity" to listOf("federation"),
+            "SamlSigningKeys" to listOf("federation"),
+            "ServiceProviders" to listOf("federation"),
+            "SpAcsEndpoints" to listOf("federation"),
+            "SpAssignments" to listOf("federation"),
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */
@@ -88,16 +96,30 @@ object ArchitectureRules {
 
     private fun audiencePackages(root: String) = audiences.map { "$root.audience.$it.." }.toTypedArray()
 
+    private fun internalsOf(
+        root: String,
+        context: String,
+    ) = arrayOf("$root.$context.domain..", "$root.$context.adapters..")
+
+    /** `app` serves the SAML protocol adapter, so it alone may wire `federation.adapters.saml`. */
     private fun contextApi(root: String): ArchRule =
         composite(
             contexts.map { context ->
                 noClasses()
                     .that()
-                    .resideOutsideOfPackage("$root.$context..")
+                    .resideOutsideOfPackages("$root.$context..", "$root.app..")
                     .should()
                     .dependOnClassesThat()
-                    .resideInAnyPackage("$root.$context.domain..", "$root.$context.adapters..")
-            },
+                    .resideInAnyPackage(*internalsOf(root, context))
+            } +
+                noClasses()
+                    .that()
+                    .resideInAPackage("$root.app..")
+                    .should()
+                    .dependOnClassesThat(
+                        resideInAnyPackage(*contexts.flatMap { internalsOf(root, it).toList() }.toTypedArray())
+                            .and(not(resideInAPackage("$root.federation.adapters.saml.."))),
+                    ),
         )
 
     private fun contextGraph(root: String): ArchRule =

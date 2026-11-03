@@ -30,4 +30,14 @@ class ArchitectureRulesTest :
                 }
             failure.message shouldNotContain "SsoEndpoint"
         }
+
+        test("app may wire the SAML adapter and nothing else inside a context, and nobody else may") {
+            val failure =
+                shouldThrow<AssertionError> {
+                    ArchitectureRules.all.getValue("contextapi")("archfixtures.contextapi").check(fixtures)
+                }
+            failure.message shouldNotContain "SamlWiring"
+            failure.message shouldContain "archfixtures.contextapi.app.Violation"
+            failure.message shouldContain "archfixtures.contextapi.audience.admin.SamlViolation"
+        }
     })

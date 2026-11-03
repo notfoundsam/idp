@@ -107,6 +107,35 @@ private fun TestDatabase.erasureRecords(tenant: UUID): List<Map<String, Any?>> =
         """SELECT actor_type, target_id FROM "${TenantSchema(tenant).name}".audit_entries WHERE action = 'user.erased'""",
     )
 
+/** Straight in SQL: the migrator knows nothing of federation, and the FK alone must take the rows along. */
+private fun TestDatabase.serviceProvider(tenant: UUID): UUID {
+    val id = UUID.randomUUID()
+    sql().update(
+        """
+        INSERT INTO "${TenantSchema(tenant).name}".service_providers
+            (id, entity_id, name, signing_certificates, authn_requests_signed, name_id_format, signed_part, signature_algorithm, created_at)
+        VALUES (?, 'https://sp.example/saml', 'Wiki', '{}', false, 'EMAIL', 'ASSERTION', 'RSA_PSS_SHA256', now())
+        """.trimIndent(),
+        id,
+    )
+    return id
+}
+
+private fun TestDatabase.assign(
+    tenant: UUID,
+    sp: UUID,
+    user: UUID,
+) {
+    sql().update(
+        """INSERT INTO "${TenantSchema(tenant).name}".sp_assignments (sp_id, user_id, assigned_at) VALUES (?, ?, now())""",
+        sp,
+        user,
+    )
+}
+
+private fun TestDatabase.assignedUsers(tenant: UUID): List<UUID?> =
+    sql().queryForList("""SELECT user_id FROM "${TenantSchema(tenant).name}".sp_assignments""", UUID::class.java)
+
 private fun TestDatabase.status(tenant: UUID): String? =
     sql().queryForObject("SELECT status FROM platform.tenants WHERE id = ?", String::class.java, tenant)
 
@@ -127,6 +156,23 @@ class ReapplyErasuresJobTest :
                     backup.users(tenant.first).shouldContainExactly(other)
                     backup.userKeys(tenant.first).shouldContainExactly(other)
                     backup.erasureRecords(tenant.first) shouldBe listOf(mapOf("actor_type" to "SYSTEM", "target_id" to user))
+                }
+            }
+
+            test("loses the SP assignments of the backup with the user row") {
+                Restore().run {
+                    val tenant = tenant()
+                    val user = invite(tenant, "ada@acme.test")
+                    val other = invite(tenant, "grace@acme.test")
+                    val sp = database.serviceProvider(tenant.first)
+                    listOf(user, other).forEach { database.assign(tenant.first, sp, it) }
+                    val backup = database.backup()
+                    erase(tenant, user)
+                    journal.record(Erasure.User(tenant.first, user))
+
+                    migrate(backup) shouldBe 0
+
+                    backup.assignedUsers(tenant.first).shouldContainExactly(other)
                 }
             }
 

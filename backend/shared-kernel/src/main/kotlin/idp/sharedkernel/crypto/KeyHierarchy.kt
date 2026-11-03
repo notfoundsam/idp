@@ -37,6 +37,7 @@ enum class DerivedKey(
 ) {
     FLOW("flow"),
     AUDIT("audit"),
+    SAML_SIGNING("saml-signing"),
 }
 
 class UserKeyNotFoundException(
