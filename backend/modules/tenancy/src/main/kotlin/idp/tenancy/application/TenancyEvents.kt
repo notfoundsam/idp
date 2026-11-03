@@ -9,4 +9,5 @@ object TenancyEvents {
     /** Waits in the outbox until the end of the waiting period. */
     const val OFFBOARDING_STARTED = "tenant.offboarding_started"
     const val ADMIN_REINVITE_REQUESTED = "tenant.admin_reinvite_requested"
+    const val SERVICE_TENANT_BOOTSTRAPPED = "tenant.service_tenant_bootstrapped"
 }

@@ -4,7 +4,8 @@ import idp.sharedkernel.domain.DomainRuleViolation
 
 private val DNS_LABEL = Regex("[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 private const val SERVICE_TENANT = "ops-sso"
-private val RESERVED = setOf("ops", SERVICE_TENANT, "platform", "api", "www")
+private const val OPS = "ops"
+private val RESERVED = setOf(OPS, SERVICE_TENANT, "platform", "api", "www")
 
 // Punycode would let a subdomain look like another customer's name in the browser.
 private const val PUNYCODE_PREFIX = "xn--"
@@ -30,6 +31,9 @@ internal class Subdomain private constructor(
         }
 
         fun serviceTenant() = Subdomain(SERVICE_TENANT)
+
+        /** The host of `ops` itself, which no tenant may take. */
+        fun ops() = Subdomain(OPS)
 
         fun stored(value: String) = Subdomain(value)
     }

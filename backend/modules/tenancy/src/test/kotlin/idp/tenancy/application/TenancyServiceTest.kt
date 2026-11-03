@@ -26,6 +26,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.date.shouldBeBetween
 import io.kotest.matchers.nulls.shouldBeNull
@@ -220,22 +221,48 @@ class TenancyServiceTest :
                 }
             }
 
-            test("the service tenant takes its reserved subdomain and goes on to the same domain") {
+            test("the service tenant takes its reserved subdomain, is approved and asks worker to make it the IdP of ops") {
                 Platform().run {
-                    val application = ops.submitServiceTenant("Platform", CONTACT, OPERATOR)
-
-                    ops.approve(application, OPERATOR)
+                    val application = ops.bootstrapServiceTenant("Platform", CONTACT, OPERATOR)
 
                     ops.application(application).shouldNotBeNull().subdomain shouldBe "ops-sso"
-                    domainsOf(tenantOf(application)).shouldContainExactly("ops-sso.idp.test")
+                    val tenant = tenantOf(application)
+                    statusOf(tenant) shouldBe TenantStatus.APPROVED
+                    domainsOf(tenant).shouldContainExactly("ops-sso.idp.test")
+                    events(tenant).shouldContainExactlyInAnyOrder(TenancyEvents.APPROVED, TenancyEvents.SERVICE_TENANT_BOOTSTRAPPED)
+                    sql.queryForObject(
+                        "SELECT tenant_id FROM platform.outbox WHERE event_type = ?",
+                        UUID::class.java,
+                        TenancyEvents.SERVICE_TENANT_BOOTSTRAPPED,
+                    ) shouldBe tenant
+                    actions().shouldContainExactly("tenant.application.submitted", "tenant.approved")
                 }
             }
 
-            test("the service tenant cannot be submitted twice") {
+            test("the service tenant cannot be bootstrapped twice, and the second run leaves nothing behind") {
                 Platform().run {
-                    ops.submitServiceTenant("Platform", CONTACT, OPERATOR)
+                    ops.bootstrapServiceTenant("Platform", CONTACT, OPERATOR)
 
-                    shouldThrow<SubdomainTaken> { ops.submitServiceTenant("Platform", CONTACT, OPERATOR) }
+                    shouldThrow<SubdomainTaken> { ops.bootstrapServiceTenant("Platform", CONTACT, OPERATOR) }
+
+                    sql.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 1
+                    sql.queryForObject(
+                        "SELECT count(*) FROM platform.outbox WHERE event_type = ?",
+                        Int::class.java,
+                        TenancyEvents.SERVICE_TENANT_BOOTSTRAPPED,
+                    ) shouldBe 1
+                }
+            }
+
+            test("a failed bootstrap leaves the reserved name free") {
+                Platform().run {
+                    audit.failing = true
+                    shouldThrow<IllegalStateException> { ops.bootstrapServiceTenant("Platform", CONTACT, OPERATOR) }
+                    audit.failing = false
+
+                    val tenant = tenantOf(ops.bootstrapServiceTenant("Platform", CONTACT, OPERATOR))
+
+                    statusOf(tenant) shouldBe TenantStatus.APPROVED
                 }
             }
 
@@ -671,7 +698,7 @@ class TenancyServiceTest :
         context("operator address") {
             test("reaches the record of every action") {
                 Platform().run {
-                    val service = ops.submitServiceTenant("Platform", CONTACT, OPERATOR, IP)
+                    val service = ops.bootstrapServiceTenant("Platform", CONTACT, OPERATOR, IP)
                     val application = ops.submit(NewApplication("Acme", "acme", CONTACT), OPERATOR, IP)
                     ops.approve(application, OPERATOR, IP)
                     val tenant = tenantOf(application)
@@ -682,7 +709,7 @@ class TenancyServiceTest :
                     ops.resume(tenant, OPERATOR, IP)
 
                     tenantOf(service).shouldNotBeNull()
-                    audit.changes.map { it.ip }.shouldContainExactly(List(5) { IP })
+                    audit.changes.map { it.ip }.shouldContainExactly(List(6) { IP })
                 }
             }
 

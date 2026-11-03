@@ -9,6 +9,9 @@ dependencies {
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.opentelemetry)
     implementation(libs.spring.boot.starter.jdbc)
+    implementation(libs.spring.boot.starter.security)
+    implementation(libs.spring.security.saml2)
+    implementation(libs.opensaml.saml.impl)
     implementation(libs.jackson.module.kotlin)
     implementation(project(":shared-kernel"))
     implementation(project(":modules:tenancy"))
@@ -17,7 +20,10 @@ dependencies {
     runtimeOnly(libs.postgresql)
 
     testImplementation(testFixtures(project(":shared-kernel")))
+    testImplementation(testFixtures(project(":modules:federation")))
     testImplementation(libs.micrometer.registry.otlp)
+    testImplementation(libs.bouncycastle)
+    testImplementation(libs.bouncycastle.pkix)
 }
 
 tasks.bootJar {
@@ -27,4 +33,6 @@ tasks.bootJar {
 // OpsContractTest reads the contract, so Gradle must rerun it when the contract changes.
 tasks.test {
     inputs.file(rootProject.file("../contracts/openapi/ops.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
+    // The tests name the host of ops, as a browser behind Traefik or the load balancer would.
+    systemProperty("jdk.httpclient.allowRestrictedHeaders", "host")
 }

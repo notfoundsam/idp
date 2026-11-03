@@ -25,6 +25,8 @@ spring-context = { module = "org.springframework:spring-context" }
 jakarta-servlet-api = { module = "jakarta.servlet:jakarta.servlet-api" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
 spring-boot-starter-mail = { module = "org.springframework.boot:spring-boot-starter-mail" }
+spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-security-saml2 = { module = "org.springframework.security:spring-security-saml2-service-provider" }
 spring-jdbc = { module = "org.springframework:spring-jdbc" }
 spring-test = { module = "org.springframework:spring-test" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }

@@ -38,6 +38,15 @@ internal class Users {
         index: ByteArray,
     ): User? = dsl.selectFrom(USERS).where(USERS.EMAIL_INDEX.eq(index)).fetchOne(::toUser)
 
+    fun firstAdmin(dsl: DSLContext): UUID? =
+        dsl
+            .select(USERS.ID)
+            .from(USERS)
+            .where(USERS.ROLE.eq(UserRole.TENANT_ADMIN.name))
+            .orderBy(USERS.CREATED_AT, USERS.ID)
+            .limit(1)
+            .fetchOne(USERS.ID)
+
     /** Sorted, so two callers cannot deadlock on each other's rows. */
     fun lockActiveAdmins(dsl: DSLContext): Set<UUID> =
         dsl

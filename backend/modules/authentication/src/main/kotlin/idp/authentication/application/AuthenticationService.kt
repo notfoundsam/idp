@@ -46,6 +46,7 @@ import java.util.UUID
 private const val SESSION_OPENED = "session.opened"
 private const val SESSIONS_REVOKED_FOR_USER = "session.revoked_for_user"
 private const val SESSIONS_REVOKED_FOR_TENANT = "session.revoked_for_tenant"
+private const val POLICY_CHANGED = "policy.changed"
 
 private const val LOGIN_FIELD = "flows.login_ciphertext"
 private const val IP_FIELD = "sso_sessions.ip_ciphertext"
@@ -306,6 +307,19 @@ class AuthenticationService(
                 )
             }
         }
+
+    /** Every role then logs in with a passkey. Records only a change, so a repeat leaves the journal as it was. */
+    fun requirePasskeys(
+        actor: Actor,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            val policy = policies.load(dsl)
+            if (policy.passkeyRequired) return@execute
+            policies.save(dsl, policy.withPasskeysRequired())
+            audit.recordChange(AuditRecord(actor, POLICY_CHANGED, ip = ip, details = mapOf("passkey_required" to "true")))
+        }
+    }
 
     /**
      * Joins the transaction of the caller, because a block or a reset that rolled back must leave the sessions alone. The logins in

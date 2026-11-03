@@ -27,6 +27,7 @@ import idp.worker.handlers.EmailChangeMailHandler
 import idp.worker.handlers.EmailChangedMailHandler
 import idp.worker.handlers.ErasureJournalHandler
 import idp.worker.handlers.InvitationMailHandler
+import idp.worker.handlers.OpsServiceProviderHandler
 import idp.worker.handlers.PasswordResetMailHandler
 import idp.worker.handlers.ReinviteAdminHandler
 import idp.worker.handlers.TenantSuspendedHandler
@@ -190,6 +191,14 @@ class WorkerConfiguration {
         authentication: AuthenticationService,
         transaction: TenantTransaction,
     ) = ReinviteAdminHandler(tenancy, identity, authentication, transaction)
+
+    @Bean
+    fun opsServiceProviderHandler(
+        federation: FederationService,
+        authentication: AuthenticationService,
+        identity: IdentityService,
+        @Value("\${idp.tenants.base-domain}") baseDomain: String,
+    ) = OpsServiceProviderHandler(federation, authentication, identity, baseDomain)
 
     @Bean
     fun erasureJournal(

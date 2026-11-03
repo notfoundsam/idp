@@ -16,8 +16,8 @@ import java.util.UUID
 class OpsApiTest :
     FunSpec({
         val environment = OpsEnvironment()
-        val application = runApplication<OpsApplication>(*environment.localArguments)
-        val api = OpsClient(application.environment.getProperty("local.server.port"))
+        val application = runApplication<OpsApplication>(*environment.arguments)
+        val api = OpsClient(application.environment.getProperty("local.server.port")).also { it.login(environment.idp) }
         val sql = environment.sql
 
         afterSpec { application.close() }
@@ -223,7 +223,7 @@ class OpsApiTest :
                     "tenant.offboarding_cancelled",
                 )
                 records.forEach {
-                    it["actor"] shouldBe "local-operator"
+                    it["actor"] shouldBe OPERATOR_EMAIL
                     it["tenant_id"] shouldBe tenant
                     it["details"].toString() shouldContain "\"ip\": \"127.0.0.1\""
                 }
@@ -250,9 +250,9 @@ class OpsApiTest :
         }
 
         context("principal") {
-            test("outside the local profile a request without a principal is refused and recorded") {
+            test("a request without a SAML session is refused and recorded, in the local profile too") {
                 val other = OpsEnvironment()
-                runApplication<OpsApplication>(*other.arguments).use { context ->
+                runApplication<OpsApplication>(*other.arguments, "--spring.profiles.active=local").use { context ->
                     val anonymous = OpsClient(context.environment.getProperty("local.server.port"))
 
                     val answers =

@@ -223,6 +223,26 @@ class IdentityServiceTest :
                     tenant.events() shouldHaveSize 1
                 }
             }
+
+            test("is the earliest admin, not a later admin or a user") {
+                Identity().run {
+                    val tenant = tenant()
+                    tenant.invite("user@acme.example")
+                    val first = tenant.acting { inviteFirstAdmin(EMAIL) }
+                    tenant.invite("later@acme.example", TENANT_ADMIN)
+
+                    tenant.acting { firstAdmin() } shouldBe first
+                }
+            }
+
+            test("is absent before provisioning invited anyone") {
+                Identity().run {
+                    val tenant = tenant()
+                    tenant.invite()
+
+                    tenant.acting { firstAdmin() }.shouldBeNull()
+                }
+            }
         }
 
         context("email uniqueness") {

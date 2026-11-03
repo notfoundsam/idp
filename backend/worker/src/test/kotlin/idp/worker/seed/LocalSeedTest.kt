@@ -9,6 +9,7 @@ import idp.worker.mail.Mail
 import idp.worker.mail.MailDispatcher
 import idp.worker.mail.MailTemplate
 import idp.worker.mail.MailTemplates
+import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -22,6 +23,9 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
+
+private val LOCAL_TENANTS = listOf("acme.idp.test", "globex.idp.test", "ops-sso.idp.test")
 
 class LocalSeedTest :
     FunSpec({
@@ -52,9 +56,9 @@ class LocalSeedTest :
             fun wrappedKey(id: UUID): ByteArray =
                 jdbc.queryForObject("SELECT wrapped_key FROM \"${TenantSchema(id).name}\".tenant_keys", ByteArray::class.java)!!
 
-            test("two active tenants appear with migrated schemas") {
+            test("two active tenants and the service tenant appear with migrated schemas") {
                 runApplication<WorkerApplication>(*arguments).use { context ->
-                    tenants() shouldContainExactlyInAnyOrder listOf("acme.idp.test", "globex.idp.test")
+                    tenants() shouldContainExactlyInAnyOrder LOCAL_TENANTS
 
                     tenantIds().forEach { id ->
                         val schema = TenantSchema(id).name
@@ -76,16 +80,35 @@ class LocalSeedTest :
                 jdbc.queryForObject(
                     "SELECT count(*) FROM platform.tenant_applications WHERE status = 'APPROVED'",
                     Int::class.java,
-                ) shouldBe 2
+                ) shouldBe 3
                 jdbc.queryForList(
                     "SELECT status FROM platform.outbox WHERE event_type = ?",
                     String::class.java,
                     TenancyEvents.APPROVED,
-                ) shouldContainExactlyInAnyOrder listOf("DONE", "DONE")
+                ) shouldContainExactlyInAnyOrder listOf("DONE", "DONE", "DONE")
                 jdbc.queryForObject(
                     "SELECT count(*) FROM platform.operator_audit WHERE action = 'tenant.approved' AND actor LIKE '%local-seed%'",
                     Int::class.java,
-                ) shouldBe 2
+                ) shouldBe 3
+            }
+
+            test("the service tenant becomes the IdP of ops, with its first operator assigned") {
+                val serviceTenant =
+                    jdbc.queryForObject(
+                        "SELECT tenant_id FROM platform.tenant_domains WHERE domain = 'ops-sso.idp.test'",
+                        UUID::class.java,
+                    )!!
+                val schema = "\"${TenantSchema(serviceTenant).name}\""
+
+                // The event may have come before provisioning ended, so a running worker retries it.
+                runApplication<WorkerApplication>(*arguments).use {
+                    eventually(90.seconds) {
+                        jdbc.queryForList("SELECT entity_id FROM $schema.service_providers", String::class.java) shouldBe
+                            listOf("https://ops.idp.test/saml2/metadata")
+                    }
+                }
+                jdbc.queryForObject("SELECT count(*) FROM $schema.sp_assignments", Int::class.java) shouldBe 1
+                jdbc.queryForObject("SELECT passkey_required FROM $schema.tenant_policies", Boolean::class.java) shouldBe true
             }
 
             test("each tenant gets a KEK and a tenant key under it") {
@@ -104,8 +127,8 @@ class LocalSeedTest :
 
                 runApplication<WorkerApplication>(*arguments).close()
 
-                tenants() shouldContainExactlyInAnyOrder listOf("acme.idp.test", "globex.idp.test")
-                jdbc.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 2
+                tenants() shouldContainExactlyInAnyOrder LOCAL_TENANTS
+                jdbc.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 3
                 tenantIds().forEach { id -> wrappedKey(id) shouldBe keys[id] }
             }
 
@@ -140,7 +163,8 @@ class LocalSeedTest :
                         MailDispatcher(sender, { _, _ -> "ada@acme.test" }, MailTemplates(), "no-reply@idp.test")
                             .send(Mail(UUID.randomUUID(), MailTemplate.EMAIL_CHANGED, mapOf("tenant" to "Acme")))
 
-                        mailpit.messages() shouldHaveSize 1
+                        // Invitations of the seeded admins still waiting in the outbox may arrive too.
+                        mailpit.messages().filter { "ada@acme.test" in it.to } shouldHaveSize 1
                     }
                 }
             }

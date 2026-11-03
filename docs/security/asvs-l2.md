@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 79 |
-| Partial | Part of the control is merged, the listed tasks finish it | 57 |
-| Planned | The listed tasks build the control | 46 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 90 |
+| Partial | Part of the control is merged, the listed tasks finish it | 47 |
+| Planned | The listed tasks build the control | 45 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -59,7 +59,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.4.1 | 2 | N/A | | JVM and JavaScript are memory safe, the application has no native code of its own |
 | V1.4.2 | 2 | Planned | T36 | Numeric API inputs have ranges in the contracts |
 | V1.4.3 | 2 | N/A | | Garbage-collected runtimes |
-| V1.5.1 | 1 | Partial | T30 | XML parsers refuse DTDs and external entities, with negative tests. The parser of metadata and AuthnRequests refuses DTDs, external entities and XInclude (`MetadataImporterTest`, `AuthnRequestValidatorTest`), the ops SP remains |
+| V1.5.1 | 1 | Done | T30 | XML parsers refuse DTDs and external entities, with negative tests. The parser of metadata and AuthnRequests refuses DTDs, external entities and XInclude (`MetadataImporterTest`, `AuthnRequestValidatorTest`), `ops` refuses a Response with a DOCTYPE (`OpsSamlLoginTest`) |
 | V1.5.2 | 2 | Done | T8 | Jackson binds fixed types without default typing, no Java serialization (`OutboxDispatcherTest`) |
 
 ## V2 Validation and Business Logic
@@ -94,10 +94,10 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.4.4 | 2 | Partial | T31, T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
 | V3.4.5 | 2 | Partial | T31, T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
 | V3.4.6 | 2 | Partial | T31, T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
-| V3.5.1 | 1 | Done | T23 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`) |
+| V3.5.1 | 1 | Done | T23, T30 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`). In `ops` Spring Security checks the `XSRF-TOKEN` cookie echoed in `X-XSRF-TOKEN` for every unsafe call of an operator session (`OpsSamlLoginTest`, `OpsContractTest`) |
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
 | V3.5.3 | 1 | Partial | T34 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The admin API remains |
-| V3.5.4 | 2 | Partial | T30, T40 | Each tenant has its own host (`TenantFilterTest`), `ops` is separate. Login and console form one application |
+| V3.5.4 | 2 | Partial | T40 | Each tenant has its own host (`TenantFilterTest`), `ops` answers on its own host only (`OpsSamlLoginTest`). Login and console form one application |
 | V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
 | V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
 | V3.7.2 | 2 | Done | | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`). An ACS a request names counts only as registered, and an error or a Response goes there under a `form-action` limited to it, otherwise to an error page (`AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest`) |
@@ -169,9 +169,9 @@ SP metadata import is the only file upload.
 | V6.6.2 | 2 | N/A | | No out-of-band factor, mail links serve recovery only |
 | V6.6.3 | 2 | N/A | | No out-of-band factor |
 | V6.8.1 | 2 | N/A | | `ops` trusts a single identity provider, `app` trusts none |
-| V6.8.2 | 2 | Partial | T30 | The IdP checks the signature of a request against the certificates of its SP, requires one where the SP signs, and refuses SHA-1 and wrapped signatures (`AuthnRequestValidatorTest`). `ops` refusing unsigned or invalid assertions remains |
-| V6.8.3 | 2 | Partial | T30 | A request ID is kept per SP for as long as its IssueInstant is accepted, and a repeat is refused (`SamlRequestsTest`, `SsoApiTest`). `ops` assertion IDs remain |
-| V6.8.4 | 2 | Partial | T30 | The IdP states the authentication context and `AuthnInstant` of the session the user logged in with, and a session that does not meet the requested context gets no Response (`ResponseBuilderTest`, `ResumeApiTest`, `SamlInteropTest`). `ops` requiring a passkey context remains |
+| V6.8.2 | 2 | Done | T30 | The IdP checks the signature of a request against the certificates of its SP, requires one where the SP signs, and refuses SHA-1 and wrapped signatures (`AuthnRequestValidatorTest`). `ops` refuses an unsigned assertion, one signed by another key, one changed after signing, and one of another Issuer (`OpsSamlLoginTest`) |
+| V6.8.3 | 2 | Done | T30 | A request ID is kept per SP for as long as its IssueInstant is accepted, and a repeat is refused (`SamlRequestsTest`, `SsoApiTest`). `ops` accepts only a Response to the AuthnRequest kept in the browser's session, which is used once, and keeps assertion IDs in memory until they expire (`OpsSamlLoginTest`, `AssertionReplayCacheTest`) |
+| V6.8.4 | 2 | Done | T30 | The IdP states the authentication context and `AuthnInstant` of the session the user logged in with, and a session that does not meet the requested context gets no Response (`ResponseBuilderTest`, `ResumeApiTest`, `SamlInteropTest`). `ops` asks for the passkey class exactly and refuses an assertion without it (`OpsSamlLoginTest`) |
 
 ## V7 Session Management
 
@@ -193,7 +193,7 @@ SP metadata import is the only file upload.
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
 | V7.5.1 | 2 | Partial | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`), the factor messages remain |
 | V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
-| V7.6.1 | 2 | Partial | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` following it remains |
+| V7.6.1 | 2 | Done | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` refuses an assertion without it and ends its own session there, idle after 30 minutes (`OpsSamlLoginTest`) |
 | V7.6.2 | 2 | Done | | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext`, checked again before the Response (`SsoApiTest`, `ResumeApiTest`) |
 
 ## V8 Authorization
@@ -214,12 +214,12 @@ SAML assertions are the self-contained tokens. The IdP issues them and `ops` con
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V9.1.1 | 1 | Partial | T30 | Signatures are verified before content is used: of a request only the Issuer is read to find the key (`AuthnRequestValidatorTest`). The ops SP remains |
-| V9.1.2 | 1 | Partial | T30 | Allowlist of signature algorithms, SHA-1 is refused. An SP setting names RSA-PSS or RSA with SHA-256 only, SHA-1 URIs are refused (`ServiceProviderTest`, `SignatureAlgorithmTest`), the ops SP remains |
-| V9.1.3 | 1 | Partial | T30 | Keys come from pre-registered metadata, never from the message. SP certificates are stored from uploaded metadata (`FederationServiceTest`), the ops SP remains |
-| V9.2.1 | 1 | Partial | T30 | Validity window is issued and verified. An assertion holds for five minutes from its issue (`ResponseBuilderTest`, `SamlInteropTest`), `ops` verifying it remains |
-| V9.2.2 | 2 | Planned | T30 | `ops` accepts only a bearer assertion for its own SSO |
-| V9.2.3 | 2 | Partial | T30 | Audience is issued and verified. An assertion names the EntityID of its SP as the only audience and its ACS as the recipient (`ResponseBuilderTest`, `ResumeApiTest`), `ops` verifying it remains |
+| V9.1.1 | 1 | Done | T30 | Signatures are verified before content is used: of a request only the Issuer is read to find the key (`AuthnRequestValidatorTest`). `ops` builds its principal only after the signature and every check passed (`OpsSamlLoginTest`) |
+| V9.1.2 | 1 | Done | T30 | Allowlist of signature algorithms, SHA-1 is refused. An SP setting names RSA-PSS or RSA with SHA-256 only, SHA-1 URIs are refused (`ServiceProviderTest`, `SignatureAlgorithmTest`). `ops` accepts RSA-PSS with a SHA-256 digest only (`OpsSamlLoginTest`) |
+| V9.1.3 | 1 | Done | T30 | Keys come from pre-registered metadata, never from the message. SP certificates are stored from uploaded metadata (`FederationServiceTest`). `ops` takes the keys from a metadata file it is given and refuses to start with metadata of another IdP (`OpsSamlLoginTest`) |
+| V9.2.1 | 1 | Done | T30 | Validity window is issued and verified. An assertion holds for five minutes from its issue (`ResponseBuilderTest`, `SamlInteropTest`), `ops` refuses an expired one (`OpsSamlLoginTest`) |
+| V9.2.2 | 2 | Done | T30 | `ops` accepts only a bearer assertion that answers its own AuthnRequest (`OpsSamlLoginTest`) |
+| V9.2.3 | 2 | Done | T30 | Audience is issued and verified. An assertion names the EntityID of its SP as the only audience and its ACS as the recipient (`ResponseBuilderTest`, `ResumeApiTest`), `ops` refuses another audience, recipient or destination (`OpsSamlLoginTest`) |
 | V9.2.4 | 2 | Done | | Each assertion names one SP, EntityID is unique within a tenant (`FederationServiceTest`, `ResponseBuilderTest`) |
 
 ## V10 OAuth and OIDC

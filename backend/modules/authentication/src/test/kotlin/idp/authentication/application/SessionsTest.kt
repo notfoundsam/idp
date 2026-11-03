@@ -266,6 +266,40 @@ class SessionsTest :
                 }
             }
 
+            context("requiring passkeys") {
+                test("keeps the rest of the policy, records the change and puts a passkey before a password-only admin") {
+                    val tenant = tenant(TenantPolicy(mfaForUsers = false, sessionIdleTimeout = Duration.ofMinutes(5)))
+                    tenant.user(role = UserRole.TENANT_ADMIN)
+                    audit.changes.clear()
+
+                    tenant.acting { requirePasskeys(Actor.System) }
+
+                    val policy = TenantContext.with(tenant) { transaction.execute { policies.load(it) } }
+                    policy.passkeyRequired shouldBe true
+                    policy.mfaForUsers shouldBe false
+                    policy.sessionIdleTimeout shouldBe Duration.ofMinutes(5)
+                    audit.changes.single().run {
+                        actor shouldBe Actor.System
+                        action shouldBe "policy.changed"
+                        details shouldBe mapOf("passkey_required" to "true")
+                    }
+                    tenant.acting { onFlow(tenant.passwordFlow()) { current, now -> current.step(now) } } shouldBe
+                        FlowStep.EnrollMfa(setOf(AuthFactor.PASSKEY))
+                }
+
+                test("a repeat changes nothing and records nothing") {
+                    val tenant = tenant()
+                    tenant.acting { requirePasskeys(Actor.System) }
+                    val version = TenantContext.with(tenant) { transaction.execute { policies.load(it) } }.version
+                    audit.changes.clear()
+
+                    tenant.acting { requirePasskeys(Actor.System) }
+
+                    TenantContext.with(tenant) { transaction.execute { policies.load(it) } }.version shouldBe version
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
             context("a flow") {
                 test("is stored with what the caller demands") {
                     val tenant = tenant()

@@ -437,6 +437,9 @@ class IdentityService(
 
     fun user(id: UUID): UserView? = transaction.execute { dsl -> users.find(dsl, id)?.view() }
 
+    /** The admin invited at provisioning, until someone erases them. Null before that step. */
+    fun firstAdmin(): UUID? = transaction.execute { dsl -> users.firstAdmin(dsl) }
+
     fun findByEmail(email: String): UserView? = transaction.execute { dsl -> users.findByEmailIndex(dsl, emailIndex(email))?.view() }
 
     /** Null for a deleted user, so a mail for one is dropped. */
