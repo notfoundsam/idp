@@ -140,7 +140,7 @@ SP metadata import is the only file upload.
 | V6.1.1 | 1 | Done | T23 | `docs/security/authentication.md` covers rate limits and malicious lockout |
 | V6.1.2 | 2 | Done | T23 | Context-specific words are refused (`PasswordPolicyTest`) and listed in the same document |
 | V6.1.3 | 2 | Done | T23 | The same document lists every pathway with its strength |
-| V6.2.1 | 1 | Partial | T33 | At least 8 characters (`PasswordPolicyTest`). The login pages that set a password recommend 15 characters (`App.test.ts`, `login.spec.ts`), the change of password in the console remains |
+| V6.2.1 | 1 | Done | T33 | At least 8 characters (`PasswordPolicyTest`). The login pages that set a password and the change of password in the console recommend 15 characters (`App.test.ts`, `console.test.ts`, `login.spec.ts`, `account.spec.ts`) |
 | V6.2.2 | 1 | Done | T32 | Users change their password in the account area under the password policy (`AccountApiTest`) |
 | V6.2.3 | 1 | Done | T32 | The change requires the current password, and a wrong one counts as a guess with the delay of a login and is audited (`AccountApiTest`) |
 | V6.2.4 | 1 | Done | T18 | Top passwords are refused (`PasswordPolicyTest`, `BannedPasswordsTest`) |
@@ -189,10 +189,10 @@ SP metadata import is the only file upload.
 | V7.4.1 | 1 | Done | T32 | Logout revokes the session on the server, and a replayed token opens nothing (`AccountApiTest`, `SessionsTest`) |
 | V7.4.2 | 1 | Partial | T34 | A blocked user is refused on the next request, erasing a user deletes their sessions and flows with the row, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
 | V7.4.3 | 2 | Done | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`). After a factor change the fresh login lets the user end the other sessions at once, and a password change ends them in the same step when asked (`AccountApiTest`) |
-| V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
+| V7.4.4 | 2 | Done | T33 | Every page of the console shares the layout with the logout button, only the page shown after a logout has none (`console.test.ts`, `account.spec.ts`) |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
 | V7.5.1 | 2 | Done | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`). So does every message that adds, removes or renews a factor, while a password change asks for the current password instead (`AccountApiTest`) |
-| V7.5.2 | 2 | Partial | T32, T33 | Users list their sessions and end one or all others only after a login at most 10 minutes old (`AccountApiTest`, `SessionsTest`), the screens remain |
+| V7.5.2 | 2 | Done | T32, T33 | Users list their sessions and end one or all others only after a login at most 10 minutes old (`AccountApiTest`, `SessionsTest`). The console lists them with the current one marked, ends them, and sends an older login to `/login/?reauthenticate` (`console.test.ts`, `account.spec.ts`) |
 | V7.6.1 | 2 | Done | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` refuses an assertion without it and ends its own session there, idle after 30 minutes (`OpsSamlLoginTest`) |
 | V7.6.2 | 2 | Done | | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext`, checked again before the Response (`SsoApiTest`, `ResumeApiTest`) |
 
@@ -319,9 +319,9 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Done | T31 | The pages load nothing from another origin: the CSP allows only `'self'` (`render-nginx.test.mjs`), and a whole login requests nothing from elsewhere and runs only the scripts of its own bundle (`login.spec.ts`) |
 | V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
-| V14.3.1 | 1 | Partial | T32, T33 | Logout answers with `Clear-Site-Data: "cache", "storage"` and clears the session and CSRF cookies, also without a live session (`AccountApiTest`), the client clearing itself when the server is unreachable remains |
+| V14.3.1 | 1 | Done | T32, T33 | Logout answers with `Clear-Site-Data: "cache", "storage"` and clears the session and CSRF cookies, also without a live session (`AccountApiTest`). The console leaves the pages of the account, then drops the TanStack Query cache and resets every Pinia store, also when the server cannot be reached (`console.test.ts`, `account.spec.ts`) |
 | V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
-| V14.3.3 | 2 | Done | T31 | The login keeps nothing in local or session storage, IndexedDB or Cache Storage, and a script can read only the `__Host-csrf` cookie, the others are `HttpOnly`. `login.spec.ts` reads all of it midway through a login and after it. The one key a page may write is `idp:reloaded-at` in session storage, the time of its last reload |
+| V14.3.3 | 2 | Done | T31 | The login keeps nothing in local or session storage, IndexedDB or Cache Storage, and a script can read only the `__Host-csrf` cookie, the others are `HttpOnly`. `login.spec.ts` reads all of it midway through a login and after it, `account.spec.ts` after the console has shown recovery codes. The one key a page may write is `idp:reloaded-at` in session storage, the time of its last reload |
 
 ## V15 Secure Coding and Architecture
 

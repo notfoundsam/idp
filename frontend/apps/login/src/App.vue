@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { Release } from '@idp/api-client'
+import { UpdateBanner } from '@idp/ui'
 import { defineAsyncComponent, onMounted } from 'vue'
 import type { Login } from './login'
 import { messageOf } from './messages'
 import type { Page } from './pages'
-import UpdateBanner from './UpdateBanner.vue'
 
 const props = defineProps<{
   login: Login

@@ -1,9 +1,9 @@
 import { browserPage, createClient, createReloader, Release, reloadOnChunkError } from '@idp/api-client'
+import { passkeysSupported } from '@idp/ui'
 import { createApp, reactive } from 'vue'
 import App from './App.vue'
 import { browserNavigation, createLogin } from './login'
 import { pageAt, takeToken } from './pages'
-import { passkeysSupported } from './webauthn'
 
 const token = takeToken(window)
 const release = reactive(new Release(__APP_VERSION__))

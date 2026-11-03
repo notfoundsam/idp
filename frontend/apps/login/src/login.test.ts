@@ -20,6 +20,27 @@ describe('starting', () => {
     expect(login.state.flow?.step).toBe('IDENTIFY')
   })
 
+  test('the console asks for a fresh login, which ignores the session and returns to the console', async () => {
+    const { login, answer, calls, navigation } = loginWith({ search: '?reauthenticate' })
+    answer('startFlow', flowAt('IDENTIFY'))
+    answer('submitLogin', flowAt('PASSWORD'))
+    answer('submitPassword', flowAt('COMPLETE'))
+    answer('completeFlow', { returnUrl: null })
+    await login.begin()
+    expect(calls).toEqual([{ operation: 'startFlow', args: [{ reauthenticate: true }] }])
+    expect(navigation.replaced).toBe(`/login/?flow=${FLOW_ID}`)
+    await login.submit((id) => login.client.submitLogin(id, 'alice@acme.test'))
+    await login.submit((id) => login.client.submitPassword(id, 'secret'))
+    expect(navigation.assigned).toEqual([DIRECT_LOGIN_TARGET])
+  })
+
+  test('a page opened directly asks for no fresh login', async () => {
+    const { login, answer, calls } = loginWith()
+    answer('startFlow', flowAt('IDENTIFY'))
+    await login.begin()
+    expect(calls).toEqual([{ operation: 'startFlow', args: [] }])
+  })
+
   test('a flow that a live session already completes goes on to the SP without a form', async () => {
     const { login, answer, navigation } = loginWith({ search: `?flow=${FLOW_ID}` })
     answer('getFlow', flowAt('COMPLETE'))

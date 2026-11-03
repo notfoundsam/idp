@@ -2,7 +2,7 @@
 import type { Client } from '@idp/api-client'
 import { ref } from 'vue'
 import { messageOf, PASSWORD_LINK_REFUSED } from '../messages'
-import NewPassword from '../NewPassword.vue'
+import { NewPassword } from '@idp/ui'
 import { FORGOT_PASSWORD_PATH, LOGIN_PATH } from '../pages'
 import { createRecovery } from '../recovery'
 import ProblemMessage from '../steps/ProblemMessage.vue'

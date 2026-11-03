@@ -330,7 +330,7 @@ services:
     environment:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     healthcheck:
-      test: ["CMD", "test", "-f", "/srv/web/login/index.html"]
+      test: ["CMD-SHELL", "test -f /srv/web/login/index.html && test -f /srv/web/console/index.html"]
       interval: 2s
       timeout: 2s
       retries: 90

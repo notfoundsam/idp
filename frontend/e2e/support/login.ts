@@ -14,6 +14,7 @@ export const BOB = { login: 'bob@acme.test', password: 'local-fixture-password-a
 /** Invited anew by `dev-tools/e2e-invitation.sh` before every run, like the users of `ops-sso`, so they start without factors. */
 export const INVITEE = 'invitee@acme.test'
 export const PASSKEY_USER = 'passkey@acme.test'
+export const ACCOUNT_USER = 'account@acme.test'
 
 /** Hex has none of the words the password policy refuses, such as parts of the address or the product name. */
 export const newPassword = () => randomBytes(16).toString('hex')
@@ -31,6 +32,15 @@ export async function acceptInvitation(page: Page, request: APIRequestContext, c
   await page.getByRole('button', { name: 'Set password' }).click()
   await expect(page).toHaveURL(/\/login\/\?flow=[0-9a-f-]{36}$/)
   return password
+}
+
+/**
+ * Waits until the console shows the account. A test that clears the cookies earlier races the console, which sends a browser
+ * without a session to the login and so aborts the navigation of the test.
+ */
+export async function atConsole(page: Page, login: string, origin = ACME) {
+  await page.waitForURL(`${origin}/console/`)
+  await expect(page.getByTestId('account-email')).toHaveText(login)
 }
 
 /** Shown once after the first second factor. */
@@ -66,6 +76,13 @@ export async function enterLogin(page: Page, login: string) {
 export async function enterPassword(page: Page, password: string) {
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
+}
+
+/** Each code works once, so a test that signs in again takes the next one and waits for no TOTP window. */
+export async function enterRecoveryCode(page: Page, code: string) {
+  await page.getByRole('button', { name: 'Use a recovery code instead' }).click()
+  await page.getByLabel('Recovery code').fill(code)
+  await page.getByRole('button', { name: 'Verify' }).click()
 }
 
 /**

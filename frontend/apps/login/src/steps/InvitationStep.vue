@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import type { Login } from '../login'
 import { PASSWORD_LINK_REFUSED } from '../messages'
-import NewPassword from '../NewPassword.vue'
+import { NewPassword } from '@idp/ui'
 import ProblemMessage from './ProblemMessage.vue'
 
 const props = defineProps<{ login: Login }>()

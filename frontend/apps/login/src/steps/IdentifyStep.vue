@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { Login } from '../login'
-import { signInWithPasskey } from '../webauthn'
+import { signInWithPasskey } from '@idp/ui'
 import ProblemMessage from './ProblemMessage.vue'
 
 const props = defineProps<{

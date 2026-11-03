@@ -1,8 +1,7 @@
 <script setup lang="ts">
+import { grouped, otpauthUri, registerPasskey } from '@idp/ui'
 import { computed, ref } from 'vue'
 import type { Login } from '../login'
-import { grouped, otpauthUri } from '../otpauth'
-import { registerPasskey } from '../webauthn'
 import ProblemMessage from './ProblemMessage.vue'
 
 const props = defineProps<{

@@ -4,6 +4,7 @@ import {
   ACME,
   acceptInvitation,
   ALICE,
+  atConsole,
   BOB,
   cspViolations,
   enterLogin,
@@ -191,13 +192,13 @@ test.describe('a user with a passkey', () => {
     const password = await acceptInvitation(page, request, PASSKEY_USER)
     await page.getByRole('button', { name: 'Register a passkey' }).click()
     await saveRecoveryCodes(page)
-    await page.waitForURL(`${ACME}/console/`)
+    await atConsole(page, PASSKEY_USER)
     expect(await authenticator.passkeys()).toEqual([{ rpId: 'acme.idp.test', discoverable: true }])
 
     await context.clearCookies()
     await page.goto(`${ACME}/login/`)
     await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
-    await page.waitForURL(`${ACME}/console/`)
+    await atConsole(page, PASSKEY_USER)
     expect(await sessionCookie(context)).toBeDefined()
 
     await context.clearCookies()
@@ -206,7 +207,7 @@ test.describe('a user with a passkey', () => {
     await enterPassword(page, password)
     await expect(page.getByText('Confirm with your passkey.')).toBeVisible()
     await page.getByRole('button', { name: 'Use passkey' }).click()
-    await page.waitForURL(`${ACME}/console/`)
+    await atConsole(page, PASSKEY_USER)
     expect(await sessionCookie(context)).toBeDefined()
     expect(violations).toEqual([])
 

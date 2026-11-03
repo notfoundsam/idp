@@ -22,6 +22,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly retryAfter: number | null,
+    readonly error: string | null = null,
   ) {
     super(`The API answered ${status}`)
     this.name = 'ApiError'
@@ -50,11 +51,25 @@ function retryAfterOf(response: Response): number | null {
   return Number.isInteger(seconds) && seconds >= 0 ? seconds : null
 }
 
-export function createClient(options: ClientOptions) {
+/** A refusal names its reason only in a JSON body, such as `reauthentication_required`. */
+async function errorOf(response: Response): Promise<string | null> {
+  if (!(response.headers.get('Content-Type') ?? '').startsWith('application/json')) return null
+  try {
+    const body: unknown = await response.json()
+    if (typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string') return body.error
+  } catch {
+    return null
+  }
+  return null
+}
+
+export type Method = 'GET' | 'POST' | 'DELETE'
+
+export function createTransport(options: ClientOptions) {
   const send = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
   const cookies = options.cookies ?? (() => document.cookie)
 
-  async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  return async function call<T>(method: Method, path: string, body?: unknown): Promise<T> {
     const headers = new Headers({ Accept: 'application/json', 'X-Client-Version': options.version })
     if (method !== 'GET') {
       const csrf = cookie(cookies(), CSRF_COOKIE)
@@ -67,11 +82,14 @@ export function createClient(options: ClientOptions) {
     const appVersion = response.headers.get('X-App-Version')
     if (appVersion !== null) options.onAppVersion?.(appVersion)
     if (response.status === UPGRADE_REQUIRED) options.onUpgradeRequired?.()
-    if (!response.ok) throw new ApiError(response.status, retryAfterOf(response))
+    if (!response.ok) throw new ApiError(response.status, retryAfterOf(response), await errorOf(response))
     if (response.status === 202 || response.status === 204) return undefined as T
     return (await response.json()) as T
   }
+}
 
+export function createClient(options: ClientOptions) {
+  const call = createTransport(options)
   const flow = (id: string, action = '') => `/api/flows/${encodeURIComponent(id)}${action}`
 
   return {

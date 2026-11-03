@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import type { Release } from '@idp/api-client'
 
-defineProps<{
-  release: Release
-  reloadPage: () => void
-}>()
+withDefaults(
+  defineProps<{
+    release: Release
+    reloadPage: () => void
+    next?: 'step' | 'page'
+  }>(),
+  { next: 'step' },
+)
 </script>
 
 <template>
   <aside v-if="release.newer" class="update" role="status" data-testid="update-banner">
     <p v-if="release.required">This page is out of date. Reload it to go on.</p>
-    <p v-else>A new version is available. It loads when you go on to the next step.</p>
+    <p v-else>A new version is available. It loads when you go on to the next {{ next }}.</p>
     <button v-if="release.required" type="button" @click="reloadPage()">Reload</button>
   </aside>
 </template>

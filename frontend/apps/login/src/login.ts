@@ -62,11 +62,13 @@ export function createLogin({ client, release, reload, navigation }: LoginDepend
   let invitation: string | null = null
   let invitationFlow: string | null = null
 
+  /** The console sends `?reauthenticate` when a change needs a fresh login, which proves every factor anew. */
   async function begin(): Promise<void> {
-    const id = new URLSearchParams(navigation.search).get('flow')
+    const query = new URLSearchParams(navigation.search)
+    const id = query.get('flow')
     await attempt(async () => {
       if (id !== null) return show(await client.getFlow(id))
-      const started = await client.startFlow()
+      const started = query.has('reauthenticate') ? await client.startFlow({ reauthenticate: true }) : await client.startFlow()
       navigation.replace(flowUrl(started.id))
       return show(started)
     })

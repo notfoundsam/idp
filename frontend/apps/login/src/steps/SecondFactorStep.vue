@@ -2,7 +2,7 @@
 import type { Factor } from '@idp/api-client'
 import { computed, ref } from 'vue'
 import type { Login } from '../login'
-import { signInWithPasskey } from '../webauthn'
+import { signInWithPasskey } from '@idp/ui'
 import ProblemMessage from './ProblemMessage.vue'
 
 const props = defineProps<{
