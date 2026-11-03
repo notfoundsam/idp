@@ -317,11 +317,11 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.1.2 | 2 | Done | T25 | The same document sets encryption, integrity, retention, logging and access per class, by inspection |
 | V14.2.1 | 1 | Done | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page takes the token from the fragment and drops the fragment from the address before it calls the API (`pages.test.ts`, `login.spec.ts`) |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
-| V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
+| V14.2.3 | 2 | Done | T31 | The pages load nothing from another origin: the CSP allows only `'self'` (`render-nginx.test.mjs`), and a whole login requests nothing from elsewhere and runs only the scripts of its own bundle (`login.spec.ts`) |
 | V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
 | V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
 | V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
-| V14.3.3 | 2 | Planned | T31 | Nothing sensitive in browser storage |
+| V14.3.3 | 2 | Done | T31 | The login keeps nothing in local or session storage, IndexedDB or Cache Storage, and a script can read only the `__Host-csrf` cookie, the others are `HttpOnly`. `login.spec.ts` reads all of it midway through a login and after it. The one key a page may write is `idp:reloaded-at` in session storage, the time of its last reload |
 
 ## V15 Secure Coding and Architecture
 

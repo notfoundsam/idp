@@ -1,0 +1,1 @@
+import{T as e,_ as t,h as n,m as r,s as i,v as a,w as o}from"./index-B6mjHZI7.js";var s={key:0,role:`alert`},c=t({__name:`ProblemMessage`,props:{state:{},rejected:{}},setup(t){return(c,l)=>t.state.problem?(a(),n(`p`,s,e(t.state.problem===`rejected`&&t.rejected?t.rejected:o(i)(t.state.problem,t.state.retryAfter)),1)):r(``,!0)}});export{c as t};

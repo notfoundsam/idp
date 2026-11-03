@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
 import {
   ACME,
@@ -56,6 +56,51 @@ test.describe('login through an SP', () => {
     expect(refusal.status()).toBe(403)
     await page.waitForURL(new RegExp(`^${ACME}/saml/resume/`))
     expect(page.url()).not.toContain('sp.idp.test')
+  })
+})
+
+/** Everything a script of the origin can read back, the cookies it may see included. */
+async function readableStorage(page: Page) {
+  return page.evaluate(async () => ({
+    local: Object.entries(localStorage),
+    session: Object.entries(sessionStorage),
+    databases: (await indexedDB.databases()).map((it) => it.name),
+    caches: await caches.keys(),
+    cookies: document.cookie.split('; ').filter(Boolean),
+  }))
+}
+
+test.describe('the browser of a user', () => {
+  test('keeps nothing sensitive in its storage and loads no script from another party', async ({ page, context }) => {
+    const foreign: string[] = []
+    page.on('request', (request) => {
+      if (new URL(request.url()).origin !== ACME) foreign.push(request.url())
+    })
+    await page.goto(`${ACME}/login/`)
+    await enterLogin(page, BOB.login)
+    await enterPassword(page, BOB.password)
+    await expect(page.getByLabel('Code from your authenticator app')).toBeVisible()
+    const midway = await readableStorage(page)
+    const scripts = await page.locator('script').evaluateAll((all) => all.map((it) => (it as HTMLScriptElement).src))
+    expect(scripts.length).toBeGreaterThan(0)
+    expect(scripts.filter((src) => !src.startsWith(`${ACME}/login/assets/`))).toEqual([])
+    await enterTotp(page, BOB.totp)
+    await page.waitForURL(`${ACME}/console/`)
+    const signedIn = await readableStorage(page)
+
+    for (const stored of [midway, signedIn]) {
+      expect(stored.local).toEqual([])
+      expect(stored.session).toEqual([])
+      expect(stored.databases).toEqual([])
+      expect(stored.caches).toEqual([])
+      expect(JSON.stringify(stored)).not.toContain(BOB.password)
+    }
+    expect(midway.cookies).toEqual([])
+    expect(signedIn.cookies.map((it) => it.split('=')[0])).toEqual(['__Host-csrf'])
+    const cookies = await context.cookies(ACME)
+    expect(cookies.filter((it) => !it.httpOnly).map((it) => it.name)).toEqual(['__Host-csrf'])
+    expect(cookies.map((it) => it.name)).toContain('__Host-session')
+    expect(foreign).toEqual([])
   })
 })
 

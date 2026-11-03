@@ -37,6 +37,10 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
           queries: security-extended
+          # A built bundle, analyzed already as the source it came from.
+          config: |
+            paths-ignore:
+              - frontend/e2e/fixtures
       # CodeQL only sees Kotlin that the compiler actually runs on, so every cache is off.
       - if: matrix.language == 'java-kotlin'
         run: ./gradlew testClasses --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks

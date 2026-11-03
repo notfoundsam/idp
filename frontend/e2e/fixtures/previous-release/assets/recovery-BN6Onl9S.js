@@ -1,0 +1,1 @@
+import{S as e,c as t}from"./index-B6mjHZI7.js";function n(){let n=e({done:!1,busy:!1,problem:null,retryAfter:null});async function r(e){if(!(n.busy||n.done)){n.busy=!0;try{await e(),n.done=!0,n.problem=null,n.retryAfter=null}catch(e){let r=t(e);n.problem=r.problem,n.retryAfter=r.retryAfter}finally{n.busy=!1}}}return{state:n,send:r}}export{n as t};
