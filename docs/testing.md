@@ -18,6 +18,9 @@ How the project tests its code and with which tools. A change that adds a tool o
 | Architecture | Module boundaries and the build graph | `architecture-tests` |
 | KMS and erasure journal | The AWS adapters against LocalStack | `*LocalStackTest` in `shared-kernel` |
 | Frontend | Unit tests, and the committed API types against a fresh generation from `contracts/openapi` | `frontend/packages/api-client/src/generated.test.ts` |
+| Frontend components | A page mounted in happy-dom with a scripted API client, which answers each operation from a queue | `frontend/apps/login/src/App.test.ts` |
+| Lint rules | Each security rule of `frontend/eslint.config.js` against a snippet that breaks it | `frontend/lint/lint.test.ts` |
+| End to end | Chromium against the environment of `make up`, through Traefik, nginx, `app` and SimpleSAMLphp | `frontend/e2e/login.spec.ts` |
 | Static files | The nginx config rendered from `infra/web/security-headers.json`, and the policy in that file | `infra/web/render-nginx.test.mjs` |
 
 ## Tools
@@ -29,7 +32,9 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **spring-test** only for its servlet mocks, `MockHttpServletRequest` and `MockFilterChain`.
 - **`TestSp`** in the `federation` test fixtures: an SP with its own key that writes an AuthnRequest by hand, so a test can bend any part of it, and signs or encodes it for either binding.
 - **`FakeIdp`** and **`OpsClient`** in the tests of `ops`: the service tenant with a key of its own, whose metadata file `ops` is given, and a browser that names the host `ops.idp.test`, keeps cookies, echoes the CSRF cookie and logs in through the fake IdP. The host is a restricted header of the JDK client, so the test JVM sets `jdk.httpclient.allowRestrictedHeaders=host`.
-- **Vitest** for the frontend.
+- **Vitest** for the frontend, with **Vue Test Utils** and **happy-dom** for components.
+- **ESLint** with `typescript-eslint` and `eslint-plugin-vue`, and `vue-tsc` for strict TypeScript. A new security rule gets a snippet that breaks it in `lint.test.ts`.
+- **Playwright** in its own image, run by `make test-e2e` as the `e2e` service of compose. The image tag and `@playwright/test` have the same version, and Renovate raises them together. The tenant hosts point at Traefik on the host through `extra_hosts`. Node trusts the mkcert CA through `NODE_EXTRA_CA_CERTS`, and Chromium the key of the served certificate through `--ignore-certificate-errors-spki-list`, so pages are a secure context for passkeys.
 - **`node:test`** for the scripts in `infra/web`, so they need no dependencies. `make test-frontend` runs them in the `frontend` container.
 - **oasdiff** in CI for breaking changes in the API contracts.
 
@@ -47,6 +52,7 @@ Not used: MockMvc, the Spring test context, Mockito and MockK.
 - **Architecture rules.** Each rule has a fixture with a violation in `architecture-tests/src/test/kotlin/archfixtures`, and a new table needs an entry in `tableOwners`.
 - **Spans.** The services export nothing without an OTLP endpoint, so tests send nothing out. A test that reads spans passes a bean class with an `InMemorySpanExporter` as an extra source, sets `management.tracing.sampling.probability=1.0`, and flushes `SdkTracerProvider` before reading. The class has no `@Configuration`, or the component scan of every other spec in the module would pick it up.
 - **Hostile XML.** A parser of XML from outside has negative tests for a DOCTYPE with external or nested entities, XInclude, a foreign schema and the size limit. See `MetadataImporterTest`.
+- **End to end.** The specs share the fixtures of `acme`, so they run one at a time. A TOTP code counts once, and `enterTotp` waits for the next window when an earlier run spent the current one. A page that should work within the CSP collects its violations from the console and expects none.
 - **API contract.** A contract test built on `OpenApiContract` fails when the controllers and the contract list different operations, so a new endpoint needs its contract first. Responses, refusals included, are checked against the contract's schemas.
 
 ## Database
@@ -65,7 +71,9 @@ make test                                  # backend and frontend
 cd backend && ./gradlew check              # backend tests, ktlint, architecture rules
 cd backend && ./gradlew :app:test --tests 'idp.app.login.FlowApiTest'
 cd backend && ./gradlew :shared-kernel:localStackTest
-make test-frontend                         # runs in Docker, also the tests of infra/web
+make test-frontend                         # runs in Docker, also the tests of infra/web and the lint rules
+make lint-frontend                         # ESLint and the type check of every package
+make test-e2e                              # Playwright against a running `make up`
 docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate   # after a contract change
 ```
 

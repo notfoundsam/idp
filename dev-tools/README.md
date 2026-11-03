@@ -34,6 +34,8 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 The headers of the static files live in `infra/web/security-headers.json`, and `nginx-config` renders them into the nginx config on every `up`. After changing either file run `docker compose up -d --force-recreate nginx-config nginx`.
 
+`make test-e2e` runs the Playwright tests of `frontend/e2e` in the `e2e` container against the running environment. It first hands SimpleSAMLphp the metadata of `acme` and copies the mkcert CA into `dev-tools/certs`. A report of a failed run stays in `frontend/e2e/playwright-report`.
+
 The API types in `packages/api-client` are generated from `contracts/openapi` and committed. After a contract change run `docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate`, or `make test-frontend` fails.
 
 ## Domains

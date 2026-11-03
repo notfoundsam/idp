@@ -8,6 +8,11 @@
       "description": "CodeQL analyzes Kotlin only up to this version. Raise it when CodeQL supports a newer one.",
       "matchPackageNames": ["/^org\\.jetbrains\\.kotlin/"],
       "allowedVersions": "<=2.4.20"
+    },
+    {
+      "description": "The browsers of the Playwright image belong to one version of @playwright/test.",
+      "matchPackageNames": ["@playwright/test", "mcr.microsoft.com/playwright"],
+      "groupName": "playwright"
     }
   ]
 }

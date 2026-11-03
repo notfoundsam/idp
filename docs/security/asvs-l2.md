@@ -46,7 +46,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.2.8 | 2 | N/A | | No LaTeX |
 | V1.2.9 | 2 | N/A | | Regular expressions are constants, input never becomes a pattern |
 | V1.3.1 | 1 | N/A | | No rich text input |
-| V1.3.2 | 1 | Partial | T31 | The backend has no `eval` or SpEL, CSP without `unsafe-eval` covers the SPA |
+| V1.3.2 | 1 | Done | T31 | The backend has no `eval` or SpEL, CSP without `unsafe-eval` covers the SPA, and lint forbids `eval`, `new Function` and strings run by timers (`lint.test.ts`) |
 | V1.3.3 | 2 | Done | | Control characters are stripped from mail (`MailTemplatesTest`). RelayState is limited to 1 KiB and HTML-escaped in the form to the ACS (`AuthnRequestValidatorTest`, `SamlPagesTest`, `SsoApiTest`) |
 | V1.3.4 | 2 | N/A | | No user-supplied SVG |
 | V1.3.5 | 2 | N/A | | No user-supplied Markdown, CSS or XSL |
@@ -83,7 +83,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V3.2.1 | 1 | Done | | The API answers JSON with `nosniff` and a closed CSP (`ResponseHeadersTest`, `OpsApiTest`). SAML pages are `text/html` with a charset, `nosniff` and a CSP of their own (`SsoApiTest`, `ResumeApiTest`). Uploaded files are never served |
-| V3.2.2 | 1 | Planned | T31 | Vue interpolation only, a lint rule forbids `v-html` |
+| V3.2.2 | 1 | Done | T31 | Vue interpolation only: lint forbids `v-html`, `innerHTML`, `insertAdjacentHTML` and `document.write` (`lint.test.ts`) |
 | V3.3.1 | 1 | Done | T23 | Every cookie is `Secure` (`ResponseHeadersTest`) |
 | V3.3.2 | 2 | Done | T23 | The session cookie is `SameSite=Lax`, the flow and CSRF cookies `SameSite=Strict` (`SessionCookieTest`, `FlowCookieTest`, `CsrfCookieTest`, `ResponseHeadersTest`) |
 | V3.3.3 | 2 | Done | T23 | Every cookie uses `__Host-` (`ResponseHeadersTest`) |
@@ -98,7 +98,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
 | V3.5.3 | 1 | Partial | T34 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The admin API remains |
 | V3.5.4 | 2 | Partial | T40 | Each tenant has its own host (`TenantFilterTest`), `ops` answers on its own host only (`OpsSamlLoginTest`). Login and console form one application |
-| V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
+| V3.5.5 | 2 | Done | T31 | No `postMessage` listeners: lint forbids `addEventListener('message')` and `onmessage` (`lint.test.ts`) |
 | V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
 | V3.7.2 | 2 | Done | | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`). An ACS a request names counts only as registered, and an error or a Response goes there under a `form-action` limited to it, otherwise to an error page (`AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest`) |
 
@@ -337,8 +337,8 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
 | V15.3.3 | 2 | Done | T23 | Requests list their fields, unknown fields are refused (`FlowApiTest`, `OpsApiTest`) |
 | V15.3.4 | 2 | Partial | T40, T41 | One trusted header (`ClientIpTest`), the edge must set it |
-| V15.3.5 | 2 | Partial | T31 | Kotlin is statically typed, the frontend needs strict TypeScript and `eqeqeq` |
-| V15.3.6 | 2 | Planned | T31 | `Map` and `Set` for keyed data, enforced by lint |
+| V15.3.5 | 2 | Done | T31 | Kotlin is statically typed. The frontend is strict TypeScript with `noUncheckedIndexedAccess`, checked by `make lint-frontend` in CI, and lint enforces `eqeqeq` (`lint.test.ts`) |
+| V15.3.6 | 2 | Done | T31 | Lint forbids index signatures and `Record`, so data with keys from outside goes in `Map` and `Set` (`lint.test.ts`) |
 | V15.3.7 | 2 | Done | | Each value of the API has one declared source (`FlowApiTest`). A repeated SAML parameter, an encoded copy of its name, or one in the URL of a POST is refused (`AuthnRequestValidatorTest`, `SsoApiTest`) |
 
 ## V16 Security Logging and Error Handling

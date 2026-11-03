@@ -1,7 +1,7 @@
 FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend lint frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-e2e lint lint-backend lint-frontend frontend-install
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -45,12 +45,24 @@ test-backend:
 	$(GRADLE) check
 
 test-frontend: frontend-install
+	$(FRONTEND) test
 	$(FRONTEND) -r --filter '!e2e' test
 	docker compose run --rm frontend node --test /app/infra/web/render-nginx.test.mjs
 
-lint: frontend-install
+# Runs against the environment of `make up`. SimpleSAMLphp needs the metadata of acme, and Node in the container the mkcert CA.
+test-e2e: frontend-install
+	dev-tools/simplesamlphp/fetch-idp-metadata.sh
+	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	docker compose run --rm e2e
+
+lint: lint-backend lint-frontend
+
+lint-backend:
 	$(GRADLE) ktlintCheck
-	$(FRONTEND) -r --if-present lint
+
+lint-frontend: frontend-install
+	$(FRONTEND) lint
+	$(FRONTEND) -r --if-present typecheck
 
 frontend-install:
 	$(FRONTEND) install --frozen-lockfile
