@@ -201,6 +201,8 @@ services:
       DB_PASSWORD: app_runtime
       VALKEY_URL: redis://valkey:6379
       THROTTLE_IP_HMAC_KEY: local-throttle-key
+      # Every local request comes from the one address below, the e2e tests included. THROTTLE_MULTIPLIER=1 restores the real limits.
+      THROTTLE_MULTIPLIER: ${THROTTLE_MULTIPLIER:-100}
       CLIENT_IP_HEADER: CloudFront-Viewer-Address
       KMS_NEW_KEYS: hcvault
       OPENBAO_ADDRESS: http://openbao:8200

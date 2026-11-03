@@ -1,23 +1,28 @@
 import { expect, test, type Page } from '@playwright/test'
-import { randomBytes } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   ACME,
+  acceptInvitation,
   ALICE,
   BOB,
   cspViolations,
   enterLogin,
   enterPassword,
   enterTotp,
+  GLOBEX,
   INVITEE,
+  newPassword,
+  PASSKEY_USER,
   paste,
+  saveRecoveryCodes,
   sessionCookie,
   SP_WHOAMI,
 } from './support/login'
 import { linkFromMail } from './support/mail'
+import { virtualAuthenticator } from './support/passkey'
 import { totp } from './support/totp'
 
-/** Hex has none of the words the password policy refuses, such as parts of the address or the product name. */
-const newPassword = () => randomBytes(16).toString('hex')
+const FLOW_URL = /\/login\/\?flow=([0-9a-f-]{36})$/
 
 interface Whoami {
   nameId: string | null
@@ -172,5 +177,72 @@ test.describe.serial('an invited user', () => {
     await enterTotp(page, secret)
     await page.waitForURL(`${ACME}/console/`)
     expect(await sessionCookie(context)).toBeDefined()
+  })
+})
+
+test.describe('a user with a passkey', () => {
+  test('registers it when the policy asks for a second factor, then signs in with it alone or after the password', async ({
+    page,
+    request,
+    context,
+  }) => {
+    const violations = cspViolations(page)
+    const authenticator = await virtualAuthenticator(page)
+    const password = await acceptInvitation(page, request, PASSKEY_USER)
+    await page.getByRole('button', { name: 'Register a passkey' }).click()
+    await saveRecoveryCodes(page)
+    await page.waitForURL(`${ACME}/console/`)
+    expect(await authenticator.passkeys()).toEqual([{ rpId: 'acme.idp.test', discoverable: true }])
+
+    await context.clearCookies()
+    await page.goto(`${ACME}/login/`)
+    await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
+    await page.waitForURL(`${ACME}/console/`)
+    expect(await sessionCookie(context)).toBeDefined()
+
+    await context.clearCookies()
+    await page.goto(`${ACME}/login/`)
+    await enterLogin(page, PASSKEY_USER)
+    await enterPassword(page, password)
+    await expect(page.getByText('Confirm with your passkey.')).toBeVisible()
+    await page.getByRole('button', { name: 'Use passkey' }).click()
+    await page.waitForURL(`${ACME}/console/`)
+    expect(await sessionCookie(context)).toBeDefined()
+    expect(violations).toEqual([])
+
+    await page.goto(`${GLOBEX}/login/`)
+    await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
+    await expect(page.getByRole('alert')).toContainText('did not work')
+    expect(await sessionCookie(context, GLOBEX)).toBeUndefined()
+  })
+})
+
+test.describe('two tenants', () => {
+  test('share no flow, session or user', async ({ page, context }) => {
+    await page.goto(`${ACME}/login/`)
+    await expect(page).toHaveURL(FLOW_URL)
+    const flow = FLOW_URL.exec(page.url())?.[1] ?? ''
+    expect((await page.request.get(`${ACME}/api/flows/${flow}`)).status()).toBe(200)
+    expect((await page.request.get(`${GLOBEX}/api/flows/${flow}`)).status()).toBe(410)
+    expect((await page.request.get(`${GLOBEX}/api/flows/${randomUUID()}`)).status()).toBe(410)
+
+    await enterLogin(page, ALICE.login)
+    await enterPassword(page, ALICE.password)
+    await enterTotp(page, ALICE.totp)
+    await page.waitForURL(`${ACME}/console/`)
+    const session = await sessionCookie(context)
+    if (session === undefined) throw new Error('No session at acme')
+    await page.goto(`${ACME}/login/`)
+    await page.waitForURL(`${ACME}/console/`)
+
+    await context.addCookies([{ name: session.name, value: session.value, url: GLOBEX, secure: true, httpOnly: true, sameSite: 'Lax' }])
+    expect(await sessionCookie(context, GLOBEX)).toMatchObject({ value: session.value })
+    await page.goto(`${GLOBEX}/login/`)
+    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page).toHaveURL(FLOW_URL)
+
+    await enterLogin(page, ALICE.login)
+    await enterPassword(page, ALICE.password)
+    await expect(page.getByRole('alert')).toContainText('did not work')
   })
 })

@@ -1,18 +1,42 @@
-import { expect, type BrowserContext, type Page } from '@playwright/test'
+import { expect, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test'
+import { randomBytes } from 'node:crypto'
+import { linkFromMail } from './mail'
 import { totp } from './totp'
 
 export const ACME = 'https://acme.idp.test'
+export const GLOBEX = 'https://globex.idp.test'
 export const SP_WHOAMI = 'https://sp.idp.test/simplesaml/whoami.php'
 
 /** The fixtures of `acme`, see dev-tools/README.md. */
 export const ALICE = { login: 'alice@acme.test', password: 'local-fixture-password-acme', totp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' }
 export const BOB = { login: 'bob@acme.test', password: 'local-fixture-password-acme', totp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' }
 
-/** Invited anew by `dev-tools/e2e-invitation.sh` before every run, so it starts without a password or factors. */
+/** Invited anew by `dev-tools/e2e-invitation.sh` before every run, like the users of `ops-sso`, so they start without factors. */
 export const INVITEE = 'invitee@acme.test'
+export const PASSKEY_USER = 'passkey@acme.test'
 
-export async function sessionCookie(context: BrowserContext) {
-  return (await context.cookies(ACME)).find((it) => it.name === '__Host-session')
+/** Hex has none of the words the password policy refuses, such as parts of the address or the product name. */
+export const newPassword = () => randomBytes(16).toString('hex')
+
+export async function sessionCookie(context: BrowserContext, origin = ACME) {
+  return (await context.cookies(origin)).find((it) => it.name === '__Host-session')
+}
+
+/** Opens the invitation from the mail and sets the first password, which leaves the page at the next step of the policy. */
+export async function acceptInvitation(page: Page, request: APIRequestContext, contact: string): Promise<string> {
+  const password = newPassword()
+  await page.goto(await linkFromMail(request, { to: contact, subject: 'You are invited', path: '/invite' }))
+  await expect(page.getByRole('heading', { name: 'Accept your invitation' })).toBeVisible()
+  await page.getByLabel('New password').fill(password)
+  await page.getByRole('button', { name: 'Set password' }).click()
+  await expect(page).toHaveURL(/\/login\/\?flow=[0-9a-f-]{36}$/)
+  return password
+}
+
+/** Shown once after the first second factor. */
+export async function saveRecoveryCodes(page: Page) {
+  await expect(page.getByTestId('recovery-codes').locator('li').first()).toBeVisible()
+  await page.getByRole('button', { name: 'I have saved them' }).click()
 }
 
 /** Types nothing: the text comes from the clipboard, as from a password manager. */

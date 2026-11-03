@@ -35,6 +35,7 @@ idp:
       key-policy: ${KMS_AWS_KEY_POLICY:}
   throttle:
     enabled: ${THROTTLE_ENABLED:true}
+    multiplier: ${THROTTLE_MULTIPLIER:1}
     ip-hmac-key: ${THROTTLE_IP_HMAC_KEY}
     default:
       capacity: 300

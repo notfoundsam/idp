@@ -297,6 +297,21 @@ class ThrottleTest :
 
                 shouldThrow<IllegalArgumentException> { decorator(SpyLimiter(), listOf(rules, rules)) }
             }
+
+            test("a multiplier raises the capacity of every rule and keeps its period and key") {
+                val limiter = SpyLimiter()
+                val rules = config(Action::class to listOf(ThrottleRule(ThrottleLimit(5, MINUTE), ThrottleDimension.IP)))
+
+                request { decorator(ScaledRateLimiter(limiter, 20), listOf(rules)).pass() }
+
+                val (key, limit) = limiter.calls.single()
+                key shouldContain ":IP:"
+                limit shouldBe ThrottleLimit(100, MINUTE)
+            }
+
+            test("a multiplier below 1 is refused, so it cannot lower or switch off a limit") {
+                listOf(0L, -1L).forEach { factor -> shouldThrow<IllegalArgumentException> { ScaledRateLimiter(SpyLimiter(), factor) } }
+            }
         }
 
         context("the chain") {

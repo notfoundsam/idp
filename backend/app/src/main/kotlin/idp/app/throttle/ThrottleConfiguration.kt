@@ -2,6 +2,7 @@ package idp.app.throttle
 
 import idp.sharedkernel.bus.decorators.ThrottleDecorator
 import idp.sharedkernel.throttle.RateLimiter
+import idp.sharedkernel.throttle.ScaledRateLimiter
 import idp.sharedkernel.throttle.ThrottleConfig
 import idp.sharedkernel.throttle.ThrottleKeys
 import idp.sharedkernel.throttle.ThrottleLimit
@@ -22,9 +23,12 @@ private const val PROD = "prod"
 class ThrottleGuard(
     environment: Environment,
     @Value("\${idp.throttle.enabled}") enabled: Boolean,
+    @Value("\${idp.throttle.multiplier}") multiplier: Long,
 ) {
     init {
-        check(enabled || !environment.acceptsProfiles(Profiles.of(PROD))) { "THROTTLE_ENABLED=false is refused in the $PROD profile" }
+        val prod = environment.acceptsProfiles(Profiles.of(PROD))
+        check(enabled || !prod) { "THROTTLE_ENABLED=false is refused in the $PROD profile" }
+        check(multiplier == 1L || !prod) { "THROTTLE_MULTIPLIER=$multiplier is refused in the $PROD profile" }
     }
 }
 
@@ -37,8 +41,12 @@ class ThrottleConfiguration {
         @Value("\${idp.throttle.valkey.timeout}") timeout: Duration,
         @Value("\${idp.throttle.valkey.connect-timeout}") connectTimeout: Duration,
         @Value("\${idp.throttle.valkey.cooldown}") cooldown: Duration,
+        @Value("\${idp.throttle.multiplier}") multiplier: Long,
         registry: MeterRegistry,
-    ) = ValkeyRateLimiter(url, timeout, connectTimeout, cooldown, registry)
+    ): RateLimiter {
+        val limiter = ValkeyRateLimiter(url, timeout, connectTimeout, cooldown, registry)
+        return if (multiplier == 1L) limiter else ScaledRateLimiter(limiter, multiplier)
+    }
 
     @Bean
     fun throttleKeys(

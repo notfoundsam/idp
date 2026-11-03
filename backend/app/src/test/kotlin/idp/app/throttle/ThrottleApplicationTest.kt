@@ -220,6 +220,20 @@ class ThrottleApplicationTest :
             NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_ENABLED=false"
         }
 
+        test("THROTTLE_MULTIPLIER raises the limits, which still hold") {
+            start("--THROTTLE_MULTIPLIER=2").use { application ->
+                repeat(LIMIT * 2) { application.get("/probe/ping").statusCode() shouldBe 200 }
+
+                application.get("/probe/ping").statusCode() shouldBe 429
+            }
+        }
+
+        test("the prod profile refuses THROTTLE_MULTIPLIER") {
+            val failure = shouldThrow<Exception> { start("--spring.profiles.active=prod", "--THROTTLE_MULTIPLIER=100") }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_MULTIPLIER=100"
+        }
+
         test("the prod profile starts with limits on") {
             start("--spring.profiles.active=prod").use { application ->
                 application.getBean(ThrottleDecorator::class.java).shouldNotBeNull()

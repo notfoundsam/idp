@@ -76,7 +76,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
 | V2.3.4 | 2 | Done | T23, T24 | Invitation, reset and email change tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `AccountRecoveryTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
-| V2.4.1 | 2 | Partial | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`), WAF remains |
+| V2.4.1 | 2 | Partial | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`). Switching them off with `THROTTLE_ENABLED=false` or raising them with `THROTTLE_MULTIPLIER`, which only the local environment and e2e do, is refused in the `prod` profile (`ThrottleApplicationTest`), WAF remains |
 
 ## V3 Web Frontend Security
 

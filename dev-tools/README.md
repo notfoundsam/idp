@@ -36,7 +36,9 @@ The headers of the static files live in `infra/web/security-headers.json`, and `
 
 The links of mails, `/invite`, `/reset-password` and `/confirm-email`, get the `index.html` of the login app, which reads the token from the URL fragment.
 
-`make test-e2e` runs the Playwright tests of `frontend/e2e` in the `e2e` container against the running environment. It first hands SimpleSAMLphp the metadata of `acme`, copies the mkcert CA into `dev-tools/certs` and runs `dev-tools/e2e-invitation.sh`, which reinvites `invitee@acme.test` as an admin of `acme` through the operator CLI. A report of a failed run stays in `frontend/e2e/playwright-report`. Asking for a password reset is limited to 5 an hour from one address, and every local request comes from the same one, so more than five runs an hour fail at the reset test.
+`make test-e2e` runs the Playwright tests of `frontend/e2e` in the `e2e` container against the running environment. It first hands SimpleSAMLphp the metadata of `acme`, copies the mkcert CA into `dev-tools/certs` and runs `dev-tools/e2e-invitation.sh`, which reinvites `invitee@acme.test` and `passkey@acme.test` as admins of `acme`, and `operator@ops-sso.test` and `outsider@ops-sso.test` as admins of `ops-sso`, through the operator CLI. So a run removes the password and the passkeys of the first operator, and leaves a fresh invitation for it in Mailpit. A report of a failed run stays in `frontend/e2e/playwright-report`. CI runs the same steps in the job `e2e`.
+
+Every local request reaches `app` from the one address Traefik sets, so compose raises every limit by caller a hundredfold with `THROTTLE_MULTIPLIER`. To try the real limits, run `THROTTLE_MULTIPLIER=1 docker compose up -d app`. `app` refuses the setting in the `prod` profile.
 
 The API types in `packages/api-client` are generated from `contracts/openapi` and committed. After a contract change run `docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate`, or `make test-frontend` fails.
 
@@ -79,9 +81,9 @@ Then https://sp.idp.test/simplesaml/whoami.php logs in through `acme` and shows 
 
 ## Operator
 
-The API of `ops` needs a SAML login at the service tenant `ops-sso`: https://ops.idp.test/saml2/authenticate/ops-sso starts it, and a request without a session gets 401. The service tenant requires a passkey, so the login works once the login UI exists. `ops` answers on `ops.idp.test` only.
+The API of `ops` needs a SAML login at the service tenant `ops-sso`: https://ops.idp.test/saml2/authenticate/ops-sso starts it, and a request without a session gets 401. The service tenant requires a passkey, which the operator registers in the login after setting the password, and `frontend/e2e/ops-login.spec.ts` walks this login. `ops` answers on `ops.idp.test` only.
 
-`worker` seeds the service tenant like `acme`, through the same bootstrap as the CLI. Its first operator is `operator@ops-sso.test`, whose invitation is in Mailpit. `worker` then registers `ops` there as an SP with the email as NameID, assigns the first operator and requires passkeys. `ops` trusts the keys of a metadata file it is given, never ones it fetches itself. Locally `ops-idp-metadata` copies `https://ops-sso.idp.test/saml/metadata` into a volume on every `up`, so after a key rotation run `docker compose up -d --force-recreate ops-idp-metadata ops`.
+`worker` seeds the service tenant like `acme`, through the same bootstrap as the CLI. Its first operator is `operator@ops-sso.test`, whose invitation is in Mailpit until Mailpit is recreated, and again after `make test-e2e`. `worker` then registers `ops` there as an SP with the email as NameID, assigns the first operator and requires passkeys. `ops` trusts the keys of a metadata file it is given, never ones it fetches itself. Locally `ops-idp-metadata` copies `https://ops-sso.idp.test/saml/metadata` into a volume on every `up`, so after a key rotation run `docker compose up -d --force-recreate ops-idp-metadata ops`.
 
 In production the operator does the same by hand: run the CLI `bootstrap`, wait until the tenant is active, store its `/saml/metadata` where `IDP_METADATA_FILE` points, and start `ops`. `ops` does not start without the file or with the metadata of another IdP. After a key rotation at the service tenant the file is replaced between starting and completing the rotation.
 

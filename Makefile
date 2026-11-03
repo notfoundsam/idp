@@ -5,7 +5,9 @@ GRADLE := cd backend && ./gradlew
 
 install: dns-mapping setup-ssl frontend-install jars
 
+# Docker on Linux would create the missing mount of SimpleSAMLphp as root, and fetch-idp-metadata.sh could not write there.
 up: jars
+	mkdir -p dev-tools/simplesamlphp/metadata
 	docker compose up -d --wait --wait-timeout 180
 	@command -v open >/dev/null && open https://dashboard.idp.test || xdg-open https://dashboard.idp.test || true
 
@@ -50,7 +52,7 @@ test-frontend: frontend-install
 	docker compose run --rm frontend node --test /app/infra/web/render-nginx.test.mjs
 
 # Runs against the environment of `make up`. SimpleSAMLphp needs the metadata of acme, Node in the container the mkcert CA, and the
-# invitation test a fresh invitation.
+# tests fresh invitations. CI runs the same target.
 test-e2e: frontend-install
 	dev-tools/simplesamlphp/fetch-idp-metadata.sh
 	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
