@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for decisions. Implementation plans live in `docs/plans/` and are never committed. For a plan task, read the plan's `README.md` and `tasks/task-NN.md`, and open its other files only when needed.
+A multi-tenant SAML Identity Provider for B2B customers. `docs/architecture.md` maps the modules and the request path, and `docs/adr/` holds the decisions. Implementation plans live in `docs/plans/` and are never committed. For a plan task, read the plan's `README.md` and `tasks/task-NN.md`, and open its other files only when needed.
 
 - `backend/` — Kotlin, Spring Boot, Gradle multi-project. The root package is `idp`.
 - `frontend/` — Vue 3, pnpm workspace.
@@ -24,7 +24,7 @@ A multi-tenant SAML Identity Provider for B2B customers. See `docs/adr/` for dec
 - Tests: write them in whatever order suits the task. Every change ships with tests, including failure cases. Approach, tools and fixtures are in `docs/testing.md`.
 - Accepted migrations are never edited. Add a new `V<n>__*.sql`.
 - Every sensitive action writes through `AuditLog` and has a test for it.
-- A change that adds, removes or weakens a security control updates its row in `docs/security/asvs-l2.md`.
+- A change that adds, removes or weakens a security control updates its row in `docs/security/asvs-l2.md`. Find the row by requirement number with `grep -n`, the file is too long to read whole.
 - ADRs state the decision, then its rationale once.
 - Comments: default to none. Write one only for a non-obvious why.
 - Name repository fields after what they store: `users`, not `userRepository`.
