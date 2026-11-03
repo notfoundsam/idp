@@ -13,7 +13,8 @@ A map of the code: where things live and how a request moves through them. Decis
 | `backend/{app,ops,worker,migrator}` | Deployables, see below |
 | `backend/architecture-tests` | ArchUnit rules, the build graph and `tableOwners` |
 | `contracts/openapi` | `auth.yaml` for `app`, `ops.yaml` for `ops` |
-| `frontend` | Apps `login` and `console`, packages `api-client` and `ui`, end-to-end tests in `e2e` |
+| `frontend` | Apps `login` and `console`, packages `api-client` with types generated from `contracts/openapi` and `ui`, end-to-end tests in `e2e` |
+| `infra/web` | Security headers of the static files in `security-headers.json`, and the local nginx config rendered from them |
 | `dev-tools`, `docker-compose.yml` | Local environment, see `dev-tools/README.md` |
 
 ## Deployables

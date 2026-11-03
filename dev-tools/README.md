@@ -22,11 +22,19 @@ After a backend change run `make jars`, then `docker compose restart app`.
 | https://mail.idp.test | Mailpit |
 | https://sp.idp.test/simplesaml/ | SimpleSAMLphp, test Service Provider (`admin` / `admin`) |
 | https://ops.idp.test | `ops` |
-| https://acme.idp.test, https://globex.idp.test | Tenants, `/api` and `/saml` go to `app` |
+| https://acme.idp.test, https://globex.idp.test | Tenants, `/api` and `/saml` go to `app`, `/login/` and `/console/` to `nginx` |
 | https://ops-sso.idp.test | Service tenant, the IdP of `ops`, routed to `app` like any tenant |
 | http://localhost:3000 | Grafana, only after `make up-observability` |
 
 Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0.1:5432`.
+
+## Frontend
+
+`frontend` installs the dependencies and runs `vite build --watch` for every app into the `idp-web` volume, so a change is served after a reload of the page. `nginx` serves that volume as S3 behind CloudFront would: `/` leads to `/console/`, a path of an app without a file gets its `index.html`, files under `assets/` are immutable and a missing one is a `404`. Old chunks stay in the volume, as in S3 after a release.
+
+The headers of the static files live in `infra/web/security-headers.json`, and `nginx-config` renders them into the nginx config on every `up`. After changing either file run `docker compose up -d --force-recreate nginx-config nginx`.
+
+The API types in `packages/api-client` are generated from `contracts/openapi` and committed. After a contract change run `docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate`, or `make test-frontend` fails.
 
 ## Domains
 

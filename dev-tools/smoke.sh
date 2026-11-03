@@ -35,10 +35,19 @@ reaches_spring() {
   curl -s --cacert "$CA" --resolve "$1:443:127.0.0.1" "https://$1/api" -H 'Accept: application/json' | grep -q '"status":404'
 }
 
+login_page_has_policy() {
+  curl -s -D - -o /dev/null --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/login/ |
+    grep -qi "^content-security-policy: default-src 'none'; script-src 'self';"
+}
+
+root_leads_to_console() {
+  [ "$(curl -s -o /dev/null -w '%{redirect_url}' --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/)" = "https://acme.idp.test/console/" ]
+}
+
 # A healthy container is not routed yet: Traefik picks it up about a second later.
 wait_for_routes() {
   for _ in $(seq 1 15); do
-    reaches_spring acme.idp.test && reaches_spring ops.idp.test && return
+    reaches_spring acme.idp.test && reaches_spring ops.idp.test && expect_status acme.idp.test /login/ 200 && return
     sleep 1
   done
 }
@@ -110,6 +119,10 @@ check "globex.idp.test reaches app" reaches_spring globex.idp.test
 check "unknown tenant refused" unknown_tenant_refused
 check "ops.idp.test reaches ops" reaches_spring ops.idp.test
 check "unknown path stays on Traefik" expect_status acme.idp.test /nothing 404
+check "login page with its policy" login_page_has_policy
+check "deep link of the login falls back to the page" expect_status acme.idp.test /login/any/path 200
+check "static files not listed" expect_status acme.idp.test /login/assets/ 404
+check "/ leads to the console" root_leads_to_console
 check "postgres through pgbouncer" pgbouncer_query
 check "platform schema migrated" platform_migrated
 check "runtime role connects" runtime_role_connects

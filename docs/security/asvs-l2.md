@@ -9,8 +9,8 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 | Status | Meaning | Count |
 |---|---|---|
 | Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 90 |
-| Partial | Part of the control is merged, the listed tasks finish it | 47 |
-| Planned | The listed tasks build the control | 45 |
+| Partial | Part of the control is merged, the listed tasks finish it | 48 |
+| Planned | The listed tasks build the control | 44 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -88,12 +88,12 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.3.2 | 2 | Done | T23 | The session cookie is `SameSite=Lax`, the flow and CSRF cookies `SameSite=Strict` (`SessionCookieTest`, `FlowCookieTest`, `CsrfCookieTest`, `ResponseHeadersTest`) |
 | V3.3.3 | 2 | Done | T23 | Every cookie uses `__Host-` (`ResponseHeadersTest`) |
 | V3.3.4 | 2 | Done | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` (`SessionCookieTest`) |
-| V3.4.1 | 1 | Partial | T31, T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.1 | 1 | Partial | T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files in `infra/web/security-headers.json` (`render-nginx.test.mjs`), CloudFront remains |
 | V3.4.2 | 1 | Done | T23 | The API is same-origin and sends no CORS headers (`ResponseHeadersTest`) |
-| V3.4.3 | 2 | Partial | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`), static files remain |
-| V3.4.4 | 2 | Partial | T31, T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
-| V3.4.5 | 2 | Partial | T31, T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
-| V3.4.6 | 2 | Partial | T31, T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.3 | 2 | Partial | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`). The static files allow only their own origin and close `object-src`, `base-uri`, `form-action` and `frame-ancestors` (`render-nginx.test.mjs`), CloudFront remains |
+| V3.4.4 | 2 | Partial | T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files (`render-nginx.test.mjs`), CloudFront remains |
+| V3.4.5 | 2 | Partial | T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files (`render-nginx.test.mjs`), CloudFront remains |
+| V3.4.6 | 2 | Partial | T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files (`render-nginx.test.mjs`), CloudFront remains |
 | V3.5.1 | 1 | Done | T23, T30 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`). In `ops` Spring Security checks the `XSRF-TOKEN` cookie echoed in `X-XSRF-TOKEN` for every unsafe call of an operator session (`OpsSamlLoginTest`, `OpsContractTest`) |
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
 | V3.5.3 | 1 | Partial | T34 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The admin API remains |
@@ -106,7 +106,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Partial | T31 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), the static HTML remains |
+| V4.1.1 | 1 | Partial | T42 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), and so does nginx for the static files (`render-nginx.test.mjs`, `make smoke`). The upload to S3 remains |
 | V4.1.2 | 2 | Planned | T40 | Only `/login/*` and `/console/*` redirect to HTTPS, `/api/*` and `/saml/*` refuse plain HTTP |
 | V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
 | V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
@@ -305,7 +305,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V13.3.2 | 2 | Planned | T41 | One IAM role per service, `ops` has no `Decrypt` |
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
 | V13.4.2 | 2 | Partial | T41 | JDWP exists only in local compose, production task definitions must prove it |
-| V13.4.3 | 2 | Planned | T31, T40 | No listing in nginx or S3 |
+| V13.4.3 | 2 | Partial | T40 | nginx runs with `autoindex off` and answers a directory under `assets/` with `404` (`render-nginx.test.mjs`, `make smoke`), S3 remains |
 | V13.4.4 | 2 | Done | T23 | `TRACE` is refused (`ResponseHeadersTest`, `OpsApiTest`) |
 | V13.4.5 | 2 | Partial | T41 | Management port exposes only health (`AppApplicationTest`), it must stay private |
 

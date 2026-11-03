@@ -46,6 +46,7 @@ test-backend:
 
 test-frontend: frontend-install
 	$(FRONTEND) -r --filter '!e2e' test
+	docker compose run --rm frontend node --test /app/infra/web/render-nginx.test.mjs
 
 lint: frontend-install
 	$(GRADLE) ktlintCheck
