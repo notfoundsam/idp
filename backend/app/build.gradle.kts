@@ -35,9 +35,10 @@ tasks.bootJar {
     archiveFileName = "app.jar"
 }
 
-// FlowContractTest reads the contract, so Gradle must rerun it when the contract changes.
+// FlowContractTest and AccountContractTest read the contracts, so Gradle must rerun them when a contract changes.
 tasks.test {
     // The JDK HTTP client refuses to set Host otherwise.
     systemProperty("jdk.httpclient.allowRestrictedHeaders", "host")
     inputs.file(rootProject.file("../contracts/openapi/auth.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("../contracts/openapi/account.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
 }

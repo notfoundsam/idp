@@ -1,0 +1,367 @@
+openapi: 3.1.0
+info:
+  title: IdP account API
+  version: 1.0.0
+  description: >-
+    The account area of a signed-in user. Every call needs a live session and acts on its user, so no path names a user. A call that
+    changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Adding, removing or renewing a factor
+    needs a session whose full login is at most 10 minutes old: otherwise the answer is 403 with `reauthentication_required`, and the
+    client walks a flow of the login API started with `reauthenticate`, then repeats the call. A password change asks for the current
+    password instead. A client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and
+    a client older than the minimum gets 426.
+paths:
+  /api/account/factors:
+    get:
+      operationId: getFactors
+      summary: Read the factors of the user
+      responses:
+        "200":
+          description: The factors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Factors"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/password:
+    post:
+      operationId: changePassword
+      summary: Change the password, which needs the current one
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChangeRequest"
+      responses:
+        "204":
+          description: The password is changed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: >-
+            The current password is wrong or its next attempt has to wait, or the new one breaks the password policy. The answer does
+            not say which
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/totp:
+    post:
+      operationId: beginTotp
+      summary: Get a new TOTP secret, which counts for nothing until a code from it is confirmed
+      responses:
+        "200":
+          description: The secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpSetup"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: A TOTP is already confirmed. Remove it first to replace it
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: removeTotp
+      summary: Remove the TOTP. Recovery codes go with the last second factor
+      responses:
+        "204":
+          description: The TOTP is removed
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          description: No TOTP is confirmed
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/totp/confirmation:
+    post:
+      operationId: confirmTotp
+      summary: Turn the new secret on with a code from it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpConfirmationRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NewFactor"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/CredentialRejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/passkeys/options:
+    post:
+      operationId: beginPasskey
+      summary: Get the options to register a passkey
+      responses:
+        "200":
+          description: The options for `navigator.credentials.create`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeySetupOptions"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/passkeys:
+    post:
+      operationId: addPasskey
+      summary: Register a passkey with the answer of the authenticator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegistrationRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/NewFactor"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/CredentialRejected"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/passkeys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: removePasskey
+      summary: Remove a passkey. Recovery codes go with the last second factor
+      responses:
+        "204":
+          description: The passkey is removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          description: The user holds no passkey with this id
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/recovery-codes:
+    post:
+      operationId: renewRecoveryCodes
+      summary: Replace the recovery codes, the old ones stop working
+      responses:
+        "200":
+          description: The new codes, shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user has no second factor for the codes to stand in for
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    NewFactor:
+      description: >-
+        The factor is added. Recovery codes come only to a user who had none, and they are shown once
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RecoveryCodes"
+    BadRequest:
+      description: The request is malformed or names an unknown field
+    NoSession:
+      description: The request has no live session
+    CsrfRejected:
+      description: The CSRF token is missing
+    Refused:
+      description: >-
+        The CSRF token is missing, with no body, or the login is too old, with `reauthentication_required` in the body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ReauthenticationRequired"
+    CredentialRejected:
+      description: The code or the passkey is not valid, or the next attempt has to wait. The answer does not say which
+    TooLarge:
+      description: The request is over the size limit
+    UpgradeRequired:
+      description: The client is older than the minimum version, so it has to reload
+    TooManyRequests:
+      description: Over a limit
+      headers:
+        Retry-After:
+          description: Seconds to wait
+          schema:
+            type: integer
+  schemas:
+    PasswordChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+    TotpConfirmationRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+    PasskeyRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [attestationObject, clientDataJson]
+      properties:
+        attestationObject:
+          type: string
+        clientDataJson:
+          type: string
+    ReauthenticationRequired:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [reauthentication_required]
+    Factors:
+      type: object
+      additionalProperties: false
+      required: [totp, passkeys, recoveryCodesLeft]
+      properties:
+        totp:
+          type: boolean
+          description: Whether a confirmed TOTP is enrolled
+        passkeys:
+          type: array
+          description: The oldest first
+          items:
+            $ref: "#/components/schemas/Passkey"
+        recoveryCodesLeft:
+          type: integer
+    Passkey:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt, lastUsedAt, backedUp]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+        backedUp:
+          type: boolean
+          description: Whether the authenticator syncs it to other devices
+    TotpSetup:
+      type: object
+      additionalProperties: false
+      required: [secret]
+      properties:
+        secret:
+          type: string
+          description: Base32. The client builds the `otpauth://` URI with the name of the tenant and the email
+    RecoveryCodes:
+      type: object
+      additionalProperties: false
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+    PasskeySetupOptions:
+      type: object
+      additionalProperties: false
+      required: [challenge, rpId, userHandle, algorithms, excludeCredentials, residentKey, userVerification, attestation]
+      properties:
+        challenge:
+          type: string
+        rpId:
+          type: string
+        userHandle:
+          type: string
+        algorithms:
+          type: array
+          items:
+            type: integer
+        excludeCredentials:
+          type: array
+          items:
+            type: string
+        residentKey:
+          type: string
+        userVerification:
+          type: string
+        attestation:
+          type: string

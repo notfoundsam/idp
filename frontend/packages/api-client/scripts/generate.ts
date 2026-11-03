@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import openapiTS, { astToString } from 'openapi-typescript'
 
-export const contracts = ['auth'] as const
+export const contracts = ['auth', 'account'] as const
 
 const contractsDir = new URL('../../../../contracts/openapi/', import.meta.url)
 

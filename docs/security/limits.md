@@ -11,6 +11,7 @@ Valkey counts these in `app`, one bucket per message, and every key holds the te
 | Starting a flow, entering a login, asking for a challenge or an enrollment | 30 a minute | 6,000 a minute |
 | Password, TOTP, recovery code, passkey, confirming an enrollment, using a token from a mail | 10 a minute | 1,000 a minute |
 | Asking for a password reset or an email change | 5 an hour | 500 an hour |
+| In the account: the current password, confirming a TOTP or a passkey | 10 a minute, per user | None, only a session gets here |
 | Any other message | 300 a minute, per user with a session, per address without | None |
 | SAML SSO, two requests for each login through an SP | 30 a minute | 6,000 a minute |
 | SAML metadata | 120 a minute | None, so nobody can keep the SPs of a tenant from it |

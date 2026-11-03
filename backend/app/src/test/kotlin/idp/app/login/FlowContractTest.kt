@@ -37,6 +37,9 @@ private const val POST = "POST"
 /** The scan of `idp.app` finds the endpoints that tests of this module declare for themselves. */
 private const val PROBES = "/api/probe"
 
+/** `account.yaml` holds these, see `AccountContractTest`. */
+private const val ACCOUNT = "/api/account/"
+
 class FlowContractTest :
     FunSpec({
         val contract = OpenApiContract(File("../../contracts/openapi/auth.yaml"))
@@ -67,7 +70,7 @@ class FlowContractTest :
         ) = with(environment) { application.user("$name@acme.test", tenant, role = UserRole.USER) }
 
         test("the controller and the contract list the same operations") {
-            mappedOperations(application).filterNot { PROBES in it }.toSet() shouldBe contract.operations
+            mappedOperations(application).filterNot { PROBES in it || ACCOUNT in it }.toSet() shouldBe contract.operations
         }
 
         test("the request bodies name what the controller reads") {

@@ -282,6 +282,12 @@ private class PasskeyFixture {
     val audit = PasskeyAudit()
     val identity = IdentityService(transaction, keys, audit, OutboxPublisher(), clock)
     val service = PasskeyService(transaction, audit, clock)
+    val totp = TotpService(transaction, keys, audit, clock)
+
+    fun TenantContext.recoveryCodes(user: UUID): Int =
+        TenantContext.with(this) { totp.issueRecoveryCodes(user, ADMIN) }.size.also { audit.changes.clear() }
+
+    fun TenantContext.recoveryCodesLeft(user: UUID): Int = TenantContext.with(this) { totp.recoveryCodesLeft(user) }
 
     fun tenant(): TenantContext {
         val id = database.tenantSchema()
@@ -715,6 +721,107 @@ class PasskeyServiceTest :
                     val other = tenant.user("grace.hopper@acme.test")
 
                     tenant.acting { hasPasskey(other) } shouldBe false
+                }
+            }
+        }
+
+        context("the passkeys of a user") {
+            test("are listed oldest first, with what a user can tell them apart by") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+                    val first = tenant.credentials(user).single()["id"]
+                    clock.now = clock.now.plusSeconds(60)
+                    tenant.registered(user)
+                    sql.update("UPDATE ${tenant.table("passkey_credentials")} SET backed_up = true WHERE id <> ?", first)
+
+                    val listed = tenant.acting { passkeysOf(user) }
+
+                    listed.first().id shouldBe first
+                    listed.map { it.backedUp } shouldContainExactly listOf(false, true)
+                    listed.first().lastUsedAt.shouldBeNull()
+                    listed.first().createdAt shouldBe clock.now.minusSeconds(60)
+                }
+            }
+
+            test("leave out the passkeys of others") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(tenant.user("grace.hopper@acme.test"))
+
+                    tenant.acting { passkeysOf(user) }.shouldBeEmpty()
+                }
+            }
+        }
+
+        context("removing a passkey") {
+            test("deletes it with the codes when it was the last factor, and writes the audit log") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+                    tenant.recoveryCodes(user)
+                    val id = tenant.acting { passkeysOf(user) }.single().id
+
+                    tenant.acting { remove(user, id, ADMIN, IP) }
+
+                    tenant.credentials(user).shouldBeEmpty()
+                    tenant.recoveryCodesLeft(user) shouldBe 0
+                    val record = audit.changes.single()
+                    record.action shouldBe "user.passkey_removed"
+                    record.actor shouldBe ADMIN
+                    record.target shouldBe AuditTarget.user(user)
+                    record.ip shouldBe IP
+                    record.details shouldBe mapOf("passkey" to "$id", "recovery_codes" to "removed")
+                }
+            }
+
+            test("keeps the other passkeys and the codes") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+                    tenant.registered(user)
+                    tenant.recoveryCodes(user)
+                    val (first, second) = tenant.acting { passkeysOf(user) }.map { it.id }
+
+                    tenant.acting { remove(user, first, ADMIN) }
+
+                    tenant.acting { passkeysOf(user) }.map { it.id } shouldContainExactly listOf(second)
+                    tenant.recoveryCodesLeft(user) shouldBe 10
+                    audit.changes.single().details shouldBe mapOf("passkey" to "$first")
+                }
+            }
+
+            test("a passkey of another user reads as missing and stays") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val other = tenant.user("grace.hopper@acme.test")
+                    tenant.registered(other)
+                    val theirs = tenant.acting { passkeysOf(other) }.single().id
+
+                    shouldThrow<PasskeyNotFound> { tenant.acting { remove(user, theirs, ADMIN) } }
+                    shouldThrow<PasskeyNotFound> { tenant.acting { remove(user, UUID.randomUUID(), ADMIN) } }
+
+                    tenant.credentials(other) shouldHaveSize 1
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
+            test("nothing is removed when the audit record fails") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+                    val id = tenant.acting { passkeysOf(user) }.single().id
+                    audit.failing = true
+
+                    shouldThrow<IllegalStateException> { tenant.acting { remove(user, id, ADMIN) } }
+
+                    tenant.credentials(user) shouldHaveSize 1
                 }
             }
         }

@@ -172,6 +172,15 @@ class Browser(
         return send(request.POST(body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()))
     }
 
+    fun delete(
+        path: String,
+        echoCsrf: Boolean = true,
+    ): Reply {
+        val request = request(path)
+        if (echoCsrf) cookies[CsrfCookie.NAME]?.let { request.header(CsrfCookie.HEADER, it) }
+        return send(request.DELETE())
+    }
+
     /** A form as an SP page posts it, so no CSRF header and no JSON. */
     fun form(
         path: String,

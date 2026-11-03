@@ -100,17 +100,22 @@ class OpenApiContract(
     }
 }
 
-private fun typesOf(property: Map<String, Any?>): Set<String> =
-    when (val type = property["type"]) {
-        is String -> setOf(type)
-        is List<*> -> type.map { it as String }.toSet()
-        else -> error("The contract gives every field a type: $property")
-    }
+/** An integer is a number too, as JSON Schema has it. */
+private fun typesOf(property: Map<String, Any?>): Set<String> {
+    val types =
+        when (val type = property["type"]) {
+            is String -> setOf(type)
+            is List<*> -> type.map { it as String }.toSet()
+            else -> error("The contract gives every field a type: $property")
+        }
+    return if ("number" in types) types + "integer" else types
+}
 
 private fun typeOf(value: JsonNode): String =
     when {
         value.isNull -> "null"
         value.isString -> "string"
+        value.isIntegralNumber -> "integer"
         value.isNumber -> "number"
         value.isBoolean -> "boolean"
         value.isArray -> "array"

@@ -333,7 +333,7 @@ object ArchitectureRules {
 
     /**
      * These rules check each context, audience or deployable on its own. A fixture holds a violation in one of them only, and a part
-     * of the real code may have no classes yet, like the `account` audience. Every other rule must check something.
+     * of the real code may have no classes yet, like the `admin` audience. Every other rule must check something.
      */
     private fun partsMayBeEmpty(rule: (String) -> ArchRule): (String) -> ArchRule = { root -> rule(root).allowEmptyShould(true) }
 

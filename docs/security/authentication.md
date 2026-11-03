@@ -84,6 +84,12 @@ Changing the email needs a session whose full login is at most 10 minutes old. A
 
 A user who lost every factor has no way back alone: no recovery route removes or adds a factor. `IdentityService.resetMfa` removes TOTP, recovery codes and passkeys, and the tenant admin calls it after confirming who asks. An only admin who lost everything goes through the operator, see the [runbook](tenant-admin-recovery-runbook.md).
 
+## Factors in the account
+
+A signed-in user manages their own factors, and no message names a user: each handler takes the one of the session. Adding, removing or renewing a factor needs a session whose full login is at most 10 minutes old, as changing the email does, because a factor added by a stolen session would outlive it. Changing the password asks for the current one instead. A wrong current password counts as a guess at the password with the same delay, and a wrong current password, TOTP code or passkey answer is audited as `account.credential_refused`.
+
+A confirmed TOTP is replaced by removing it first. Recovery codes come with a new factor only to a user who has none, so a second factor does not void codes saved for the first, and they go with the last second factor. Removing the last one is allowed: under a policy that wants MFA the next login then asks to enroll a factor again, behind the password alone, as for a new user. A passkey of someone else reads as missing.
+
 ## Limits and lockout
 
 An attacker who only wants to lock a user out can keep the delay of an account running by guessing once in every window. The delay stops at 15 minutes, so the owner can still log in between guesses, and it applies to passwords and TOTP but not to passkeys or recovery codes. Only the limits by address and by tenant stand against this, see [ADR-003](../adr/003-password-hashing.md). No account is ever locked outright, because a lock would hand this attack a guaranteed result.

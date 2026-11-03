@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 98 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 101 |
 | Partial | Part of the control is merged, the listed tasks finish it | 45 |
-| Planned | The listed tasks build the control | 39 |
+| Planned | The listed tasks build the control | 36 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -141,8 +141,8 @@ SP metadata import is the only file upload.
 | V6.1.2 | 2 | Done | T23 | Context-specific words are refused (`PasswordPolicyTest`) and listed in the same document |
 | V6.1.3 | 2 | Done | T23 | The same document lists every pathway with its strength |
 | V6.2.1 | 1 | Partial | T33 | At least 8 characters (`PasswordPolicyTest`). The login pages that set a password recommend 15 characters (`App.test.ts`, `login.spec.ts`), the change of password in the console remains |
-| V6.2.2 | 1 | Planned | T32 | Users change their password in the account area |
-| V6.2.3 | 1 | Planned | T32 | The change requires the current password |
+| V6.2.2 | 1 | Done | T32 | Users change their password in the account area under the password policy (`AccountApiTest`) |
+| V6.2.3 | 1 | Done | T32 | The change requires the current password, and a wrong one counts as a guess with the delay of a login and is audited (`AccountApiTest`) |
 | V6.2.4 | 1 | Done | T18 | Top passwords are refused (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.2.5 | 1 | Done | T18 | No composition rules (`PasswordPolicyTest`) |
 | V6.2.6 | 1 | Done | T31 | Every password field of the login has `type=password`, without a reveal (`App.test.ts`, `login.spec.ts`) |
@@ -191,7 +191,7 @@ SP metadata import is the only file upload.
 | V7.4.3 | 2 | Partial | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`), a factor change offering the same remains |
 | V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
-| V7.5.1 | 2 | Partial | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`), the factor messages remain |
+| V7.5.1 | 2 | Done | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`). So does every message that adds, removes or renews a factor, while a password change asks for the current password instead (`AccountApiTest`) |
 | V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
 | V7.6.1 | 2 | Done | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` refuses an assertion without it and ends its own session there, idle after 30 minutes (`OpsSamlLoginTest`) |
 | V7.6.2 | 2 | Done | | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext`, checked again before the Response (`SsoApiTest`, `ResumeApiTest`) |
@@ -203,7 +203,7 @@ SP metadata import is the only file upload.
 | V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
 | V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
 | V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`, each other audience adds its rules |
-| V8.2.2 | 1 | Planned | T32, T34, T36 | Handlers take the user from the context and check ownership |
+| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`), the sessions of the account and the admin and operator audiences remain |
 | V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
 | V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), each audience adds its rules |
 | V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), API and e2e isolation tests remain |
