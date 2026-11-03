@@ -51,6 +51,8 @@ internal class TotpSecret(
     companion object {
         fun generate(random: SecureRandom) = TotpSecret(ByteArray(SECRET_BYTES).also(random::nextBytes))
 
+        fun decoded(base32: String) = TotpSecret(Base32.decode(base32))
+
         fun stepAt(moment: Instant): Long = moment.epochSecond / STEP_SECONDS
     }
 }

@@ -7,6 +7,7 @@ import org.opensaml.core.xml.io.UnmarshallingException
 import org.opensaml.saml.common.SAMLVersion
 import org.opensaml.saml.common.xml.SAMLConstants
 import org.opensaml.saml.saml2.core.AuthnRequest
+import org.opensaml.saml.saml2.core.NameIDType
 import org.opensaml.saml.security.impl.SAMLSignatureProfileValidator
 import org.opensaml.security.SecurityException
 import org.opensaml.security.x509.BasicX509Credential
@@ -84,6 +85,8 @@ internal enum class Rejection {
     EXPIRED,
     REPLAYED,
     NO_AUTHN_CONTEXT,
+    INVALID_NAME_ID_POLICY,
+    SUBJECT_REQUESTED,
 }
 
 /** Where an error may go: the SP, its signature when it signs, and the ACS were all checked. */
@@ -174,6 +177,11 @@ internal class AuthnRequestValidator(
         val now = clock.instant()
         if (issued.isBefore(now - lifetime - skew) || issued.isAfter(now + skew)) refuse(Rejection.EXPIRED, replyTo)
         Demands.of(request) ?: refuse(Rejection.NO_AUTHN_CONTEXT, replyTo)
+        if (request.subject != null) refuse(Rejection.SUBJECT_REQUESTED, replyTo)
+        val format = request.nameIDPolicy?.format
+        if (format != null && format != NameIDType.UNSPECIFIED && format != sp.settings.nameIdFormat.uri) {
+            refuse(Rejection.INVALID_NAME_ID_POLICY, replyTo)
+        }
         val verified = VerifiedRequest(sp.id, replyTo.requestId, replyTo.acsUrl, xml, relayState, issued + lifetime + skew)
         return Verdict.Accepted(verified, replyTo)
     }

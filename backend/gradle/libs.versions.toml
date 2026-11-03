@@ -52,6 +52,7 @@ flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 jooq = { module = "org.jooq:jooq" }
 jooq-codegen = { module = "org.jooq:jooq-codegen" }
 postgresql = { module = "org.postgresql:postgresql" }
+testcontainers = { module = "org.testcontainers:testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
 

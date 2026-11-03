@@ -88,6 +88,13 @@ class UserProfileView(
     val version: Long,
 )
 
+/** What a user lets other systems know of them. Each one is a field of its own, decrypted only when asked for. */
+enum class UserClaim {
+    EMAIL,
+    NAME,
+    PHONE,
+}
+
 /** Not a data class, for the same reason as [UserProfileView]. */
 class ProfileChange(
     val name: String?,
@@ -451,6 +458,27 @@ class IdentityService(
                     profile.version,
                 )
             }
+        }
+
+    /** Opens [wanted] only, so a Response that names no phone never decrypts one. A field without a value is left out. */
+    fun claims(
+        userId: UUID,
+        wanted: Set<UserClaim>,
+    ): Map<UserClaim, String> =
+        transaction.execute { dsl ->
+            val user = users.find(dsl, userId) ?: throw UserNotFound(userId)
+            val profile = if (wanted.any { it != UserClaim.EMAIL }) profiles.find(dsl, userId) else null
+            val cipher = keys.userCipher(userId)
+            wanted
+                .mapNotNull { claim ->
+                    val value =
+                        when (claim) {
+                            UserClaim.EMAIL -> cipher.read(user.emailCiphertext, EMAIL_FIELD, userId)
+                            UserClaim.NAME -> cipher.read(profile?.nameCiphertext, NAME_FIELD, userId)
+                            UserClaim.PHONE -> cipher.read(profile?.phoneCiphertext, PHONE_FIELD, userId)
+                        }
+                    value?.let { claim to it }
+                }.toMap()
         }
 
     private fun FieldCipher.read(

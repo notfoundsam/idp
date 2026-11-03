@@ -4,6 +4,7 @@ import idp.db.jooq.tenant.tables.ServiceProviders.SERVICE_PROVIDERS
 import idp.db.jooq.tenant.tables.SpAcsEndpoints.SP_ACS_ENDPOINTS
 import idp.db.jooq.tenant.tables.records.ServiceProvidersRecord
 import idp.federation.application.NameIdFormat
+import idp.federation.application.SamlAttribute
 import idp.federation.application.SignatureAlgorithm
 import idp.federation.application.SignedPart
 import idp.federation.application.SpSettings
@@ -36,6 +37,7 @@ internal class ServiceProviders {
                 .set(SERVICE_PROVIDERS.NAME_ID_FORMAT, sp.settings.nameIdFormat.name)
                 .set(SERVICE_PROVIDERS.SIGNED_PART, sp.settings.signedPart.name)
                 .set(SERVICE_PROVIDERS.SIGNATURE_ALGORITHM, sp.settings.signatureAlgorithm.name)
+                .set(SERVICE_PROVIDERS.RELEASED_ATTRIBUTES, sp.settings.attributes.names())
                 .set(SERVICE_PROVIDERS.CREATED_AT, now.atOffset(ZoneOffset.UTC))
                 .onConflict(SERVICE_PROVIDERS.ENTITY_ID)
                 .doNothing()
@@ -92,8 +94,11 @@ internal class ServiceProviders {
                 SERVICE_PROVIDERS.NAME_ID_FORMAT to sp.settings.nameIdFormat.name,
                 SERVICE_PROVIDERS.SIGNED_PART to sp.settings.signedPart.name,
                 SERVICE_PROVIDERS.SIGNATURE_ALGORITHM to sp.settings.signatureAlgorithm.name,
+                SERVICE_PROVIDERS.RELEASED_ATTRIBUTES to sp.settings.attributes.names(),
             ),
         )
+
+    private fun Set<SamlAttribute>.names(): Array<String> = map { it.name }.sorted().toTypedArray()
 
     /** Assignments and endpoints go with it by FK. */
     fun delete(
@@ -122,6 +127,7 @@ internal class ServiceProviders {
                 NameIdFormat.valueOf(row.nameIdFormat!!),
                 SignedPart.valueOf(row.signedPart!!),
                 SignatureAlgorithm.valueOf(row.signatureAlgorithm!!),
+                row.releasedAttributes!!.map { SamlAttribute.valueOf(it!!) }.toSet(),
             ),
             row.version!!,
         )

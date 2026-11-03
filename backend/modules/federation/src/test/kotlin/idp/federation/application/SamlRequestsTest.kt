@@ -122,6 +122,45 @@ class SamlRequestsTest :
             }
         }
 
+        context("a claimed request") {
+            test("is consumed once, only by the browser that claimed it, and keeps when it came in") {
+                Federation().run {
+                    val tenant = tenant()
+                    val accepted = clock.instant()
+                    val id = tenant.acting { acceptRequest(verified(tenant.register())) }
+                    tenant.acting { claimRequest(id, "browser") }
+
+                    tenant.acting { consumeRequest(id, "another browser") }.shouldBeNull()
+                    val pending = tenant.acting { consumeRequest(id, "browser") }.shouldNotBeNull()
+
+                    pending.relayState shouldBe RELAY_STATE
+                    (Duration.between(accepted, pending.acceptedAt).abs() < Duration.ofSeconds(5)) shouldBe true
+                    tenant.acting { consumeRequest(id, "browser") }.shouldBeNull()
+                    rows(tenant, "saml_requests") shouldBe 0
+                }
+            }
+
+            test("cannot be consumed before a browser claimed it") {
+                Federation().run {
+                    val tenant = tenant()
+                    val id = tenant.acting { acceptRequest(verified(tenant.register())) }
+
+                    tenant.acting { consumeRequest(id, "browser") }.shouldBeNull()
+                }
+            }
+
+            test("cannot be consumed once it expired") {
+                Federation().run {
+                    val tenant = tenant()
+                    val id = tenant.acting { acceptRequest(verified(tenant.register())) }
+                    tenant.acting { claimRequest(id, "browser") }
+                    clock.offset = Duration.ofMinutes(16)
+
+                    tenant.acting { consumeRequest(id, "browser") }.shouldBeNull()
+                }
+            }
+        }
+
         context("the stored request and RelayState") {
             test("cannot be read in the table") {
                 Federation().run {

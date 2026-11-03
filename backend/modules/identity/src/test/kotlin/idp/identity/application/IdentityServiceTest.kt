@@ -686,6 +686,51 @@ class IdentityServiceTest :
             }
         }
 
+        context("the claims of a user") {
+            test("give each asked field and nothing more") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.active()
+                    tenant.acting { updateProfile(user, ProfileChange(NAME, PHONE), ADMIN) }
+
+                    tenant.acting { claims(user, setOf(UserClaim.EMAIL, UserClaim.NAME)) } shouldBe
+                        mapOf(UserClaim.EMAIL to EMAIL, UserClaim.NAME to NAME)
+                    tenant.acting { claims(user, setOf(UserClaim.PHONE)) } shouldBe mapOf(UserClaim.PHONE to PHONE)
+                    tenant.acting { claims(user, emptySet()) } shouldBe emptyMap()
+                }
+            }
+
+            test("leave out a field without a value") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.active()
+
+                    tenant.acting { claims(user, UserClaim.entries.toSet()) } shouldBe mapOf(UserClaim.EMAIL to EMAIL)
+                }
+            }
+
+            test("decrypt only the asked fields: a broken field that was not asked for does not matter") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.active()
+                    tenant.acting { updateProfile(user, ProfileChange(NAME, PHONE), ADMIN) }
+                    sql.update("UPDATE ${tenant.table("user_profiles")} SET phone_ciphertext = '\\x00'::bytea WHERE user_id = ?", user)
+
+                    tenant.acting { claims(user, setOf(UserClaim.EMAIL, UserClaim.NAME)) }.keys shouldBe
+                        setOf(UserClaim.EMAIL, UserClaim.NAME)
+                    shouldThrow<FieldDecryptionException> { tenant.acting { claims(user, setOf(UserClaim.PHONE)) } }
+                }
+            }
+
+            test("of a user who is gone are refused") {
+                Identity().run {
+                    val tenant = tenant()
+
+                    shouldThrow<UserNotFound> { tenant.acting { claims(UUID.randomUUID(), setOf(UserClaim.EMAIL)) } }
+                }
+            }
+        }
+
         context("data at rest") {
             test("no table holds personal data or a token in the open") {
                 Identity().run {

@@ -3,6 +3,7 @@ package idp.app.saml
 import idp.app.web.SamlThrottleFilter
 import idp.authentication.application.AuthenticationService
 import idp.federation.adapters.saml.MetadataEndpoint
+import idp.federation.adapters.saml.ResumeEndpoint
 import idp.federation.adapters.saml.SsoEndpoint
 import idp.federation.application.FederationService
 import idp.identity.application.IdentityService
@@ -34,6 +35,12 @@ class FederationConfiguration {
         federation: FederationService,
         authentication: AuthenticationService,
     ) = SsoEndpoint(federation, authentication)
+
+    @Bean
+    fun resumeEndpoint(
+        federation: FederationService,
+        authentication: AuthenticationService,
+    ) = ResumeEndpoint(federation, authentication)
 
     @Bean
     fun samlThrottleFilter(

@@ -9,14 +9,17 @@ import idp.federation.adapters.persistence.SamlRequests
 import idp.federation.adapters.persistence.ServiceProviders
 import idp.federation.adapters.persistence.SigningKeys
 import idp.federation.adapters.persistence.SpAssignments
+import idp.federation.adapters.persistence.SubjectIdentifiers
 import idp.federation.adapters.saml.IdpMetadata
 import idp.federation.adapters.saml.MetadataImporter
 import idp.federation.domain.ServiceProvider
 import idp.federation.domain.SigningKey
 import idp.federation.domain.SigningKeyStatus
 import idp.federation.domain.SpAssignment
+import idp.federation.domain.SubjectIdentifier
 import idp.federation.domain.x509
 import idp.identity.application.IdentityService
+import idp.identity.application.UserClaim
 import idp.identity.application.UserNotFound
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
@@ -34,6 +37,7 @@ import org.jooq.DSLContext
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.PrivateKey
+import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.time.Clock
@@ -46,6 +50,8 @@ private const val SP_SETTINGS_CHANGED = "sp.settings_changed"
 private const val SP_REMOVED = "sp.removed"
 private const val SP_USER_ASSIGNED = "sp.user_assigned"
 private const val SP_USER_UNASSIGNED = "sp.user_unassigned"
+private const val SP_LOGIN = "sp.login"
+private const val SP_LOGIN_DENIED = "sp.login_denied"
 private const val KEY_CREATED = "saml.signing_key_created"
 private const val ROTATION_STARTED = "saml.key_rotation_started"
 private const val ROTATION_COMPLETED = "saml.key_rotation_completed"
@@ -82,8 +88,18 @@ class PendingRequest(
     val acsUrl: String,
     val xml: ByteArray,
     val relayState: String?,
+    val acceptedAt: Instant,
 ) {
     override fun toString(): String = "PendingRequest($id, $spId)"
+}
+
+/** Whom a Response names to one SP, and what it tells it. Not a data class: `toString` must not print either. */
+class SamlSubject(
+    val nameId: String,
+    val nameIdFormat: NameIdFormat,
+    val attributes: Map<SamlAttribute, String>,
+) {
+    override fun toString(): String = "SamlSubject($nameIdFormat, ${attributes.keys})"
 }
 
 class SamlIdentityMissing : IllegalStateException("The tenant has no SAML identity yet")
@@ -127,6 +143,8 @@ class FederationService(
     private val serviceProviders = ServiceProviders()
     private val assignments = SpAssignments()
     private val requests = SamlRequests()
+    private val subjects = SubjectIdentifiers()
+    private val random = SecureRandom()
     private val importer = MetadataImporter()
     private val generator = SigningKeyGenerator()
 
@@ -228,6 +246,11 @@ class FederationService(
                         "name_id_format" to settings.nameIdFormat.name,
                         "signed_part" to settings.signedPart.name,
                         "signature_algorithm" to settings.signatureAlgorithm.name,
+                        "attributes" to
+                            settings.attributes
+                                .map { it.name }
+                                .sorted()
+                                .joinToString(","),
                     ),
                 ),
             )
@@ -313,6 +336,7 @@ class FederationService(
                 request.acsUrl,
                 cipher.encrypt(request.xml, FieldContext(REQUEST_FIELD, id)),
                 request.relayState?.let { cipher.encrypt(it.toByteArray(), FieldContext(RELAY_STATE_FIELD, id)) },
+                clock.instant(),
                 clock.instant().plus(requestTtl),
             )
         transaction.execute { dsl ->
@@ -330,6 +354,62 @@ class FederationService(
         browserSecret: String,
     ): PendingRequest? {
         val row = transaction.execute { dsl -> requests.claim(dsl, id, sha256(browserSecret), clock.instant()) } ?: return null
+        return pending(row)
+    }
+
+    /** Takes the request away for good. Null unless it is there, live, and bound to the browser that holds [browserSecret]. */
+    fun consumeRequest(
+        id: UUID,
+        browserSecret: String,
+    ): PendingRequest? {
+        val row = transaction.execute { dsl -> requests.consume(dsl, id, sha256(browserSecret), clock.instant()) } ?: return null
+        return pending(row)
+    }
+
+    /** For a request answered with an error before any login: nothing may resume it. */
+    fun discardRequest(id: UUID) {
+        transaction.execute { dsl -> requests.delete(dsl, id) }
+    }
+
+    /**
+     * Checked on every Response, after the login, so a live session gets no further than a fresh one and an anonymous caller learns
+     * nothing. Null when [userId] is not assigned to the SP, which the journal records apart from the rollback. Reads only the fields
+     * the SP is given, and fixes the persistent NameID the first time this pair meets.
+     */
+    fun signIn(
+        spId: UUID,
+        userId: UUID,
+        ip: String? = null,
+    ): SamlSubject? {
+        val target = AuditTarget.user(userId)
+        val details = mapOf("sp_id" to spId.toString())
+        return transaction.execute { dsl ->
+            val sp = load(dsl, spId)
+            if (!assignments.exists(dsl, spId, userId)) {
+                audit.recordDenial(AuditRecord(Actor.User(userId), SP_LOGIN_DENIED, target, ip, details))
+                return@execute null
+            }
+            val format = sp.settings.nameIdFormat
+            val wanted =
+                sp.settings.attributes
+                    .map { it.claim }
+                    .toSet() + setOfNotNull(UserClaim.EMAIL.takeIf { format == NameIdFormat.EMAIL })
+            val claims = identity.claims(userId, wanted)
+            val nameId =
+                when (format) {
+                    NameIdFormat.PERSISTENT -> subjects.valueOf(dsl, spId, userId, SubjectIdentifier.generate(random), clock.instant())
+                    NameIdFormat.EMAIL -> checkNotNull(claims[UserClaim.EMAIL])
+                }
+            val attributes =
+                sp.settings.attributes
+                    .mapNotNull { attribute -> claims[attribute.claim]?.let { attribute to it } }
+                    .toMap()
+            audit.recordChange(AuditRecord(Actor.User(userId), SP_LOGIN, target, ip, details))
+            SamlSubject(nameId, format, attributes)
+        }
+    }
+
+    private fun pending(row: SamlRequestRow): PendingRequest {
         val cipher = keys.derivedCipher(DerivedKey.FLOW)
         return PendingRequest(
             row.id,
@@ -337,12 +417,8 @@ class FederationService(
             row.acsUrl,
             cipher.decrypt(row.requestCiphertext, FieldContext(REQUEST_FIELD, row.id)),
             row.relayStateCiphertext?.let { String(cipher.decrypt(it, FieldContext(RELAY_STATE_FIELD, row.id))) },
+            row.acceptedAt,
         )
-    }
-
-    /** For a request answered with an error before any login: nothing may resume it. */
-    fun discardRequest(id: UUID) {
-        transaction.execute { dsl -> requests.delete(dsl, id) }
     }
 
     private fun assignmentRecord(

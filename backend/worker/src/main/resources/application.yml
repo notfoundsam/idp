@@ -32,6 +32,9 @@ spring:
 idp:
   tenants:
     base-domain: ${TENANTS_BASE_DOMAIN}
+  local-fixtures:
+    # Only the local profile reads it: the metadata of the SimpleSAMLphp SP.
+    sp-metadata: ${LOCAL_SP_METADATA:}
   mail:
     from: ${MAIL_FROM}
   provisioner:

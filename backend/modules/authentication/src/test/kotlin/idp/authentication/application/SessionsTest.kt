@@ -751,6 +751,40 @@ class SessionsTest :
                 }
             }
 
+            context("the view of a session for an SP") {
+                test("names the user, the factors, the login time and the absolute end under the policy") {
+                    val tenant = tenant(TenantPolicy(false, false, Duration.ofMinutes(10), Duration.ofHours(8)))
+                    val user = tenant.user()
+                    val token = tenant.login()
+                    val row = tenant.sessionRow(token)
+
+                    val view = tenant.acting { session(token) }.shouldNotBeNull()
+
+                    view.id shouldBe row["id"]
+                    view.userId shouldBe user
+                    view.factors shouldBe setOf(LoginFactor.PASSWORD)
+                    view.authenticatedAt shouldBe row["authenticated_at"].asInstant()
+                    view.expiresAt shouldBe row["authenticated_at"].asInstant().plus(Duration.ofHours(8))
+                }
+
+                test("is gone for a session that timed out, was revoked, or whose user is blocked") {
+                    val tenant = tenant(TenantPolicy(false, false, Duration.ofMinutes(10), Duration.ofHours(12)))
+                    val user = tenant.user()
+                    val idle = tenant.login()
+                    advance(Duration.ofMinutes(11))
+                    tenant.acting { session(idle) }.shouldBeNull()
+
+                    val revoked = tenant.login()
+                    TenantContext.with(tenant) { transaction.execute { service.revokeUserSessions(user, ADMIN) } }
+                    tenant.acting { session(revoked) }.shouldBeNull()
+
+                    val blocked = tenant.login()
+                    sql.update("UPDATE ${tenant.table("users")} SET status = 'BLOCKED' WHERE id = ?", user)
+                    tenant.acting { session(blocked) }.shouldBeNull()
+                    tenant.acting { session("made-up") }.shouldBeNull()
+                }
+            }
+
             context("the timeouts of the tenant") {
                 test("end a session without activity") {
                     val tenant = tenant(TenantPolicy(false, false, Duration.ofMinutes(10), Duration.ofHours(12)))

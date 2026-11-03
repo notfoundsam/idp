@@ -64,6 +64,7 @@ object ArchitectureRules {
             "SpAssignments" to listOf("federation"),
             "SamlRequests" to listOf("federation"),
             "SamlRequestIds" to listOf("federation"),
+            "SubjectIdentifiers" to listOf("federation"),
         )
 
     /** Names below the root package. Reaching a message without a principal is a decision, so it is written down here. */

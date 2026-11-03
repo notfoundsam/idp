@@ -67,3 +67,15 @@ The IdP session is the only session this application holds for a user. Each SP k
 - A new SP login while the IdP session is live needs no login, unless the SP asks for a fresh one or more assurance than the session has. The SP assignment is checked for every Response.
 - Ending the IdP session does not end SP sessions, because Single Logout is outside the first version. The user has to log out of each SP, and an SP session runs until the SP ends it.
 - An SP sees an ended IdP session only at its next redirect to the IdP, which then asks for a login.
+- Every assertion states `SessionNotOnOrAfter`: the absolute end of the IdP session under the policy at the time of the Response. An SP that honours it ends its own session no later than the IdP session would have ended. The idle end moves with activity, so it is not stated. Many SPs ignore the attribute, so it is a ceiling the SP may apply, not a control the IdP enforces.
+- `AuthnInstant` is the time of the login that opened the IdP session, not of the Response, so an SP can tell how old the authentication is.
+
+What this means for revoking access:
+
+| Action of an admin | IdP session | SP sessions already open |
+|---|---|---|
+| Withdrawing an SP assignment | Unchanged | Run on. The next login to that SP is refused |
+| Blocking a user or resetting a password | Revoked at once | Run on until the SP ends them or `SessionNotOnOrAfter` passes |
+| Suspending a tenant | Revoked at once, every request refused | Run on, as above |
+
+Removing access at the SP at once needs the SP's own tools until Single Logout or SCIM exists.

@@ -70,6 +70,8 @@ fun authnRequest(
     isPassive: Boolean? = null,
     requestedContext: String? = null,
     extensions: String? = null,
+    nameIdFormat: String? = null,
+    subject: String? = null,
 ): String {
     val attributes =
         listOfNotNull(
@@ -84,6 +86,8 @@ fun authnRequest(
         """xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="$id" Version="2.0" IssueInstant="$issueInstant" $attributes>""" +
         issuer?.let { "<saml:Issuer>$it</saml:Issuer>" }.orEmpty() +
         extensions?.let { "<samlp:Extensions>$it</samlp:Extensions>" }.orEmpty() +
+        subject?.let { "<saml:Subject><saml:NameID>$it</saml:NameID></saml:Subject>" }.orEmpty() +
+        nameIdFormat?.let { """<samlp:NameIDPolicy Format="$it" AllowCreate="true"/>""" }.orEmpty() +
         requestedContext.orEmpty() +
         "</samlp:AuthnRequest>"
 }

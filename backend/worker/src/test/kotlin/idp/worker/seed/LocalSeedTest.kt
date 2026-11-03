@@ -34,7 +34,8 @@ class LocalSeedTest :
         context("in the local profile") {
             val environment = WorkerEnvironment()
             val jdbc = environment.jdbc
-            val arguments = environment.arguments + "--spring.profiles.active=local"
+            val spMetadata = "${System.getProperty("idp.simplesamlphp.config")}/sp-metadata.xml"
+            val arguments = environment.arguments + "--spring.profiles.active=local" + "--LOCAL_SP_METADATA=$spMetadata"
 
             fun tenants(): List<String> =
                 jdbc
@@ -106,6 +107,27 @@ class LocalSeedTest :
                 tenants() shouldContainExactlyInAnyOrder listOf("acme.idp.test", "globex.idp.test")
                 jdbc.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 2
                 tenantIds().forEach { id -> wrappedKey(id) shouldBe keys[id] }
+            }
+
+            test("acme gets the users, the SimpleSAMLphp SP and one assignment, also after the restart") {
+                val acme =
+                    jdbc.queryForObject(
+                        "SELECT tenant_id FROM platform.tenant_domains WHERE domain = 'acme.idp.test'",
+                        UUID::class.java,
+                    )!!
+                val schema = TenantSchema(acme).name
+
+                fun count(sql: String) = jdbc.queryForObject(sql.replace("{schema}", "\"$schema\""), Int::class.java)
+
+                count("SELECT count(*) FROM {schema}.users WHERE status = 'ACTIVE'") shouldBe 2
+                count("SELECT count(*) FROM {schema}.totp_credentials WHERE confirmed_at IS NOT NULL") shouldBe 2
+                count("SELECT count(*) FROM {schema}.password_credentials") shouldBe 2
+                count("SELECT count(*) FROM {schema}.sp_assignments") shouldBe 1
+                jdbc.queryForMap("SELECT entity_id, released_attributes::text AS attributes FROM \"$schema\".service_providers") shouldBe
+                    mapOf(
+                        "entity_id" to "https://sp.idp.test/simplesaml/module.php/saml/sp/metadata/default-sp",
+                        "attributes" to "{DISPLAY_NAME,EMAIL}",
+                    )
             }
 
             test("mail goes to Mailpit without TLS or a password") {

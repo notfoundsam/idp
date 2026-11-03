@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.annotation.Profile
+import org.springframework.core.annotation.Order
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.stereotype.Component
 import java.time.Duration
@@ -31,6 +32,7 @@ private val POLL_INTERVAL: Duration = Duration.ofMillis(100)
  */
 @Component
 @Profile("local")
+@Order(1)
 class LocalSeed(
     @Value("\${idp.provisioner.url}") url: String,
     @Value("\${idp.provisioner.username}") username: String,

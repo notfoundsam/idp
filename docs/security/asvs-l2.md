@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 72 |
-| Partial | Part of the control is merged, the listed tasks finish it | 60 |
-| Planned | The listed tasks build the control | 50 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 79 |
+| Partial | Part of the control is merged, the listed tasks finish it | 57 |
+| Planned | The listed tasks build the control | 46 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -35,8 +35,8 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V1.1.1 | 2 | Done | | JSON and base64url are decoded once, before validation (`FlowApiTest`). A SAML request is URL-decoded, base64-decoded and inflated once each, then checked (`AuthnRequestValidatorTest`) |
-| V1.1.2 | 2 | Partial | T29, T31 | Encoding at the sink: mail templates and jOOQ are merged, SAML form and SPA remain |
-| V1.2.1 | 1 | Partial | T29, T31 | HTML mail is escaped (`MailTemplatesTest`), SAML form and SPA remain |
+| V1.1.2 | 2 | Partial | T31 | Encoding at the sink: mail templates, jOOQ, the SAML form and the attribute values of an assertion are merged (`SamlPagesTest`, `ResponseBuilderTest`), the SPA remains |
+| V1.2.1 | 1 | Partial | T31 | HTML mail and the SAML form are escaped (`MailTemplatesTest`, `SamlPagesTest`, `SsoApiTest`), the SPA remains |
 | V1.2.2 | 1 | Done | T27 | Mail links are `https` and built from the stored tenant host, never from a request (`RecoveryMailTest`). ACS URLs must be absolute `https` without user info or fragment, so `javascript:` and `data:` are refused (`ServiceProviderTest`, `MetadataImporterTest`) |
 | V1.2.3 | 1 | Partial | T31 | JSON comes only from the serializer (`FlowContractTest`), the frontend remains |
 | V1.2.4 | 1 | Done | T4, T5 | jOOQ binds every value, DDL identifiers derive only from a tenant UUID (`TenantIsolationTest`) |
@@ -82,7 +82,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V3.2.1 | 1 | Partial | T29 | The API answers JSON with `nosniff` and a closed CSP (`ResponseHeadersTest`, `OpsApiTest`), the SAML form remains. Uploaded files are never served |
+| V3.2.1 | 1 | Done | | The API answers JSON with `nosniff` and a closed CSP (`ResponseHeadersTest`, `OpsApiTest`). SAML pages are `text/html` with a charset, `nosniff` and a CSP of their own (`SsoApiTest`, `ResumeApiTest`). Uploaded files are never served |
 | V3.2.2 | 1 | Planned | T31 | Vue interpolation only, a lint rule forbids `v-html` |
 | V3.3.1 | 1 | Done | T23 | Every cookie is `Secure` (`ResponseHeadersTest`) |
 | V3.3.2 | 2 | Done | T23 | The session cookie is `SameSite=Lax`, the flow and CSRF cookies `SameSite=Strict` (`SessionCookieTest`, `FlowCookieTest`, `CsrfCookieTest`, `ResponseHeadersTest`) |
@@ -90,23 +90,23 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.3.4 | 2 | Done | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` (`SessionCookieTest`) |
 | V3.4.1 | 1 | Partial | T31, T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
 | V3.4.2 | 1 | Done | T23 | The API is same-origin and sends no CORS headers (`ResponseHeadersTest`) |
-| V3.4.3 | 2 | Partial | T29, T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`), nonce on the SAML form and static files remain |
+| V3.4.3 | 2 | Partial | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`), static files remain |
 | V3.4.4 | 2 | Partial | T31, T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
 | V3.4.5 | 2 | Partial | T31, T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
 | V3.4.6 | 2 | Partial | T31, T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
 | V3.5.1 | 1 | Done | T23 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`) |
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
-| V3.5.3 | 1 | Partial | T29, T34 | State changes of the login use `POST` (`FlowContractTest`), the SAML resume `GET` and the admin API remain |
+| V3.5.3 | 1 | Partial | T34 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The admin API remains |
 | V3.5.4 | 2 | Partial | T30, T40 | Each tenant has its own host (`TenantFilterTest`), `ops` is separate. Login and console form one application |
 | V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
 | V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
-| V3.7.2 | 2 | Partial | T29 | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`). An ACS a request names counts only as registered, and an error goes there under a `form-action` limited to it, otherwise to an error page (`AuthnRequestValidatorTest`, `SsoApiTest`). Sending the Response remains |
+| V3.7.2 | 2 | Done | | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`). An ACS a request names counts only as registered, and an error or a Response goes there under a `form-action` limited to it, otherwise to an error page (`AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest`) |
 
 ## V4 API and Web Service
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Partial | T29, T31 | Every JSON body and the SAML metadata name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`), HTML remains |
+| V4.1.1 | 1 | Partial | T31 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), the static HTML remains |
 | V4.1.2 | 2 | Planned | T40 | Only `/login/*` and `/console/*` redirect to HTTPS, `/api/*` and `/saml/*` refuse plain HTTP |
 | V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
 | V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
@@ -171,7 +171,7 @@ SP metadata import is the only file upload.
 | V6.8.1 | 2 | N/A | | `ops` trusts a single identity provider, `app` trusts none |
 | V6.8.2 | 2 | Partial | T30 | The IdP checks the signature of a request against the certificates of its SP, requires one where the SP signs, and refuses SHA-1 and wrapped signatures (`AuthnRequestValidatorTest`). `ops` refusing unsigned or invalid assertions remains |
 | V6.8.3 | 2 | Partial | T30 | A request ID is kept per SP for as long as its IssueInstant is accepted, and a repeat is refused (`SamlRequestsTest`, `SsoApiTest`). `ops` assertion IDs remain |
-| V6.8.4 | 2 | Planned | T29, T30 | The IdP states the real authentication context, `ops` requires a passkey context |
+| V6.8.4 | 2 | Partial | T30 | The IdP states the authentication context and `AuthnInstant` of the session the user logged in with, and a session that does not meet the requested context gets no Response (`ResponseBuilderTest`, `ResumeApiTest`, `SamlInteropTest`). `ops` requiring a passkey context remains |
 
 ## V7 Session Management
 
@@ -179,7 +179,7 @@ SP metadata import is the only file upload.
 |---|---|---|---|---|
 | V7.1.1 | 2 | Done | T22 | `docs/security/sessions.md` justifies timeouts against NIST SP 800-63B |
 | V7.1.2 | 2 | Done | T22 | The same document defines concurrent sessions, the limit holds (`SessionsTest`) |
-| V7.1.3 | 2 | Partial | T29 | The same document covers the IdP session and SP sessions, `SessionNotOnOrAfter` remains |
+| V7.1.3 | 2 | Done | | [sessions.md](sessions.md) covers the IdP session and SP sessions, `SessionNotOnOrAfter`, and what the missing Single Logout means for revoking access |
 | V7.2.1 | 1 | Done | T22 | `resolveSession` checks tokens on the backend (`SessionsTest`, `SessionFilterTest`) |
 | V7.2.2 | 1 | Done | T22 | Tokens are generated per session (`SessionsTest`) |
 | V7.2.3 | 1 | Done | T22 | Reference tokens with 256 bits from a CSPRNG, not UUIDs (`SsoSessionTest`) |
@@ -193,8 +193,8 @@ SP metadata import is the only file upload.
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
 | V7.5.1 | 2 | Partial | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`), the factor messages remain |
 | V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
-| V7.6.1 | 2 | Planned | T29, T30 | SP session bounds are stated in the assertion and follow the document |
-| V7.6.2 | 2 | Partial | T29 | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext` (`SsoApiTest`). The Response remains |
+| V7.6.1 | 2 | Partial | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` following it remains |
+| V7.6.2 | 2 | Done | | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext`, checked again before the Response (`SsoApiTest`, `ResumeApiTest`) |
 
 ## V8 Authorization
 
@@ -217,10 +217,10 @@ SAML assertions are the self-contained tokens. The IdP issues them and `ops` con
 | V9.1.1 | 1 | Partial | T30 | Signatures are verified before content is used: of a request only the Issuer is read to find the key (`AuthnRequestValidatorTest`). The ops SP remains |
 | V9.1.2 | 1 | Partial | T30 | Allowlist of signature algorithms, SHA-1 is refused. An SP setting names RSA-PSS or RSA with SHA-256 only, SHA-1 URIs are refused (`ServiceProviderTest`, `SignatureAlgorithmTest`), the ops SP remains |
 | V9.1.3 | 1 | Partial | T30 | Keys come from pre-registered metadata, never from the message. SP certificates are stored from uploaded metadata (`FederationServiceTest`), the ops SP remains |
-| V9.2.1 | 1 | Planned | T29, T30 | Validity window is issued and verified |
+| V9.2.1 | 1 | Partial | T30 | Validity window is issued and verified. An assertion holds for five minutes from its issue (`ResponseBuilderTest`, `SamlInteropTest`), `ops` verifying it remains |
 | V9.2.2 | 2 | Planned | T30 | `ops` accepts only a bearer assertion for its own SSO |
-| V9.2.3 | 2 | Planned | T29, T30 | Audience is issued and verified |
-| V9.2.4 | 2 | Partial | T29 | Each assertion names one SP, EntityID is unique within a tenant. Uniqueness is merged (`FederationServiceTest`), the audience of the assertion remains |
+| V9.2.3 | 2 | Partial | T30 | Audience is issued and verified. An assertion names the EntityID of its SP as the only audience and its ACS as the recipient (`ResponseBuilderTest`, `ResumeApiTest`), `ops` verifying it remains |
+| V9.2.4 | 2 | Done | | Each assertion names one SP, EntityID is unique within a tenant (`FederationServiceTest`, `ResponseBuilderTest`) |
 
 ## V10 OAuth and OIDC
 
@@ -270,12 +270,12 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V11.3.1 | 1 | Done | T7 | Only AES-GCM through Tink and KMS envelopes (`FieldCipherTest`) |
 | V11.3.2 | 1 | Done | T7 | Only AES-GCM (`FieldCipherTest`, `PlatformCipherTest`) |
 | V11.3.3 | 2 | Done | T7 | Authenticated encryption with AAD bound to the row and field (`FieldCipherTest`) |
-| V11.4.1 | 1 | Exception | T29 | SHA-256 family everywhere except TOTP (`TotpCredential`), the SAML digest is fixed to SHA-256 (`ServiceProviderTest`). See [Exceptions](#exceptions) |
+| V11.4.1 | 1 | Exception | | SHA-256 family everywhere except TOTP (`TotpCredential`), the SAML digest is fixed to SHA-256 (`ServiceProviderTest`, `ResponseBuilderTest`). See [Exceptions](#exceptions) |
 | V11.4.2 | 2 | Done | T18 | Argon2id with `m=19 MiB, t=2, p=1`, an Appendix C value (`PasswordHasherTest`) |
-| V11.4.3 | 2 | Partial | T29 | HMAC-SHA-256 and HKDF-SHA-256 are merged (`BlindIndexTest`, `KeyHierarchyTest`), SAML digests of the Response remain |
+| V11.4.3 | 2 | Done | | HMAC-SHA-256 and HKDF-SHA-256 (`BlindIndexTest`, `KeyHierarchyTest`), SHA-256 digests in every signature of a Response (`ResponseBuilderTest`) |
 | V11.4.4 | 2 | N/A | | No key is derived from a password |
 | V11.5.1 | 2 | Done | T24 | Key material, session tokens, TOTP secrets, recovery codes and every token in a mail use `SecureRandom`, with at least 128 bits and never a UUID (`InvitationTest`, `AccountRecoveryTest`, `SsoSessionTest`, `TotpCredentialTest`, `RecoveryCodeTest`) |
-| V11.6.1 | 2 | Exception | T29 | RSA-PSS with SHA-256 by default, `rsa-sha256` only as an audited setting of one SP (`ServiceProviderTest`, `FederationServiceTest`, `SignatureAlgorithmTest`), passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
+| V11.6.1 | 2 | Exception | | RSA-PSS with SHA-256 by default, `rsa-sha256` only as an audited setting of one SP (`ServiceProviderTest`, `FederationServiceTest`, `SignatureAlgorithmTest`, `ResponseBuilderTest`). SimpleSAMLphp 2.5.3 verifies no RSA-PSS, so the local test SP is set to `rsa-sha256` (`SamlInteropTest`), passkeys accept only ES256, EdDSA and RS256 (`PasskeyServiceTest`). See [Exceptions](#exceptions) |
 
 ## V12 Secure Communication
 
@@ -352,7 +352,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V16.2.4 | 2 | Planned | T38 | Structured JSON logs |
 | V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), request spans carry the tenant ID but no email, password or SAML message (`TracingTest`), `NoPiiInLogsTest` covers the rest |
 | V16.3.1 | 2 | Done | T23 | Successful and failed logins with the factor type (`FlowApiTest`) |
-| V16.3.2 | 2 | Partial | T29 | Bus denials are audited (`BusDenialTest`). A refused AuthnRequest reaches the log of security events and not the journal, since an anonymous caller sends it (`SsoApiTest`). The denial of an unassigned user remains |
+| V16.3.2 | 2 | Done | | Bus denials are audited (`BusDenialTest`). A refused AuthnRequest reaches the log of security events and not the journal, since an anonymous caller sends it (`SsoApiTest`). A user refused for lack of an assignment is audited as `sp.login_denied` (`SignInTest`, `ResumeApiTest`) |
 | V16.3.3 | 2 | Partial | T38 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`) |
 | V16.3.4 | 2 | Planned | T38 | Unexpected errors and backend TLS failures are logged and alerted |
 | V16.4.1 | 2 | Planned | T38 | The JSON encoder escapes log content |

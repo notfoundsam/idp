@@ -26,12 +26,15 @@ const val IP = "198.51.100.7"
 
 class RecordingAudit : AuditLog {
     val changes = CopyOnWriteArrayList<AuditRecord>()
+    val denials = CopyOnWriteArrayList<AuditRecord>()
 
     override fun recordChange(record: AuditRecord) {
         changes += record
     }
 
-    override fun recordDenial(record: AuditRecord) = throw UnsupportedOperationException()
+    override fun recordDenial(record: AuditRecord) {
+        denials += record
+    }
 
     fun of(action: String): List<AuditRecord> = changes.filter { it.action == action }
 }

@@ -411,6 +411,27 @@ class AuthnRequestValidatorTest :
             }
         }
 
+        context("the NameID the SP asks for") {
+            fun withPolicy(format: String) = authnRequest(issueInstant = now, nameIdFormat = format)
+
+            test("may be the one set for the SP, or any") {
+                validator().redirect(sp.redirectQuery(withPolicy("urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"))).accepted()
+                validator().redirect(sp.redirectQuery(withPolicy("urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"))).accepted()
+            }
+
+            test("of another format is refused at the ACS: an SP cannot pick the email for itself") {
+                validator()
+                    .redirect(sp.redirectQuery(withPolicy("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress")))
+                    .refusedToAcs(Rejection.INVALID_NAME_ID_POLICY)
+            }
+
+            test("is refused when the SP names a subject: the user decides who logs in") {
+                validator()
+                    .redirect(sp.redirectQuery(authnRequest(issueInstant = now, subject = "ada@acme.test")))
+                    .refusedToAcs(Rejection.SUBJECT_REQUESTED)
+            }
+        }
+
         context("what the SP demands") {
             test("is nothing beyond a login by default") {
                 val demands = demandsOf(validator().redirect(sp.redirectQuery(request()))).shouldNotBeNull()
