@@ -702,13 +702,15 @@ class SessionsTest :
                     tenant.sessionRow(tenant.login())["factors"].asStrings().shouldContainExactly(AuthFactor.PASSWORD.name)
                 }
 
-                test("resolves to the user and the role") {
+                test("resolves to the user, the role and the session") {
                     val tenant = tenant()
                     val user = tenant.user()
+                    val token = tenant.login()
 
-                    tenant.acting { resolveSession(tenant.login()) }.shouldNotBeNull().run {
+                    tenant.acting { resolveSession(token) }.shouldNotBeNull().run {
                         actor shouldBe Actor.User(user)
                         role shouldBe Role(UserRole.USER.name)
+                        sessionId shouldBe tenant.sessionRow(token)["id"]
                     }
                 }
 
@@ -816,6 +818,111 @@ class SessionsTest :
                     sql.update("UPDATE ${tenant.table("users")} SET status = 'BLOCKED' WHERE id = ?", user)
                     tenant.acting { session(blocked) }.shouldBeNull()
                     tenant.acting { session("made-up") }.shouldBeNull()
+                }
+            }
+
+            context("the sessions of a user in the account") {
+                test("are the live ones of that user only, seen last first, with the IP and the User-Agent of the login") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    tenant.login()
+                    advance(Duration.ofMinutes(31))
+                    val older = tenant.login()
+                    advance(Duration.ofMinutes(2))
+                    val newer = tenant.login()
+                    tenant.login("grace.hopper@acme.test")
+
+                    val listed = tenant.acting { sessionsOf(user) }
+
+                    listed.map { it.id } shouldContainExactly listOf(newer, older).map { tenant.sessionRow(it)["id"] }
+                    listed.forEach {
+                        it.ip shouldBe IP
+                        it.userAgent shouldBe USER_AGENT
+                    }
+                    listed.first().lastSeenAt shouldBe tenant.sessionRow(newer)["last_seen_at"].asInstant()
+                    listed.first().authenticatedAt shouldBe tenant.sessionRow(newer)["authenticated_at"].asInstant()
+                }
+
+                test("one ends alone, and the end is audited") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val ended = tenant.login()
+                    val kept = tenant.login()
+                    val id = tenant.sessionRow(ended)["id"] as UUID
+                    audit.changes.clear()
+
+                    tenant.acting { revokeSession(user, id, Actor.User(user), IP) }
+
+                    tenant.liveFor(ended) shouldBe false
+                    tenant.liveFor(kept) shouldBe true
+                    tenant.acting { sessionsOf(user) }.map { it.id } shouldContainExactly listOf(tenant.sessionRow(kept)["id"])
+                    val record = audit.changes.single()
+                    record.action shouldBe "session.revoked"
+                    record.actor shouldBe Actor.User(user)
+                    record.target shouldBe AuditTarget.user(user)
+                    record.ip shouldBe IP
+                    record.details shouldBe mapOf("session" to "$id")
+                }
+
+                test("a session of someone else, an ended one and an unknown one read as missing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    val theirs = tenant.login("grace.hopper@acme.test")
+                    val mine = tenant.sessionRow(tenant.login())["id"] as UUID
+                    tenant.acting { revokeSession(user, mine, Actor.User(user)) }
+                    audit.changes.clear()
+
+                    listOf(tenant.sessionRow(theirs)["id"] as UUID, mine, UUID.randomUUID()).forEach { id ->
+                        shouldThrow<SessionNotFound> { tenant.acting { revokeSession(user, id, Actor.User(user)) } }
+                    }
+
+                    tenant.liveFor(theirs) shouldBe true
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("a session past its timeout reads as missing too") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val id = tenant.sessionRow(tenant.login())["id"] as UUID
+                    advance(Duration.ofMinutes(31))
+
+                    shouldThrow<SessionNotFound> { tenant.acting { revokeSession(user, id, Actor.User(user)) } }
+                }
+
+                test("logging out ends the session, is audited as the user's own act, and a repeat records nothing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val token = tenant.login()
+                    val kept = tenant.login()
+                    val id = tenant.sessionRow(token)["id"] as UUID
+                    audit.changes.clear()
+
+                    tenant.acting { logout(user, id, IP) }
+                    tenant.acting { logout(user, id, IP) }
+
+                    tenant.liveFor(token) shouldBe false
+                    tenant.liveFor(kept) shouldBe true
+                    tenant.sessionRow(token)["revoked_at"].shouldNotBeNull()
+                    val record = audit.changes.single()
+                    record.action shouldBe "session.logged_out"
+                    record.actor shouldBe Actor.User(user)
+                    record.target shouldBe AuditTarget.user(user)
+                    record.details shouldBe mapOf("session" to "$id")
+                }
+
+                test("logging out of a session of someone else ends nothing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    val theirs = tenant.login("grace.hopper@acme.test")
+                    audit.changes.clear()
+
+                    tenant.acting { logout(user, tenant.sessionRow(theirs)["id"] as UUID) }
+
+                    tenant.liveFor(theirs) shouldBe true
+                    audit.changes.shouldBeEmpty()
                 }
             }
 
@@ -1124,6 +1231,25 @@ class SessionsTest :
                     shouldThrow<FlowExpired> { tenant.acting { completeFlow(flow, IP, USER_AGENT) } }
                     tenant.sessionRows(user).shouldBeEmpty()
                     tenant.completed(other).isNotEmpty() shouldBe true
+                }
+
+                test("the sessions of a user keeps the one named, so the user who asks stays logged in") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val kept = tenant.login()
+                    val ended = listOf(tenant.login(), tenant.login())
+                    val flow = tenant.passwordFlow()
+                    audit.changes.clear()
+
+                    TenantContext.with(tenant) {
+                        val id = tenant.sessionRow(kept)["id"] as UUID
+                        transaction.execute { service.revokeUserSessions(user, Actor.User(user), IP, kept = id) }
+                    }
+
+                    tenant.liveFor(kept) shouldBe true
+                    ended.forEach { tenant.liveFor(it) shouldBe false }
+                    shouldThrow<FlowExpired> { tenant.acting { completeFlow(flow, IP, USER_AGENT) } }
+                    audit.changes.single().details shouldBe mapOf("sessions" to "2")
                 }
 
                 test("bumps the version, because it is a decision") {

@@ -62,6 +62,16 @@ class OpenApiContract(
             ?.let { resolve(it.asMap()) }
     }
 
+    fun responseHeaders(
+        method: String,
+        path: String,
+        status: Int,
+    ): Set<String> =
+        resolve(operation(method, path)["responses"].asMap()[status.toString()].asMap())["headers"]
+            ?.asMap()
+            ?.keys
+            .orEmpty()
+
     fun requestSchema(
         method: String,
         path: String,

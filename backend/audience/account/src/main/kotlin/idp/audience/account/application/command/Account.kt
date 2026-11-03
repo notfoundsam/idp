@@ -9,6 +9,7 @@ import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.security.SecurityContext
 import idp.sharedkernel.web.ClientIp
+import java.util.UUID
 
 private const val CREDENTIAL_REFUSED = "account.credential_refused"
 private const val FACTOR = "factor"
@@ -30,6 +31,9 @@ internal fun clientIp(): String? = ClientIp.currentOrNull()?.address
 
 /** Every message here has a permission, so Security let it through only with the user of a live session. */
 internal fun currentUser(): Actor.User = checkNotNull(SecurityContext.currentOrNull()).actor as Actor.User
+
+/** A principal of this audience comes from a session cookie, so it always names its session. */
+internal fun currentSession(): UUID = checkNotNull(SecurityContext.currentOrNull()?.sessionId)
 
 internal fun AuditLog.credentialRefused(
     user: Actor.User,

@@ -140,6 +140,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/account/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the email of the user and their live sessions */
+        get: operations["getSessions"];
+        put?: never;
+        post?: never;
+        /** End every session of the user but the current one, and their logins in progress */
+        delete: operations["endOtherSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** End one other session of the user. The current one ends by logging out */
+        delete: operations["endSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End the current session on the server and clear the browser
+         * @description Answers 204 also without a live session, so a browser whose session is already gone still clears itself. A live session needs the CSRF token like any other change.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -147,6 +204,8 @@ export interface components {
         PasswordChangeRequest: {
             currentPassword: string;
             newPassword: string;
+            /** @description Ends every other session of the user and their logins in progress together with the change, false when left out. The current password stands in for the fresh login that ending sessions needs otherwise */
+            endOtherSessions?: boolean;
         };
         TotpConfirmationRequest: {
             code: string;
@@ -175,6 +234,31 @@ export interface components {
             lastUsedAt: string | null;
             /** @description Whether the authenticator syncs it to other devices */
             backedUp: boolean;
+        };
+        Sessions: {
+            email: string;
+            /** @description The one seen last first */
+            sessions: components["schemas"]["Session"][];
+        };
+        Session: {
+            /** Format: uuid */
+            id: string;
+            /** @description Whether the request came with this session */
+            current: boolean;
+            /**
+             * Format: date-time
+             * @description The time of the login that opened it
+             */
+            authenticatedAt: string;
+            /**
+             * Format: date-time
+             * @description Moves at most once a minute
+             */
+            lastSeenAt: string;
+            /** @description The address of the login */
+            ip: string | null;
+            /** @description The User-Agent of the login */
+            userAgent: string | null;
         };
         TotpSetup: {
             /** @description Base32. The client builds the `otpauth://` URI with the name of the tenant and the email */
@@ -524,6 +608,109 @@ export interface operations {
                 };
                 content?: never;
             };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sessions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Sessions"];
+                };
+            };
+            401: components["responses"]["NoSession"];
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    endOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The other sessions are ended */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Refused"];
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    endSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is ended */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Refused"];
+            /** @description No other live session of the user has this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is ended, its cookies are cleared, and the browser drops the cache and the storage of this origin */
+            204: {
+                headers: {
+                    /** @description Clears `__Host-session` and `__Host-csrf` */
+                    "Set-Cookie"?: string;
+                    /** @description `"cache", "storage"`. Cookies are left to `Set-Cookie`, because this header would clear them for every tenant */
+                    "Clear-Site-Data"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["CsrfRejected"];
+            413: components["responses"]["TooLarge"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };

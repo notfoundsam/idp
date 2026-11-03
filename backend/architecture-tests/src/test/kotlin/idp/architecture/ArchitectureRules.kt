@@ -87,6 +87,7 @@ object ArchitectureRules {
             "audience.login.application.command.recovery.RequestPasswordReset",
             "audience.login.application.command.recovery.ConfirmPasswordReset",
             "audience.login.application.command.recovery.ConfirmEmailChange",
+            "audience.account.application.command.Logout",
         )
 
     private const val JOOQ_SCHEMAS = """db\.jooq\.(platform|tenant)\.tables"""

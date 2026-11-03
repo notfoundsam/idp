@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 101 |
-| Partial | Part of the control is merged, the listed tasks finish it | 45 |
-| Planned | The listed tasks build the control | 36 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 105 |
+| Partial | Part of the control is merged, the listed tasks finish it | 46 |
+| Planned | The listed tasks build the control | 31 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -186,13 +186,13 @@ SP metadata import is the only file upload.
 | V7.2.4 | 1 | Done | T22 | A new token on login and on re-authentication (`SessionsTest`) |
 | V7.3.1 | 2 | Done | T22 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`) |
 | V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
-| V7.4.1 | 1 | Planned | T32 | Logout invalidates the session on the server |
+| V7.4.1 | 1 | Done | T32 | Logout revokes the session on the server, and a replayed token opens nothing (`AccountApiTest`, `SessionsTest`) |
 | V7.4.2 | 1 | Partial | T34 | A blocked user is refused on the next request, erasing a user deletes their sessions and flows with the row, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
-| V7.4.3 | 2 | Partial | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`), a factor change offering the same remains |
+| V7.4.3 | 2 | Done | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`). After a factor change the fresh login lets the user end the other sessions at once, and a password change ends them in the same step when asked (`AccountApiTest`) |
 | V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
 | V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
 | V7.5.1 | 2 | Done | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`). So does every message that adds, removes or renews a factor, while a password change asks for the current password instead (`AccountApiTest`) |
-| V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
+| V7.5.2 | 2 | Partial | T32, T33 | Users list their sessions and end one or all others only after a login at most 10 minutes old (`AccountApiTest`, `SessionsTest`), the screens remain |
 | V7.6.1 | 2 | Done | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` refuses an assertion without it and ends its own session there, idle after 30 minutes (`OpsSamlLoginTest`) |
 | V7.6.2 | 2 | Done | | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext`, checked again before the Response (`SsoApiTest`, `ResumeApiTest`) |
 
@@ -203,7 +203,7 @@ SP metadata import is the only file upload.
 | V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
 | V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
 | V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`, each other audience adds its rules |
-| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`), the sessions of the account and the admin and operator audiences remain |
+| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`), the admin and operator audiences remain |
 | V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
 | V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), each audience adds its rules |
 | V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), API and e2e isolation tests remain |
@@ -319,7 +319,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Done | T31 | The pages load nothing from another origin: the CSP allows only `'self'` (`render-nginx.test.mjs`), and a whole login requests nothing from elsewhere and runs only the scripts of its own bundle (`login.spec.ts`) |
 | V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
-| V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
+| V14.3.1 | 1 | Partial | T32, T33 | Logout answers with `Clear-Site-Data: "cache", "storage"` and clears the session and CSRF cookies, also without a live session (`AccountApiTest`), the client clearing itself when the server is unreachable remains |
 | V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
 | V14.3.3 | 2 | Done | T31 | The login keeps nothing in local or session storage, IndexedDB or Cache Storage, and a script can read only the `__Host-csrf` cookie, the others are `HttpOnly`. `login.spec.ts` reads all of it midway through a login and after it. The one key a page may write is `idp:reloaded-at` in session storage, the time of its last reload |
 

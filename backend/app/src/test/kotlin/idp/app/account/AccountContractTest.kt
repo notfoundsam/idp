@@ -14,6 +14,7 @@ import idp.sharedkernel.testing.asMap
 import idp.sharedkernel.testing.mappedOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.io.File
 import java.sql.Timestamp
@@ -29,6 +30,9 @@ private const val PASSKEY_OPTIONS = "/api/account/passkeys/options"
 private const val PASSKEYS = "/api/account/passkeys"
 private const val PASSKEY = "/api/account/passkeys/{id}"
 private const val RECOVERY_CODES = "/api/account/recovery-codes"
+private const val SESSIONS = "/api/account/sessions"
+private const val SESSION = "/api/account/sessions/{id}"
+private const val LOGOUT = "/api/account/logout"
 private const val ACCOUNT = " /api/account/"
 private const val NEW_PASSWORD = "amber-falcon-gathers-slowly"
 private const val GET = "GET"
@@ -65,7 +69,7 @@ class AccountContractTest :
         }
 
         test("the request bodies name what the controller reads") {
-            requestFields(PASSWORD_CHANGE) shouldBe setOf("currentPassword", "newPassword")
+            requestFields(PASSWORD_CHANGE) shouldBe setOf("currentPassword", "newPassword", "endOtherSessions")
             requestFields(TOTP_CONFIRMATION) shouldBe setOf("code")
             requestFields(PASSKEYS) shouldBe setOf("attestationObject", "clientDataJson")
         }
@@ -80,6 +84,43 @@ class AccountContractTest :
             browser.post(PASSWORD_CHANGE, change, echoCsrf = false).conforms(POST, PASSWORD_CHANGE).status shouldBe 403
             browser.post(PASSWORD_CHANGE, wrong).conforms(POST, PASSWORD_CHANGE).status shouldBe 422
             browser.post(PASSWORD_CHANGE, change).conforms(POST, PASSWORD_CHANGE).status shouldBe 204
+            val ending = passwordChangeBody(NEW_PASSWORD, PASSWORD, endOtherSessions = true)
+            browser.post(PASSWORD_CHANGE, ending).conforms(POST, PASSWORD_CHANGE).status shouldBe 204
+        }
+
+        test("the sessions and their end conform, also when refused") {
+            val (browser, _) = signedIn("contract-sessions")
+            val other = Browser(application).loggedIn("contract-sessions@acme.test")
+            val anonymous = Browser(application)
+            val ended =
+                other
+                    .get(SESSIONS)
+                    .conforms(GET, SESSIONS)
+                    .json()
+                    .get("sessions")
+                    .values()
+                    .single { it.get("current").asBoolean() }
+                    .text("id")
+
+            browser.get(SESSIONS).conforms(GET, SESSIONS).status shouldBe 200
+            browser.delete(SESSION.replace("{id}", "nonsense")).conforms(DELETE, SESSION).status shouldBe 400
+            browser.delete(SESSION.replace("{id}", "${UUID.randomUUID()}")).conforms(DELETE, SESSION).status shouldBe 404
+            browser.delete(SESSION.replace("{id}", ended)).conforms(DELETE, SESSION).status shouldBe 204
+            browser.delete(SESSIONS).conforms(DELETE, SESSIONS).status shouldBe 204
+            anonymous.get(SESSIONS).conforms(GET, SESSIONS).status shouldBe 401
+            anonymous.delete(SESSIONS).conforms(DELETE, SESSIONS).status shouldBe 401
+            anonymous.delete(SESSION.replace("{id}", ended)).conforms(DELETE, SESSION).status shouldBe 401
+        }
+
+        test("logging out conforms, also when refused and without a session") {
+            val (browser, _) = signedIn("contract-logout")
+
+            browser.post(LOGOUT, echoCsrf = false).conforms(POST, LOGOUT).status shouldBe 403
+            val reply = browser.post(LOGOUT).conforms(POST, LOGOUT)
+            reply.status shouldBe 204
+            contract.responseHeaders(POST, LOGOUT, reply.status) shouldBe setOf("Set-Cookie", "Clear-Site-Data")
+            contract.responseHeaders(POST, LOGOUT, reply.status).forEach { reply.header(it).shouldNotBeNull() }
+            browser.post(LOGOUT).conforms(POST, LOGOUT).status shouldBe 204
         }
 
         test("the whole path of a TOTP conforms, also when refused") {
@@ -143,6 +184,8 @@ class AccountContractTest :
                 Triple(POST, PASSKEYS, browser.post(PASSKEYS, """{"attestationObject":"AAAA","clientDataJson":"AAAA"}""")),
                 Triple(DELETE, PASSKEY, browser.delete(passkey)),
                 Triple(POST, RECOVERY_CODES, browser.post(RECOVERY_CODES)),
+                Triple(DELETE, SESSIONS, browser.delete(SESSIONS)),
+                Triple(DELETE, SESSION, browser.delete(SESSION.replace("{id}", "${UUID.randomUUID()}"))),
             ).forEach { (method, template, reply) -> reply.conforms(method, template).status shouldBe 403 }
 
             anonymous.get(FACTORS).conforms(GET, FACTORS).status shouldBe 401

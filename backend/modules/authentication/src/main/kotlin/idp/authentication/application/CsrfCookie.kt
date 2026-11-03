@@ -19,6 +19,8 @@ object CsrfCookie {
 
     fun issue(sessionToken: String): String = "$NAME=${tokenFor(sessionToken)}; $ATTRIBUTES"
 
+    fun clear(): String = "$NAME=; Max-Age=0; $ATTRIBUTES"
+
     fun tokenFor(sessionToken: String): String {
         val mac = Mac.getInstance(HMAC).apply { init(SecretKeySpec(sessionToken.toByteArray(), HMAC)) }
         return Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(PURPOSE))

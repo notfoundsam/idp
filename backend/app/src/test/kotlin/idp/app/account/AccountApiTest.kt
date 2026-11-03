@@ -6,21 +6,28 @@ import idp.app.login.LoginEnvironment
 import idp.app.login.PASSWORD
 import idp.app.login.PasskeyDevice
 import idp.app.login.Reply
+import idp.app.login.USER_AGENT
 import idp.app.login.WRONG_PASSWORD
 import idp.app.login.codeBody
 import idp.app.login.loginBody
 import idp.app.login.strings
 import idp.app.login.text
 import idp.app.login.totpCode
+import idp.authentication.application.CsrfCookie
+import idp.authentication.application.SessionCookie
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.collections.shouldNotContainAnyOf
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldBeEmpty
 import tools.jackson.databind.JsonNode
 import java.sql.Timestamp
@@ -35,6 +42,9 @@ private const val TOTP_CONFIRMATION = "/api/account/totp/confirmation"
 private const val PASSKEY_OPTIONS = "/api/account/passkeys/options"
 private const val PASSKEYS = "/api/account/passkeys"
 private const val RECOVERY_CODES = "/api/account/recovery-codes"
+private const val SESSIONS = "/api/account/sessions"
+private const val LOGOUT = "/api/account/logout"
+private const val CLEARED_SITE_DATA = "\"cache\", \"storage\""
 private const val NEW_PASSWORD = "amber-falcon-gathers-slowly"
 private const val CODES = 10
 private val AGED: Duration = Duration.ofMinutes(11)
@@ -53,7 +63,9 @@ fun JsonNode.list(name: String): List<JsonNode> = get(name).values().toList()
 fun passwordChangeBody(
     current: String,
     new: String,
-) = """{"currentPassword":"$current","newPassword":"$new"}"""
+    endOtherSessions: Boolean? = null,
+) = endOtherSessions?.let { """{"currentPassword":"$current","newPassword":"$new","endOtherSessions":$it}""" }
+    ?: """{"currentPassword":"$current","newPassword":"$new"}"""
 
 class AccountApiTest :
     FunSpec({
@@ -98,6 +110,30 @@ class AccountApiTest :
         }
 
         fun Browser.passkeyIds(): List<String> = factors().list("passkeys").map { it.text("id") }
+
+        fun Browser.sessions(): List<JsonNode> = get(SESSIONS).also { it.status shouldBe 200 }.json().list("sessions")
+
+        fun Browser.currentSession(): String = sessions().single { it.get("current").asBoolean() }.text("id")
+
+        fun Browser.isSignedIn(): Boolean = get(FACTORS).status == 200
+
+        fun reauthenticated(
+            browser: Browser,
+            name: String,
+        ) {
+            val flow = browser.startFlow("""{"reauthenticate":true}""")
+            browser.post("/api/flows/$flow/login", loginBody(email(name)))
+            browser.password(flow)
+            browser.complete(flow).status shouldBe 200
+        }
+
+        fun cleared(reply: Reply) {
+            reply.status shouldBe 204
+            reply.header("Clear-Site-Data") shouldBe CLEARED_SITE_DATA
+            reply.cookies().map { it.substringBefore(';') } shouldContainExactlyInAnyOrder
+                listOf("${SessionCookie.NAME}=", "${CsrfCookie.NAME}=")
+            reply.cookies().forEach { it.split("; ") shouldContain "Max-Age=0" }
+        }
 
         fun refused(reply: Reply) {
             reply.status shouldBe 422
@@ -360,12 +396,179 @@ class AccountApiTest :
                 age(user)
                 browser.post(TOTP).status shouldBe 403
 
-                val flow = browser.startFlow("""{"reauthenticate":true}""")
-                browser.post("/api/flows/$flow/login", loginBody(email("relogs")))
-                browser.password(flow)
-                browser.complete(flow).status shouldBe 200
+                reauthenticated(browser, "relogs")
 
                 browser.addTotp()
+            }
+
+            test("offers to end the other sessions: the login is still fresh, so they end without another (V7.4.3)") {
+                val (browser, user) = signedIn("ends-after-factor")
+                val other = Browser(application).loggedIn(email("ends-after-factor"))
+                browser.addTotp()
+
+                browser.delete(SESSIONS).status shouldBe 204
+
+                other.isSignedIn() shouldBe false
+                browser.isSignedIn() shouldBe true
+                audit(user).first { it.action == "session.revoked_for_user" }.details shouldBe mapOf("sessions" to "1")
+            }
+
+            test("of the password ends the other sessions and their logins in progress when asked, with no fresh login (V7.4.3)") {
+                val (browser, user) = signedIn("ends-after-password")
+                val other = Browser(application).loggedIn(email("ends-after-password"))
+                val late = Browser(application)
+                val flow = late.identified(email("ends-after-password"))
+                late.password(flow).json().text("step") shouldBe "COMPLETE"
+                age(user)
+
+                browser.post(PASSWORD_CHANGE, passwordChangeBody(PASSWORD, NEW_PASSWORD, endOtherSessions = true)).status shouldBe 204
+
+                other.isSignedIn() shouldBe false
+                late.complete(flow).status shouldNotBe 200
+                late.isSignedIn() shouldBe false
+                browser.isSignedIn() shouldBe true
+                val record = audit(user).first { it.action == "session.revoked_for_user" }
+                record.target shouldBe AuditTarget.user(user)
+                record.details shouldBe mapOf("sessions" to "1")
+            }
+
+            test("of the password keeps the other sessions unless asked") {
+                val (browser, user) = signedIn("keeps-after-password")
+                val other = Browser(application).loggedIn(email("keeps-after-password"))
+
+                browser.post(PASSWORD_CHANGE, passwordChangeBody(PASSWORD, NEW_PASSWORD, endOtherSessions = false)).status shouldBe 204
+
+                other.isSignedIn() shouldBe true
+                actions(user).filter { it == "session.revoked_for_user" }.shouldBeEmpty()
+            }
+
+            test("of the password with a wrong current one ends no session") {
+                val (browser, _) = signedIn("wrong-before-ending")
+                val other = Browser(application).loggedIn(email("wrong-before-ending"))
+
+                refused(browser.post(PASSWORD_CHANGE, passwordChangeBody(WRONG_PASSWORD, NEW_PASSWORD, endOtherSessions = true)))
+
+                other.isSignedIn() shouldBe true
+            }
+        }
+
+        context("sessions") {
+            test("the list joins the email of the user with their live sessions, and marks the current one") {
+                val (browser, _) = signedIn("lists")
+                Browser(application).loggedIn(email("lists"))
+
+                val listed = browser.get(SESSIONS).json()
+
+                listed.text("email") shouldBe email("lists")
+                val sessions = listed.list("sessions")
+                sessions shouldHaveSize 2
+                sessions.count { it.get("current").asBoolean() } shouldBe 1
+                sessions.forEach {
+                    it.text("userAgent") shouldBe USER_AGENT
+                    it.get("ip").isNull shouldBe false
+                    Instant.parse(it.text("authenticatedAt")).isAfter(Instant.now().minus(AGED)) shouldBe true
+                    Instant.parse(it.text("lastSeenAt")).isAfter(Instant.now().minus(AGED)) shouldBe true
+                }
+            }
+
+            test("each user sees only their own sessions, and a session of someone else reads as missing and lives on") {
+                val (mine, user) = signedIn("sees-own-sessions")
+                val (theirs, _) = signedIn("sees-other-sessions")
+                val other = theirs.currentSession()
+
+                mine.sessions().map { it.text("id") } shouldNotContain other
+                mine.delete("$SESSIONS/$other").status shouldBe 404
+                mine.delete("$SESSIONS/${UUID.randomUUID()}").status shouldBe 404
+
+                theirs.isSignedIn() shouldBe true
+                theirs.sessions().map { it.text("id") } shouldContainExactly listOf(other)
+                actions(user).filter { it == "session.revoked" }.shouldBeEmpty()
+            }
+
+            test("one other session ends and is audited, while the current one ends only by logging out") {
+                val (browser, user) = signedIn("ends-one")
+                val other = Browser(application).loggedIn(email("ends-one"))
+                val current = browser.currentSession()
+                val ended = other.currentSession()
+
+                browser.delete("$SESSIONS/$ended").status shouldBe 204
+                browser.delete("$SESSIONS/$current").status shouldBe 404
+
+                other.isSignedIn() shouldBe false
+                browser.sessions().map { it.text("id") } shouldContainExactly listOf(current)
+                val record = audit(user).single { it.action == "session.revoked" }
+                record.target shouldBe AuditTarget.user(user)
+                record.details shouldBe mapOf("session" to ended)
+            }
+
+            test("ending the other sessions keeps the current one") {
+                val (browser, _) = signedIn("ends-others")
+                val others = List(2) { Browser(application).loggedIn(email("ends-others")) }
+
+                browser.delete(SESSIONS).status shouldBe 204
+
+                others.forEach { it.isSignedIn() shouldBe false }
+                browser.sessions() shouldHaveSize 1
+            }
+
+            test("are listed with an aged login, but end only after a fresh one, and each refusal is recorded (V7.5.2)") {
+                val (browser, user) = signedIn("ends-after-relogin")
+                val other = Browser(application).loggedIn(email("ends-after-relogin"))
+                val ended = other.currentSession()
+                age(user)
+
+                browser.sessions() shouldHaveSize 2
+                listOf(browser.delete(SESSIONS), browser.delete("$SESSIONS/$ended")).forEach { reply ->
+                    reply.status shouldBe 403
+                    reply.json().text("error") shouldBe "reauthentication_required"
+                }
+                other.isSignedIn() shouldBe true
+                actions(user).filter { it == "access.reauthentication_required" } shouldHaveSize 2
+
+                reauthenticated(browser, "ends-after-relogin")
+                browser.delete("$SESSIONS/$ended").status shouldBe 204
+
+                other.isSignedIn() shouldBe false
+            }
+        }
+
+        context("logout") {
+            test("ends the session on the server and clears the cookies and the site data (V7.4.1, V14.3.1)") {
+                val (browser, user) = signedIn("logs-out")
+                val other = Browser(application).loggedIn(email("logs-out"))
+                val token = checkNotNull(browser.cookies[SessionCookie.NAME])
+                val session = browser.currentSession()
+
+                cleared(browser.post(LOGOUT))
+
+                browser.isSignedIn() shouldBe false
+                val replayed = Browser(application).apply { cookies[SessionCookie.NAME] = token }
+                replayed.isSignedIn() shouldBe false
+                replayed.get(SESSIONS).status shouldBe 401
+                other.isSignedIn() shouldBe true
+                val record = audit(user).single { it.action == "session.logged_out" }
+                record.target shouldBe AuditTarget.user(user)
+                record.details shouldBe mapOf("session" to session)
+            }
+
+            test("without a live session still clears the browser") {
+                val (browser, _) = signedIn("logs-out-twice")
+                browser.post(LOGOUT).status shouldBe 204
+
+                cleared(Browser(application).post(LOGOUT))
+                val dead = Browser(application).apply { cookies[SessionCookie.NAME] = "made-up" }
+                cleared(dead.post(LOGOUT))
+            }
+
+            test("without the CSRF token is refused and the session lives on") {
+                val (browser, user) = signedIn("forged-logout")
+
+                val reply = browser.post(LOGOUT, echoCsrf = false)
+
+                reply.status shouldBe 403
+                reply.header("Clear-Site-Data") shouldBe null
+                browser.isSignedIn() shouldBe true
+                actions(user).filter { it == "session.logged_out" }.shouldBeEmpty()
             }
         }
 
@@ -377,6 +580,9 @@ class AccountApiTest :
                 browser.post(PASSWORD_CHANGE, passwordChangeBody(PASSWORD, NEW_PASSWORD)).status shouldBe 401
                 browser.post(TOTP).status shouldBe 401
                 browser.delete("$PASSKEYS/${UUID.randomUUID()}").status shouldBe 401
+                browser.get(SESSIONS).status shouldBe 401
+                browser.delete(SESSIONS).status shouldBe 401
+                browser.delete("$SESSIONS/${UUID.randomUUID()}").status shouldBe 401
             }
 
             test("a change without the CSRF token is refused before any handler runs") {
@@ -387,7 +593,8 @@ class AccountApiTest :
                 reply.status shouldBe 403
                 reply.body.shouldBeEmpty()
                 browser.delete(TOTP, echoCsrf = false).status shouldBe 403
-                actions(user).filter { it == "user.password_set" }.shouldBeEmpty()
+                browser.delete(SESSIONS, echoCsrf = false).status shouldBe 403
+                actions(user).filter { it == "user.password_set" || it == "session.revoked_for_user" }.shouldBeEmpty()
             }
 
             test("each user reads only their own factors") {

@@ -29,6 +29,7 @@ import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.DerivedKey
 import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.KeyHierarchy
+import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.Role
@@ -44,6 +45,9 @@ import java.time.Instant
 import java.util.UUID
 
 private const val SESSION_OPENED = "session.opened"
+private const val SESSION_REVOKED = "session.revoked"
+private const val SESSION_LOGGED_OUT = "session.logged_out"
+private const val SESSION = "session"
 private const val SESSIONS_REVOKED_FOR_USER = "session.revoked_for_user"
 private const val SESSIONS_REVOKED_FOR_TENANT = "session.revoked_for_tenant"
 private const val POLICY_CHANGED = "policy.changed"
@@ -72,6 +76,19 @@ class SessionView(
     val authenticatedAt: Instant,
     val expiresAt: Instant,
 )
+
+/** A live session as its own user sees it, with the IP and the User-Agent of its login. Not a data class: `toString` must not print them. */
+class UserSessionView(
+    val id: UUID,
+    val authenticatedAt: Instant,
+    val lastSeenAt: Instant,
+    val ip: String?,
+    val userAgent: String?,
+)
+
+class SessionNotFound(
+    id: UUID,
+) : NotFound("No live session $id")
 
 /** [session] is null when the browser keeps the session it has: nothing new was proved, so there is nothing to rotate. */
 class CompletedFlow(
@@ -288,8 +305,69 @@ class AuthenticationService(
             val session = sessions.findByTokenHash(dsl, SessionToken(token).hash())?.takeIf { it.isLive(policies.load(dsl), now) }
             val user = session?.let { identity.user(it.userId) }?.takeIf { it.status == UserStatus.ACTIVE } ?: return@execute null
             if (session.isDueForLastSeen(now, lastSeenInterval)) sessions.markSeen(dsl, session.id, now)
-            Principal(Actor.User(user.id), Role(user.role.name), session.authenticatedAt)
+            Principal(Actor.User(user.id), Role(user.role.name), session.authenticatedAt, session.id)
         }
+
+    /** The live sessions of [userId], the one seen last first. Their IP and User-Agent open with the key of the user. */
+    fun sessionsOf(userId: UUID): List<UserSessionView> =
+        transaction.execute { dsl ->
+            val now = clock.instant()
+            val policy = policies.load(dsl)
+            val cipher = keys.userCipher(userId)
+
+            fun SsoSession.open(
+                sealed: ByteArray?,
+                field: String,
+            ) = sealed?.let { cipher.decrypt(it, FieldContext(field, id)).decodeToString() }
+
+            sessions.notRevokedOfUser(dsl, userId).filter { it.isLive(policy, now) }.map {
+                UserSessionView(
+                    it.id,
+                    it.authenticatedAt,
+                    it.lastSeenAt,
+                    it.open(it.ipCiphertext, IP_FIELD),
+                    it.open(it.userAgentCiphertext, USER_AGENT_FIELD),
+                )
+            }
+        }
+
+    /** Ends one live session of [userId]. A session of someone else reads as missing, the same as one that is gone. */
+    fun revokeSession(
+        userId: UUID,
+        sessionId: UUID,
+        actor: Actor,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            if (!end(dsl, userId, sessionId)) throw SessionNotFound(sessionId)
+            audit.recordChange(AuditRecord(actor, SESSION_REVOKED, AuditTarget.user(userId), ip, mapOf(SESSION to "$sessionId")))
+        }
+    }
+
+    /** Ends the session the user logs out of. One that is already gone leaves nothing to do and nothing to record. */
+    fun logout(
+        userId: UUID,
+        sessionId: UUID,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            if (end(dsl, userId, sessionId)) {
+                val user = Actor.User(userId)
+                audit.recordChange(AuditRecord(user, SESSION_LOGGED_OUT, AuditTarget.user(userId), ip, mapOf(SESSION to "$sessionId")))
+            }
+        }
+    }
+
+    private fun end(
+        dsl: DSLContext,
+        userId: UUID,
+        sessionId: UUID,
+    ): Boolean {
+        val now = clock.instant()
+        val session = sessions.find(dsl, sessionId)?.takeIf { it.userId == userId && it.isLive(policies.load(dsl), now) } ?: return false
+        sessions.save(dsl, session.apply { revoke(now) })
+        return true
+    }
 
     /** Null for a session that is gone, timed out or revoked, or whose user may no longer log in. */
     fun session(token: String): SessionView? =
@@ -323,16 +401,18 @@ class AuthenticationService(
 
     /**
      * Joins the transaction of the caller, because a block or a reset that rolled back must leave the sessions alone. The logins in
-     * progress end too: a password proved before a reset must not open a session after it.
+     * progress end too: a password proved before a reset must not open a session after it. [kept] survives, so a user who ends their
+     * other sessions stays logged in.
      */
     fun revokeUserSessions(
         userId: UUID,
         actor: Actor,
         ip: String? = null,
+        kept: UUID? = null,
     ) {
         transaction.join { dsl ->
             flows.deleteOfUser(dsl, userId)
-            val revoked = sessions.revokeOfUser(dsl, userId, clock.instant())
+            val revoked = sessions.revokeOfUser(dsl, userId, clock.instant(), kept)
             audit.recordChange(AuditRecord(actor, SESSIONS_REVOKED_FOR_USER, AuditTarget.user(userId), ip, mapOf("sessions" to "$revoked")))
         }
     }

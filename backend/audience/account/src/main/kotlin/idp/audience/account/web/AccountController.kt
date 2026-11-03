@@ -4,17 +4,25 @@ import idp.audience.account.application.command.BeginPasskeySetup
 import idp.audience.account.application.command.BeginTotpSetup
 import idp.audience.account.application.command.ChangePassword
 import idp.audience.account.application.command.ConfirmTotpSetup
+import idp.audience.account.application.command.EndOtherSessions
+import idp.audience.account.application.command.EndSession
 import idp.audience.account.application.command.FinishPasskeySetup
 import idp.audience.account.application.command.IssuedCodes
+import idp.audience.account.application.command.Logout
 import idp.audience.account.application.command.RemovePasskey
 import idp.audience.account.application.command.RemoveTotp
 import idp.audience.account.application.command.RenewRecoveryCodes
 import idp.audience.account.application.query.GetFactors
+import idp.audience.account.application.query.GetSessions
+import idp.authentication.application.CsrfCookie
+import idp.authentication.application.SessionCookie
 import idp.identity.application.PasskeyAttestation
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import jakarta.servlet.http.HttpServletRequest
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -29,11 +37,30 @@ import java.util.Base64
 import java.util.UUID
 
 private const val USER_VERIFICATION = "required"
+private const val CLEAR_SITE_DATA = "Clear-Site-Data"
+private const val CLEARED_SITE_DATA = "\"cache\", \"storage\""
 
 /** Not a data class: `toString` must not print the passwords. */
 class PasswordChangeRequest(
     val currentPassword: String,
     val newPassword: String,
+    val endOtherSessions: Boolean = false,
+)
+
+/** Not a data class: `toString` must not print the IP or the User-Agent. */
+class SessionResponse(
+    val id: UUID,
+    val current: Boolean,
+    val authenticatedAt: Instant,
+    val lastSeenAt: Instant,
+    val ip: String?,
+    val userAgent: String?,
+)
+
+/** Not a data class: `toString` must not print the email. */
+class SessionsResponse(
+    val email: String,
+    val sessions: List<SessionResponse>,
 )
 
 /** Not a data class: `toString` must not print the code. */
@@ -112,7 +139,7 @@ class AccountController(
     fun changePassword(
         @RequestBody request: PasswordChangeRequest,
         http: HttpServletRequest,
-    ) = commands.dispatch(ChangePassword(request.currentPassword, request.newPassword, http.serverName))
+    ) = commands.dispatch(ChangePassword(request.currentPassword, request.newPassword, http.serverName, request.endOtherSessions))
 
     @PostMapping("/totp")
     fun beginTotp() = TotpSetupResponse(commands.dispatch(BeginTotpSetup()).secret)
@@ -158,4 +185,37 @@ class AccountController(
 
     @PostMapping("/recovery-codes")
     fun renewRecoveryCodes(): RecoveryCodesResponse = commands.dispatch(RenewRecoveryCodes()).response()
+
+    @GetMapping("/sessions")
+    fun sessions(): SessionsResponse {
+        val listed = queries.ask(GetSessions())
+        return SessionsResponse(
+            listed.email,
+            listed.sessions.map { SessionResponse(it.id, it.id == listed.current, it.authenticatedAt, it.lastSeenAt, it.ip, it.userAgent) },
+        )
+    }
+
+    @DeleteMapping("/sessions")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun endOtherSessions() = commands.dispatch(EndOtherSessions())
+
+    @DeleteMapping("/sessions/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun endSession(
+        @PathVariable id: UUID,
+    ) = commands.dispatch(EndSession(id))
+
+    /**
+     * Cookies go by `Set-Cookie` alone: `Clear-Site-Data` would clear them for the whole registrable domain, and so log the browser
+     * out of every other tenant too.
+     */
+    @PostMapping("/logout")
+    fun logout(): ResponseEntity<Void> {
+        commands.dispatch(Logout())
+        return ResponseEntity
+            .noContent()
+            .header(HttpHeaders.SET_COOKIE, SessionCookie.clear(), CsrfCookie.clear())
+            .header(CLEAR_SITE_DATA, CLEARED_SITE_DATA)
+            .build()
+    }
 }

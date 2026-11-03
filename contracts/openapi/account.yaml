@@ -6,8 +6,9 @@ info:
     The account area of a signed-in user. Every call needs a live session and acts on its user, so no path names a user. A call that
     changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Adding, removing or renewing a factor
     needs a session whose full login is at most 10 minutes old: otherwise the answer is 403 with `reauthentication_required`, and the
-    client walks a flow of the login API started with `reauthenticate`, then repeats the call. A password change asks for the current
-    password instead. A client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and
+    client walks a flow of the login API started with `reauthenticate`, then repeats the call. Ending sessions needs the same. A
+    password change asks for the current password instead, and can end the other sessions in the same call. After any other change of
+    a factor the login is still fresh, so the client offers to end the other sessions right away. A client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and
     a client older than the minimum gets 426.
 paths:
   /api/account/factors:
@@ -214,6 +215,86 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/account/sessions:
+    get:
+      operationId: getSessions
+      summary: Read the email of the user and their live sessions
+      responses:
+        "200":
+          description: The sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sessions"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: endOtherSessions
+      summary: End every session of the user but the current one, and their logins in progress
+      responses:
+        "204":
+          description: The other sessions are ended
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: endSession
+      summary: End one other session of the user. The current one ends by logging out
+      responses:
+        "204":
+          description: The session is ended
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          description: No other live session of the user has this id
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/account/logout:
+    post:
+      operationId: logout
+      summary: End the current session on the server and clear the browser
+      description: >-
+        Answers 204 also without a live session, so a browser whose session is already gone still clears itself. A live session
+        needs the CSRF token like any other change.
+      responses:
+        "204":
+          description: The session is ended, its cookies are cleared, and the browser drops the cache and the storage of this origin
+          headers:
+            Set-Cookie:
+              description: Clears `__Host-session` and `__Host-csrf`
+              schema:
+                type: string
+            Clear-Site-Data:
+              description: >-
+                `"cache", "storage"`. Cookies are left to `Set-Cookie`, because this header would clear them for every tenant
+              schema:
+                type: string
+        "403":
+          $ref: "#/components/responses/CsrfRejected"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 components:
   parameters:
     Id:
@@ -267,6 +348,11 @@ components:
           type: string
         newPassword:
           type: string
+        endOtherSessions:
+          type: boolean
+          description: >-
+            Ends every other session of the user and their logins in progress together with the change, false when left out. The
+            current password stands in for the fresh login that ending sessions needs otherwise
     TotpConfirmationRequest:
       type: object
       additionalProperties: false
@@ -323,6 +409,43 @@ components:
         backedUp:
           type: boolean
           description: Whether the authenticator syncs it to other devices
+    Sessions:
+      type: object
+      additionalProperties: false
+      required: [email, sessions]
+      properties:
+        email:
+          type: string
+        sessions:
+          type: array
+          description: The one seen last first
+          items:
+            $ref: "#/components/schemas/Session"
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, current, authenticatedAt, lastSeenAt, ip, userAgent]
+      properties:
+        id:
+          type: string
+          format: uuid
+        current:
+          type: boolean
+          description: Whether the request came with this session
+        authenticatedAt:
+          type: string
+          format: date-time
+          description: The time of the login that opened it
+        lastSeenAt:
+          type: string
+          format: date-time
+          description: Moves at most once a minute
+        ip:
+          type: [string, "null"]
+          description: The address of the login
+        userAgent:
+          type: [string, "null"]
+          description: The User-Agent of the login
     TotpSetup:
       type: object
       additionalProperties: false
