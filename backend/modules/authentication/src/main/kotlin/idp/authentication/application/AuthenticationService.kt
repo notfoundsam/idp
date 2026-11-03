@@ -90,6 +90,22 @@ class SessionNotFound(
     id: UUID,
 ) : NotFound("No live session $id")
 
+/** MFA for `TENANT_ADMIN` has no field: no policy relaxes it. */
+data class PolicyView(
+    val mfaForUsers: Boolean,
+    val passkeyRequired: Boolean,
+    val sessionIdleTimeout: Duration,
+    val sessionAbsoluteTimeout: Duration,
+    val version: Long,
+)
+
+data class PolicyChange(
+    val mfaForUsers: Boolean,
+    val passkeyRequired: Boolean,
+    val sessionIdleTimeout: Duration,
+    val sessionAbsoluteTimeout: Duration,
+)
+
 /** [session] is null when the browser keeps the session it has: nothing new was proved, so there is nothing to rotate. */
 class CompletedFlow(
     val userId: UUID,
@@ -383,6 +399,45 @@ class AuthenticationService(
                     it.authenticatedAt,
                     it.authenticatedAt.plus(policy.sessionAbsoluteTimeout),
                 )
+            }
+        }
+
+    fun policy(): PolicyView =
+        transaction.execute { dsl ->
+            policies.load(dsl).run { PolicyView(mfaForUsers, passkeyRequired, sessionIdleTimeout, sessionAbsoluteTimeout, version) }
+        }
+
+    /**
+     * Replaces the policy read at [version], so an admin cannot overwrite a change they have not seen. Records the fields that
+     * changed, a relaxed MFA too. Returns the new version, or the same one when nothing changed.
+     */
+    fun savePolicy(
+        change: PolicyChange,
+        version: Long,
+        actor: Actor,
+        ip: String? = null,
+    ): Long =
+        transaction.execute { dsl ->
+            val current = policies.load(dsl)
+            val next =
+                TenantPolicy(change.mfaForUsers, change.passkeyRequired, change.sessionIdleTimeout, change.sessionAbsoluteTimeout, version)
+            val changed = changedFields(current, next)
+            if (changed.isEmpty() && current.version == version) return@execute version
+            val saved = policies.save(dsl, next)
+            audit.recordChange(AuditRecord(actor, POLICY_CHANGED, ip = ip, details = changed))
+            saved
+        }
+
+    private fun changedFields(
+        current: TenantPolicy,
+        next: TenantPolicy,
+    ): Map<String, String> =
+        buildMap {
+            if (next.mfaForUsers != current.mfaForUsers) put("mfa_for_users", "${next.mfaForUsers}")
+            if (next.passkeyRequired != current.passkeyRequired) put("passkey_required", "${next.passkeyRequired}")
+            if (next.sessionIdleTimeout != current.sessionIdleTimeout) put("session_idle_seconds", "${next.sessionIdleTimeout.seconds}")
+            if (next.sessionAbsoluteTimeout != current.sessionAbsoluteTimeout) {
+                put("session_absolute_seconds", "${next.sessionAbsoluteTimeout.seconds}")
             }
         }
 

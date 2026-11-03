@@ -9,11 +9,16 @@ import idp.audience.admin.application.command.EraseUserHandler
 import idp.audience.admin.application.command.InviteUserHandler
 import idp.audience.admin.application.command.ResendInvitationHandler
 import idp.audience.admin.application.command.ResetMfaHandler
+import idp.audience.admin.application.command.SavePolicyHandler
 import idp.audience.admin.application.command.UnblockUserHandler
+import idp.audience.admin.application.query.FindUserByEmailHandler
+import idp.audience.admin.application.query.GetPolicyHandler
+import idp.audience.admin.web.AdminPolicyController
 import idp.audience.admin.web.AdminUsersController
 import idp.authentication.application.AuthenticationService
 import idp.identity.application.IdentityService
 import idp.sharedkernel.bus.CommandBus
+import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.SecurityConfig
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -60,5 +65,23 @@ class AdminConfiguration {
     fun endAllSessionsHandler(authentication: AuthenticationService) = EndAllSessionsHandler(authentication)
 
     @Bean
-    fun adminUsersController(commands: CommandBus) = AdminUsersController(commands)
+    fun savePolicyHandler(authentication: AuthenticationService) = SavePolicyHandler(authentication)
+
+    @Bean
+    fun getPolicyHandler(authentication: AuthenticationService) = GetPolicyHandler(authentication)
+
+    @Bean
+    fun findUserByEmailHandler(identity: IdentityService) = FindUserByEmailHandler(identity)
+
+    @Bean
+    fun adminUsersController(
+        commands: CommandBus,
+        queries: QueryBus,
+    ) = AdminUsersController(commands, queries)
+
+    @Bean
+    fun adminPolicyController(
+        commands: CommandBus,
+        queries: QueryBus,
+    ) = AdminPolicyController(commands, queries)
 }

@@ -71,7 +71,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists per-user and global limits |
 | V2.2.1 | 1 | Partial | T32, T34, T36 | Domain types validate on the server (`TenantTest`), the login API refuses malformed input (`FlowApiTest`), each API adds its inputs |
 | V2.2.2 | 1 | Partial | T32, T34, T36 | Validation lives in the domain and the audience, client checks are convenience only |
-| V2.2.3 | 2 | Planned | T34, T36 | Policy and SP settings are checked as a combination |
+| V2.2.3 | 2 | Partial | T34, T36 | The policy is checked as a combination: an idle timeout longer than the absolute one is refused (`TenantPolicyTest`, `AdminPolicyApiTest`). SP settings remain |
 | V2.3.1 | 1 | Done | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API cannot skip one (`FlowApiTest`) |
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
@@ -149,12 +149,12 @@ SP metadata import is the only file upload.
 | V6.2.7 | 1 | Done | T31 | Nothing blocks paste, and the fields carry `autocomplete` `current-password` or `new-password` with the login beside them for password managers. `login.spec.ts` pastes both kinds from the clipboard |
 | V6.2.8 | 1 | Done | T18 | The password is verified exactly as received (`PasswordHasherTest`) |
 | V6.2.9 | 2 | Done | T18 | Up to 128 characters are accepted (`PasswordPolicyTest`) |
-| V6.2.10 | 2 | Partial | T34 | A credential has no expiry (`PasswordCredential`), the test that the policy offers none remains |
+| V6.2.10 | 2 | Done | T34 | A credential has no expiry (`PasswordCredential`), and the policy offers none: it has no such field, and the admin API refuses a body that sets one (`TenantPolicyTest`, `AdminPolicyApiTest`) |
 | V6.2.11 | 2 | Done | T18 | Context-specific words are refused (`PasswordPolicyTest`, `PasswordServiceTest`) |
 | V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.3.1 | 1 | Done | T23 | Growing delay and attempt counters in Postgres, which hold without the throttle (`PasswordServiceTest`, `TotpServiceTest`, `LoginLimitsTest`), and limits by address and tenant (`LoginLimitsTest`, `LoginThrottleConfigTest`) |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
-| V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`), its relaxing remains. See [Exceptions](#exceptions) |
+| V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`). An admin relaxes it only for `USER`, after a fresh login, and the change is audited. No field relaxes it for `TENANT_ADMIN`, and an admin still enrolls a second factor under a relaxed policy (`SessionsTest`, `AdminPolicyApiTest`). See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Done | T23 | Every session starts from `AuthFlow`, and `docs/security/authentication.md` lists every pathway |
 | V6.4.1 | 1 | Done | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), and the first password is chosen by the user under the password policy (`RecoveryCommandsTest`, `RecoveryApiTest`) |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
@@ -184,8 +184,8 @@ SP metadata import is the only file upload.
 | V7.2.2 | 1 | Done | T22 | Tokens are generated per session (`SessionsTest`) |
 | V7.2.3 | 1 | Done | T22 | Reference tokens with 256 bits from a CSPRNG, not UUIDs (`SsoSessionTest`) |
 | V7.2.4 | 1 | Done | T22 | A new token on login and on re-authentication (`SessionsTest`) |
-| V7.3.1 | 2 | Done | T22 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`) |
-| V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
+| V7.3.1 | 2 | Done | T22, T34 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`). An admin sets it from 5 minutes to the 1 hour of AAL2 and no further (`TenantPolicyTest`, `AdminPolicyApiTest`), see `docs/security/sessions.md` |
+| V7.3.2 | 2 | Done | T22, T34 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`). An admin sets it up to the 24 hours of AAL2 and no further, and a tighter one ends older sessions at once (`TenantPolicyTest`, `AdminPolicyApiTest`) |
 | V7.4.1 | 1 | Done | T32 | Logout revokes the session on the server, and a replayed token opens nothing (`AccountApiTest`, `SessionsTest`) |
 | V7.4.2 | 1 | Done | T34 | A blocked user is refused on the next request, and the admin's block ends their sessions and logins in progress in the same transaction. Erasing a user deletes their sessions and flows with the row (`AdminUsersApiTest`, `SessionsTest`, `SessionFilterTest`) |
 | V7.4.3 | 2 | Done | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`). After a factor change the fresh login lets the user end the other sessions at once, and a password change ends them in the same step when asked (`AccountApiTest`) |
@@ -202,7 +202,7 @@ SP metadata import is the only file upload.
 |---|---|---|---|---|
 | V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
 | V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
-| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages to `TENANT_ADMIN` only (`AdminUsersApiTest`), the operator audience adds its rules |
+| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages, the policy too, to `TENANT_ADMIN` only (`AdminUsersApiTest`, `AdminPolicyApiTest`), the operator audience adds its rules |
 | V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`). An admin reaches only the users of the tenant whose schema holds the session, a user of another tenant reads as missing, and a session of another tenant counts as none (`AdminUsersApiTest`). The operator audience remains |
 | V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
 | V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), and the admin API refuses an ordinary user and an admin of another tenant there (`AdminUsersApiTest`), the operator audience adds its rules |

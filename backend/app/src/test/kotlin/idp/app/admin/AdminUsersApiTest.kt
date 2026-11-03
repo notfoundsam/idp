@@ -26,6 +26,8 @@ import io.kotest.matchers.string.shouldBeEmpty
 import java.util.UUID
 
 private const val USERS = "/api/admin/users"
+private const val SEARCH = "/api/admin/users/search"
+private const val POLICY = "/api/admin/policy"
 private const val ALL_SESSIONS = "/api/admin/sessions"
 private const val FACTORS = "/api/account/factors"
 private const val ACCESS_DENIED = "access.denied"
@@ -102,6 +104,9 @@ class AdminUsersApiTest :
                 user,
             )!!
 
+        fun mfaForUsers(): Boolean =
+            environment.sql.queryForObject("SELECT mfa_for_users FROM ${acme.table("tenant_policies")}", Boolean::class.java)!!
+
         fun Browser.isSignedIn(): Boolean = get(FACTORS).status == 200
 
         fun Browser.addTotp() {
@@ -109,9 +114,18 @@ class AdminUsersApiTest :
             post("/api/account/totp/confirmation", codeBody(totpCode(secret))).status shouldBe 200
         }
 
-        /** Every call of the audience, each with a body it would take. */
+        fun Browser.search(address: String) = post(SEARCH, searchBody(address))
+
+        fun Reply.users() = json().get("users").values()
+
+        fun Reply.found() = users().map { UUID.fromString(it.text("id")) }
+
+        /** Every call of the audience, each with a body and the headers it would take. */
         fun Browser.everyCall(target: UUID): List<Reply> =
             listOf(
+                search(email("ordinary-target")),
+                get(POLICY),
+                put(POLICY, policyBody(mfaForUsers = true), "If-Match", "\"0\""),
                 post(USERS, inviteBody(email("never-${UUID.randomUUID()}"), UserRole.USER)),
                 post(invitation(target)),
                 put(role(target), roleBody(UserRole.TENANT_ADMIN)),
@@ -154,7 +168,8 @@ class AdminUsersApiTest :
                 stored(target).shouldNotBeNull().status shouldBe UserStatus.ACTIVE
                 stored(target).shouldNotBeNull().role shouldBe UserRole.USER
                 liveSessions(target) shouldBe 1
-                audit(user).filter { it.action == ACCESS_DENIED } shouldHaveSize 9
+                mfaForUsers() shouldBe false
+                audit(user).filter { it.action == ACCESS_DENIED } shouldHaveSize 12
             }
 
             test("an admin of another tenant has no session here") {
@@ -166,6 +181,7 @@ class AdminUsersApiTest :
 
                 stored(target).shouldNotBeNull().status shouldBe UserStatus.ACTIVE
                 liveSessions(target) shouldBe 1
+                mfaForUsers() shouldBe false
             }
 
             test("a user of another tenant reads as missing to an admin here") {
@@ -189,6 +205,43 @@ class AdminUsersApiTest :
                 browser.post(block(target), echoCsrf = false).status shouldBe 403
 
                 stored(target).shouldNotBeNull().status shouldBe UserStatus.ACTIVE
+            }
+        }
+
+        context("searching") {
+            test("finds a user by the whole address in any case, and by no part of it") {
+                val (browser, _) = admin("searcher")
+                val (_, target) = member("sought")
+
+                val found = browser.search(email("sought"))
+
+                found.status shouldBe 200
+                found.users().single().run {
+                    text("id") shouldBe "$target"
+                    text("role") shouldBe "USER"
+                    text("status") shouldBe "ACTIVE"
+                }
+                browser.search(" ${email("sought").uppercase()} ").found() shouldBe listOf(target)
+                listOf("sought", "sought@", "sought@${acme.host.substringBefore('.')}", "@${acme.host}", "ought@${acme.host}", "", "%")
+                    .forEach { browser.search(it).found().shouldBeEmpty() }
+            }
+
+            test("finds an invited user with the status, and nobody of another tenant") {
+                val (browser, _) = admin("tenant-searcher")
+                val invited = UUID.fromString(browser.post(USERS, inviteBody(email("waiting"), UserRole.USER)).json().text("id"))
+                member("elsewhere", globex)
+
+                val found = browser.search(email("waiting"))
+                found.found() shouldBe listOf(invited)
+                found.users().single().text("status") shouldBe "INVITED"
+                browser.search(email("elsewhere", globex)).found().shouldBeEmpty()
+            }
+
+            test("a body without an address or with another field answers 400") {
+                val (browser, _) = admin("sloppy-searcher")
+
+                listOf("{}", """{"prefix":"sought"}""", """{"email":"${email("searcher")}","exact":false}""")
+                    .forEach { browser.post(SEARCH, it).status shouldBe 400 }
             }
         }
 

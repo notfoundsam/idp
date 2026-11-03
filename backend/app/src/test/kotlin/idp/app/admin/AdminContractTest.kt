@@ -10,6 +10,7 @@ import idp.sharedkernel.testing.asMap
 import idp.sharedkernel.testing.mappedOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.io.File
 import java.util.UUID
@@ -23,7 +24,12 @@ private const val MFA_RESET = "/api/admin/users/{id}/mfa-reset"
 private const val USER = "/api/admin/users/{id}"
 private const val USER_SESSIONS = "/api/admin/users/{id}/sessions"
 private const val ALL_SESSIONS = "/api/admin/sessions"
+private const val SEARCH = "/api/admin/users/search"
+private const val POLICY = "/api/admin/policy"
 private const val ADMIN = " /api/admin/"
+private const val ETAG = "ETag"
+private const val IF_MATCH = "If-Match"
+private const val GET = "GET"
 private const val POST = "POST"
 private const val PUT = "PUT"
 private const val DELETE = "DELETE"
@@ -66,6 +72,50 @@ class AdminContractTest :
         test("the request bodies name what the controller reads") {
             requestFields(POST, USERS) shouldBe setOf("email", "role")
             requestFields(PUT, ROLE) shouldBe setOf("role")
+            requestFields(POST, SEARCH) shouldBe setOf("email")
+            requestFields(PUT, POLICY) shouldBe setOf("mfaForUsers", "passkeyRequired", "sessionIdleSeconds", "sessionAbsoluteSeconds")
+        }
+
+        test("searching conforms, also when refused") {
+            val (browser, _) = admin("contract-searcher")
+            val (ordinary, target) = member("contract-sought")
+
+            val found = browser.post(SEARCH, searchBody("contract-sought@acme.test")).conforms(POST, SEARCH)
+            found.status shouldBe 200
+            found.json().get("users").values().single().run {
+                propertyNames().toSet() shouldBe setOf("id", "role", "status")
+                text("id") shouldBe "$target"
+            }
+            val none = browser.post(SEARCH, searchBody("nobody@acme.test")).conforms(POST, SEARCH)
+            none.json().get("users").size() shouldBe 0
+            browser.post(SEARCH, "{}").conforms(POST, SEARCH).status shouldBe 400
+            browser.post(SEARCH, searchBody("x"), echoCsrf = false).conforms(POST, SEARCH).status shouldBe 403
+            ordinary.post(SEARCH, searchBody("x")).conforms(POST, SEARCH).status shouldBe 403
+            Browser(application).post(SEARCH, searchBody("x")).conforms(POST, SEARCH).status shouldBe 401
+        }
+
+        test("the policy conforms with its ETag, also when refused") {
+            val (browser, admin) = admin("contract-policy")
+            val (ordinary, _) = member("contract-policy-onlooker")
+
+            val read = browser.get(POLICY).conforms(GET, POLICY)
+            read.status shouldBe 200
+            contract.responseHeaders(GET, POLICY, 200).forEach { read.header(it).shouldNotBeNull() }
+            val etag = read.header(ETAG).shouldNotBeNull()
+            val saved = browser.put(POLICY, policyBody(idleSeconds = 1200), IF_MATCH, etag).conforms(PUT, POLICY)
+            saved.status shouldBe 204
+            contract.responseHeaders(PUT, POLICY, 204).forEach { saved.header(it).shouldNotBeNull() }
+            browser.put(POLICY, policyBody(), IF_MATCH, etag).conforms(PUT, POLICY).status shouldBe 412
+            browser.put(POLICY, policyBody()).conforms(PUT, POLICY).status shouldBe 428
+            browser.put(POLICY, "{}", IF_MATCH, etag).conforms(PUT, POLICY).status shouldBe 400
+            val current = saved.header(ETAG).shouldNotBeNull()
+            browser.put(POLICY, policyBody(idleSeconds = 7200), IF_MATCH, current).conforms(PUT, POLICY).status shouldBe 422
+            ordinary.get(POLICY).conforms(GET, POLICY).status shouldBe 403
+            ordinary.put(POLICY, policyBody(), IF_MATCH, current).conforms(PUT, POLICY).status shouldBe 403
+            Browser(application).get(POLICY).conforms(GET, POLICY).status shouldBe 401
+            browser.put(POLICY, policyBody(), IF_MATCH, current).conforms(PUT, POLICY).status shouldBe 204
+            environment.age(admin)
+            browser.put(POLICY, policyBody(idleSeconds = 1200), IF_MATCH, current).conforms(PUT, POLICY).status shouldBe 403
         }
 
         test("inviting and resending conform, also when refused") {

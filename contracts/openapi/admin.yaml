@@ -5,8 +5,8 @@ info:
   description: >-
     The tenant admin area. Every call needs a live session of a `TENANT_ADMIN` of the tenant the host names, and anyone else gets 403.
     A session belongs to its tenant, so a session of another tenant counts as none and gets 401, and a user of another tenant reads as
-    missing. A call that changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Erasing a user
-    and resetting their MFA need a session whose full login is at most 10 minutes old: otherwise the answer is 403 with
+    missing. A call that changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Erasing a user,
+    resetting their MFA and saving the policy need a session whose full login is at most 10 minutes old: otherwise the answer is 403 with
     `reauthentication_required`, and the client walks a flow of the login API started with `reauthenticate`, then repeats the call. A
     client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and a client older than
     the minimum gets 426.
@@ -38,6 +38,37 @@ paths:
           $ref: "#/components/responses/TooLarge"
         "422":
           description: The address is not valid, or the tenant already has a user with it. The answer does not say which
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/search:
+    post:
+      operationId: searchUsers
+      summary: >-
+        Find the user with an address. Only the whole address finds them, in any case, and a part of one finds nobody. The address goes
+        in the body, so it stays out of URLs and logs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSearchRequest"
+      responses:
+        "200":
+          description: The user with the address, or none
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSearch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
         "426":
           $ref: "#/components/responses/UpgradeRequired"
         "429":
@@ -218,6 +249,70 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/admin/policy:
+    get:
+      operationId: getPolicy
+      summary: The login and session policy of the tenant. MFA for `TENANT_ADMIN` is always on, so the policy has no switch for it
+      responses:
+        "200":
+          description: The policy, with its version in `ETag`
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    put:
+      operationId: savePolicy
+      summary: >-
+        Replace the policy read with the `ETag` sent back in `If-Match`. A policy saved meanwhile by someone else gets 412, so the client
+        reads it again. A tighter timeout reaches the sessions already open on their next request
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Policy"
+      responses:
+        "204":
+          description: The policy is saved, with its new version in `ETag`
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "412":
+          description: The policy changed since the client read it, or `If-Match` names no version of it
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: >-
+            A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "428":
+          description: The request has no `If-Match`
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /api/admin/sessions:
     delete:
       operationId: endAllSessions
@@ -242,6 +337,11 @@ components:
       schema:
         type: string
         format: uuid
+  headers:
+    ETag:
+      description: The version of the policy, to send back in `If-Match`
+      schema:
+        type: string
   responses:
     BadRequest:
       description: The request is malformed or names an unknown field
@@ -292,6 +392,56 @@ components:
       properties:
         role:
           $ref: "#/components/schemas/Role"
+    UserSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+    UserSearch:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          maxItems: 1
+          items:
+            $ref: "#/components/schemas/FoundUser"
+    FoundUser:
+      type: object
+      additionalProperties: false
+      required: [id, role, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          type: string
+          enum: [INVITED, ACTIVE, BLOCKED]
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [mfaForUsers, passkeyRequired, sessionIdleSeconds, sessionAbsoluteSeconds]
+      properties:
+        mfaForUsers:
+          type: boolean
+          description: Whether the `USER` role logs in with a second factor. An admin always does
+        passkeyRequired:
+          type: boolean
+          description: Whether every role logs in with a passkey
+        sessionIdleSeconds:
+          type: integer
+          format: int64
+          minimum: 300
+          maximum: 3600
+        sessionAbsoluteSeconds:
+          type: integer
+          format: int64
+          maximum: 86400
     InvitedUser:
       type: object
       additionalProperties: false

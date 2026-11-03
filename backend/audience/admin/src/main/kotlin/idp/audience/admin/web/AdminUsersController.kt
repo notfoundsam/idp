@@ -9,8 +9,11 @@ import idp.audience.admin.application.command.InviteUser
 import idp.audience.admin.application.command.ResendInvitation
 import idp.audience.admin.application.command.ResetMfa
 import idp.audience.admin.application.command.UnblockUser
+import idp.audience.admin.application.query.FindUserByEmail
 import idp.sharedkernel.bus.CommandBus
+import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.UserRole
+import idp.sharedkernel.security.UserStatus
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -36,11 +39,36 @@ data class InvitedUserResponse(
     val id: UUID,
 )
 
+/** Not a data class: `toString` must not print the email. */
+class UserSearchRequest(
+    val email: String,
+)
+
+data class FoundUserResponse(
+    val id: UUID,
+    val role: UserRole,
+    val status: UserStatus,
+)
+
+data class UserSearchResponse(
+    val users: List<FoundUserResponse>,
+)
+
 @RestController
 @RequestMapping("/api/admin")
 class AdminUsersController(
     private val commands: CommandBus,
+    private val queries: QueryBus,
 ) {
+    /** A body rather than a query string, so the address stays out of URLs and access logs. */
+    @PostMapping("/users/search")
+    fun search(
+        @RequestBody request: UserSearchRequest,
+    ): UserSearchResponse {
+        val found = queries.ask(FindUserByEmail(request.email))
+        return UserSearchResponse(listOfNotNull(found?.let { FoundUserResponse(it.id, it.role, it.status) }))
+    }
+
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
     fun invite(

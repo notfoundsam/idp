@@ -15,6 +15,8 @@ Both timeouts come from the tenant policy and are read on every request, so tigh
 
 The default login is multi-factor, so AAL2 is the bar. Both defaults stay within it. The absolute timeout also meets AAL3 and covers a working day, so people log in about once a day. The idle timeout is half the AAL2 limit, because a workforce IdP is often left open on a shared desk. It is deliberately above the 15 minutes of AAL3, which would interrupt anyone reading a long page in an SP.
 
+A tenant admin may change both, but only within AAL2: the idle timeout from 5 minutes to 1 hour, and the absolute timeout from the idle one to 24 hours. Longer values would take the tenant outside the Level 2 claim, so the policy refuses them. The idle timeout cannot go below 5 minutes, because the last seen time moves once a minute and a shorter one would end sessions in use, the admin's own too. A change needs a login at most 10 minutes old and is audited with the new values.
+
 After the absolute timeout the user logs in with all required factors. After the idle timeout the same happens: no shortcut with a single factor exists.
 
 The last seen time is written at most once a minute, so a busy session does not write on every request. The idle timeout can therefore end up to a minute early, and never late.

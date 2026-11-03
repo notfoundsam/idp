@@ -25,12 +25,31 @@ fun inviteBody(
     role: UserRole,
 ) = """{"email":"$email","role":"$role"}"""
 
+fun searchBody(email: String) = """{"email":"$email"}"""
+
+/** The values of the relaxed policy of `acme` in `LoginEnvironment`, unless a test names others. */
+fun policyBody(
+    mfaForUsers: Boolean = false,
+    passkeyRequired: Boolean = false,
+    idleSeconds: Long = 1800,
+    absoluteSeconds: Long = 43200,
+) = """{"mfaForUsers":$mfaForUsers,"passkeyRequired":$passkeyRequired,"sessionIdleSeconds":$idleSeconds,""" +
+    """"sessionAbsoluteSeconds":$absoluteSeconds}"""
+
 fun Browser.put(
     path: String,
     body: String,
+    vararg headers: String,
 ): Reply {
-    val headers = cookies[CsrfCookie.NAME]?.let { arrayOf(CsrfCookie.HEADER, it) } ?: emptyArray()
-    return send("PUT", path, HttpRequest.BodyPublishers.ofString(body), *headers)
+    val csrf = cookies[CsrfCookie.NAME]?.let { arrayOf(CsrfCookie.HEADER, it) } ?: emptyArray()
+    return send("PUT", path, HttpRequest.BodyPublishers.ofString(body), *csrf, *headers)
+}
+
+/** Back to the policy `LoginEnvironment` starts with, so a test that changed it leaves the next one as it found it. */
+fun LoginEnvironment.resetPolicies() {
+    val defaults = "passkey_required = false, session_idle_seconds = 1800, session_absolute_seconds = 43200, version = version + 1"
+    sql.update("UPDATE ${acme.table("tenant_policies")} SET mfa_for_users = false, $defaults")
+    sql.update("UPDATE ${globex.table("tenant_policies")} SET mfa_for_users = true, $defaults")
 }
 
 /** [secret] is the TOTP enrolled at the login, or null when the policy asked for none. */

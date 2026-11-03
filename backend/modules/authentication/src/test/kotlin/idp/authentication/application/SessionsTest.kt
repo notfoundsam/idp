@@ -4,6 +4,7 @@ import idp.authentication.adapters.persistence.TenantPolicies
 import idp.authentication.domain.AuthFactor
 import idp.authentication.domain.FlowExpired
 import idp.authentication.domain.FlowStep
+import idp.authentication.domain.SessionTimeoutsNotValid
 import idp.authentication.domain.StepInProgress
 import idp.authentication.domain.StepNotAllowed
 import idp.authentication.domain.TenantPolicy
@@ -263,6 +264,94 @@ class SessionsTest :
                     shouldThrow<VersionConflictException> {
                         TenantContext.with(tenant) { transaction.execute { policies.save(it, TenantPolicy(version = 0)) } }
                     }
+                }
+            }
+
+            context("saving the policy") {
+                val change =
+                    PolicyChange(
+                        mfaForUsers = false,
+                        passkeyRequired = false,
+                        sessionIdleTimeout = Duration.ofMinutes(15),
+                        sessionAbsoluteTimeout = Duration.ofHours(24),
+                    )
+
+                test("replaces it at the version read, records what changed and returns the new version") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+                    audit.changes.clear()
+
+                    val saved = tenant.acting { savePolicy(change, read.version, ADMIN, IP) }
+
+                    saved shouldBe read.version + 1
+                    tenant.acting { policy() } shouldBe
+                        PolicyView(false, false, Duration.ofMinutes(15), Duration.ofHours(24), saved)
+                    audit.changes.single().run {
+                        actor shouldBe ADMIN
+                        action shouldBe "policy.changed"
+                        ip shouldBe IP
+                        details shouldBe
+                            mapOf("mfa_for_users" to "false", "session_idle_seconds" to "900", "session_absolute_seconds" to "86400")
+                    }
+                    audit.changes.clear()
+                }
+
+                test("the same values keep the version and record nothing") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+                    val same = PolicyChange(read.mfaForUsers, read.passkeyRequired, read.sessionIdleTimeout, read.sessionAbsoluteTimeout)
+                    audit.changes.clear()
+
+                    tenant.acting { savePolicy(same, read.version, ADMIN) } shouldBe read.version
+
+                    tenant.acting { policy() } shouldBe read
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("a stale version loses, also with the same values, and nothing is stored or recorded") {
+                    val tenant = newTenant()
+                    val stale = tenant.acting { policy() }
+                    tenant.acting { savePolicy(change, stale.version, ADMIN) }
+                    val current = tenant.acting { policy() }
+                    audit.changes.clear()
+
+                    shouldThrow<VersionConflictException> {
+                        tenant.acting { savePolicy(change.copy(mfaForUsers = true), stale.version, ADMIN) }
+                    }
+                    shouldThrow<VersionConflictException> { tenant.acting { savePolicy(change, stale.version, ADMIN) } }
+
+                    tenant.acting { policy() } shouldBe current
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("timeouts beyond the limits are refused and nothing is stored or recorded") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+                    audit.changes.clear()
+
+                    listOf(
+                        change.copy(sessionIdleTimeout = Duration.ofMinutes(61)),
+                        change.copy(sessionIdleTimeout = Duration.ofMinutes(4)),
+                        change.copy(sessionAbsoluteTimeout = Duration.ofHours(25)),
+                        change.copy(sessionIdleTimeout = Duration.ofMinutes(45), sessionAbsoluteTimeout = Duration.ofMinutes(30)),
+                    ).forEach { shouldThrow<SessionTimeoutsNotValid> { tenant.acting { savePolicy(it, read.version, ADMIN) } } }
+
+                    tenant.acting { policy() } shouldBe read
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("a relaxed MFA lets a user in with a password, while an admin still enrolls a second factor") {
+                    val tenant = newTenant()
+                    val admin = "grace.hopper@acme.test"
+                    tenant.user()
+                    tenant.user(admin, UserRole.TENANT_ADMIN)
+
+                    tenant.acting { savePolicy(change, policy().version, ADMIN) }
+
+                    tenant.acting { onFlow(tenant.passwordFlow()) { current, now -> current.step(now) } } shouldBe FlowStep.Complete
+                    tenant.acting { onFlow(tenant.passwordFlow(admin)) { current, now -> current.step(now) } } shouldBe
+                        FlowStep.EnrollMfa(setOf(AuthFactor.TOTP, AuthFactor.PASSKEY))
+                    audit.changes.clear()
                 }
             }
 

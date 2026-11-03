@@ -18,6 +18,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Find the user with an address. Only the whole address finds them, in any case, and a part of one finds nobody. The address goes in the body, so it stays out of URLs and logs */
+        post: operations["searchUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/{id}/invitation": {
         parameters: {
             query?: never;
@@ -151,6 +168,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The login and session policy of the tenant. MFA for `TENANT_ADMIN` is always on, so the policy has no switch for it */
+        get: operations["getPolicy"];
+        /** Replace the policy read with the `ETag` sent back in `If-Match`. A policy saved meanwhile by someone else gets 412, so the client reads it again. A tighter timeout reaches the sessions already open on their next request */
+        put: operations["savePolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/sessions": {
         parameters: {
             query?: never;
@@ -180,6 +215,29 @@ export interface components {
         };
         RoleChangeRequest: {
             role: components["schemas"]["Role"];
+        };
+        UserSearchRequest: {
+            email: string;
+        };
+        UserSearch: {
+            users: components["schemas"]["FoundUser"][];
+        };
+        FoundUser: {
+            /** Format: uuid */
+            id: string;
+            role: components["schemas"]["Role"];
+            /** @enum {string} */
+            status: "INVITED" | "ACTIVE" | "BLOCKED";
+        };
+        Policy: {
+            /** @description Whether the `USER` role logs in with a second factor. An admin always does */
+            mfaForUsers: boolean;
+            /** @description Whether every role logs in with a passkey */
+            passkeyRequired: boolean;
+            /** Format: int64 */
+            sessionIdleSeconds: number;
+            /** Format: int64 */
+            sessionAbsoluteSeconds: number;
         };
         InvitedUser: {
             /** Format: uuid */
@@ -263,7 +321,10 @@ export interface components {
         Id: string;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description The version of the policy, to send back in `If-Match` */
+        ETag: string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -301,6 +362,36 @@ export interface operations {
                 };
                 content?: never;
             };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    searchUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description The user with the address, or none */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSearch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["TooLarge"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -516,6 +607,83 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["UserNotFound"];
             426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The policy, with its version in `ETag` */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Policy"];
+                };
+            };
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Forbidden"];
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    savePolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Policy"];
+            };
+        };
+        responses: {
+            /** @description The policy is saved, with its new version in `ETag` */
+            204: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Refused"];
+            /** @description The policy changed since the client read it, or `If-Match` names no version of it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            413: components["responses"]["TooLarge"];
+            /** @description A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            426: components["responses"]["UpgradeRequired"];
+            /** @description The request has no `If-Match` */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             429: components["responses"]["TooManyRequests"];
         };
     };
