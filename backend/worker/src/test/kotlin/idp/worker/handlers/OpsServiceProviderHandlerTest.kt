@@ -120,6 +120,13 @@ class OpsServiceProviderHandlerTest :
 
         test("a repeated event changes nothing") {
             val tenant = serviceTenant()
+            eventually(60.seconds) {
+                sql.queryForObject(
+                    "SELECT count(*) FROM platform.outbox WHERE tenant_id = ? AND status <> 'DONE'",
+                    Int::class.java,
+                    tenantId,
+                ) shouldBe 0
+            }
             val journal = tenant.journal()
             val policyVersion = sql.queryForObject("SELECT version FROM ${tenant.table("tenant_policies")}", Long::class.java)
 
