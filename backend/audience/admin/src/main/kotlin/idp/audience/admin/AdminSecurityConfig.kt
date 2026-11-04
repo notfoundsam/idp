@@ -24,6 +24,7 @@ import idp.audience.admin.application.query.GetServiceProvider
 import idp.audience.admin.application.query.GetUserCard
 import idp.audience.admin.application.query.ListServiceProviders
 import idp.audience.admin.application.query.ListSigningKeys
+import idp.audience.admin.application.query.ReadJournal
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.security.Permission
 import idp.sharedkernel.security.Role
@@ -35,6 +36,7 @@ private val MANAGE_USERS = Permission("admin.users")
 private val MANAGE_POLICY = Permission("admin.policy")
 private val MANAGE_SERVICE_PROVIDERS = Permission("admin.service_providers")
 private val MANAGE_SIGNING_KEYS = Permission("admin.signing_keys")
+private val READ_AUDIT = Permission("admin.audit")
 
 /**
  * Only an admin of the tenant of the request. A session belongs to the tenant whose schema holds it, so an admin of another tenant has
@@ -67,8 +69,12 @@ object AdminSecurityConfig : SecurityConfig {
             ListSigningKeys::class to MANAGE_SIGNING_KEYS,
             StartKeyRotation::class to MANAGE_SIGNING_KEYS,
             CompleteKeyRotation::class to MANAGE_SIGNING_KEYS,
+            ReadJournal::class to READ_AUDIT,
         )
 
     override val roles: Map<Role, Set<Permission>> =
-        mapOf(Role(UserRole.TENANT_ADMIN.name) to setOf(MANAGE_USERS, MANAGE_POLICY, MANAGE_SERVICE_PROVIDERS, MANAGE_SIGNING_KEYS))
+        mapOf(
+            Role(UserRole.TENANT_ADMIN.name) to
+                setOf(MANAGE_USERS, MANAGE_POLICY, MANAGE_SERVICE_PROVIDERS, MANAGE_SIGNING_KEYS, READ_AUDIT),
+        )
 }

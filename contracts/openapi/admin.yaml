@@ -650,6 +650,63 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/admin/audit:
+    get:
+      operationId: readAuditJournal
+      summary: >-
+        The journal of the tenant, the newest record first, with the IP and the details. A record whose actor was erased keeps the fact
+        and loses the IP and the details. The next page starts from `next`
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          description: The time of the last record already read. Comes only with `beforeId`
+          schema:
+            type: string
+            format: date-time
+        - name: beforeId
+          in: query
+          description: The ID of the last record already read. Comes only with `before`
+          schema:
+            type: string
+            format: uuid
+        - name: targetType
+          in: query
+          description: Only the records about one target. Comes only with `targetId`
+          schema:
+            $ref: "#/components/schemas/AuditTargetType"
+        - name: targetId
+          in: query
+          description: Comes only with `targetType`
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of the journal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditJournal"
+        "400":
+          description: >-
+            A limit out of range, a malformed value, or one of `before` and `beforeId` or of `targetType` and `targetId` without the
+            other
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 components:
   parameters:
     Id:
@@ -826,7 +883,9 @@ components:
         sessionAbsoluteSeconds:
           type: integer
           format: int64
+          minimum: 300
           maximum: 86400
+          description: At least `sessionIdleSeconds`
     InvitedUser:
       type: object
       additionalProperties: false
@@ -1011,6 +1070,70 @@ components:
         createdAt:
           type: string
           format: date-time
+    AuditTargetType:
+      type: string
+      enum: [USER, TENANT, SERVICE_PROVIDER, SIGNING_KEY]
+    AuditJournal:
+      type: object
+      additionalProperties: false
+      required: [entries, next]
+      properties:
+        entries:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        next:
+          oneOf:
+            - $ref: "#/components/schemas/AuditCursor"
+            - type: "null"
+          description: The query parameters of the next page, null on the last one
+    AuditCursor:
+      type: object
+      additionalProperties: false
+      required: [before, beforeId]
+      properties:
+        before:
+          type: string
+          format: date-time
+        beforeId:
+          type: string
+          format: uuid
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, action, actorType, actorId, targetType, targetId, ip, details]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        actorType:
+          type: string
+          enum: [USER, SYSTEM, ANONYMOUS]
+        actorId:
+          type: [string, "null"]
+          format: uuid
+          description: The user who acted, null unless `actorType` is `USER`
+        targetType:
+          oneOf:
+            - $ref: "#/components/schemas/AuditTargetType"
+            - type: "null"
+        targetId:
+          type: [string, "null"]
+          format: uuid
+        ip:
+          type: [string, "null"]
+          description: The address of the actor, null when the record has none or the actor was erased
+        details:
+          type: [object, "null"]
+          additionalProperties:
+            type: string
+          description: What the action changed, never personal data of anyone but the actor. Null once the actor was erased
     ReauthenticationRequired:
       type: object
       additionalProperties: false

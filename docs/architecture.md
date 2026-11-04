@@ -60,5 +60,5 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 ## Other documents
 
 - `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP
-- `docs/security/`: ASVS map, authorization, authentication, sessions, limits, data protection, crypto inventory and runbooks
+- `docs/security/`: ASVS map, authorization, authentication, sessions, limits, input validation, data protection, crypto inventory and runbooks
 - `docs/testing.md`: test layers, tools and fixtures

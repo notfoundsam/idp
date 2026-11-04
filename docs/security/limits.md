@@ -49,6 +49,7 @@ A flow lives for 15 minutes and is one of the few rows an anonymous caller can a
 | Body of an API or SAML request | 32 KiB, the same on every tenant | `413` |
 | Upload of SP metadata, `POST /api/admin/service-providers` | 160 KiB for the form, kept in memory. The importer refuses a file over 128 KiB | `413`, then `422` |
 | Users in one assignment or revocation | 500 | `400` |
+| Records in one page of the journal, `GET /api/admin/audit` | 100, 50 when not asked | `400` |
 | Body without a length | Refused, a browser always sends one | `411` |
 | Client version | At least `MIN_CLIENT_VERSION`, when set | `426` |
 | AuthnRequest, decoded and inflated | 32 KiB, counted while inflating | Error page |

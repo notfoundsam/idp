@@ -39,6 +39,7 @@ private const val SP_REMOVAL = "/api/admin/service-providers/{id}/users/removal"
 private const val KEYS = "/api/admin/signing-keys"
 private const val ROTATION = "/api/admin/signing-keys/rotation"
 private const val COMPLETION = "/api/admin/signing-keys/rotation/completion"
+private const val AUDIT = "/api/admin/audit"
 private const val ADMIN = " /api/admin/"
 private const val ETAG = "ETag"
 private const val IF_MATCH = "If-Match"
@@ -90,6 +91,34 @@ class AdminContractTest :
             requestFields(PUT, SP_SETTINGS) shouldBe setOf("nameIdFormat", "signedPart", "signatureAlgorithm", "attributes")
             requestFields(POST, SP_USERS) shouldBe setOf("userIds")
             requestFields(POST, SP_REMOVAL) shouldBe setOf("userIds")
+        }
+
+        test("the query of the journal names what the controller reads") {
+            contract.queryParameters(GET, AUDIT) shouldBe setOf("limit", "before", "beforeId", "targetType", "targetId")
+        }
+
+        test("the journal conforms with every record inside, also when refused") {
+            val (browser, _) = admin("contract-journal-reader")
+            val (_, erased) = member("contract-journal-erased")
+            val (ordinary, _) = member("contract-journal-onlooker")
+            browser.delete(USER.of(erased)).status shouldBe 204
+            val entry = contract.schema("AuditEntry")
+
+            val page = browser.get("$AUDIT?limit=5").conforms(GET, AUDIT)
+            page.status shouldBe 200
+            val entries = page.json().get("entries").values()
+            entries.forEach { contract.shouldMatch(it, entry) }
+            contract.shouldMatch(page.json().get("next"), contract.schema("AuditCursor"))
+            val about = browser.get("$AUDIT?targetType=USER&targetId=$erased&limit=100").conforms(GET, AUDIT)
+            val records = about.json().get("entries").values()
+            records.forEach { contract.shouldMatch(it, entry) }
+            records.map { it.get("ip").isNull to it.get("details").isNull } shouldContain (true to true)
+            records.map { it.text("actorType") } shouldContain "SYSTEM"
+            about.json().get("next").isNull shouldBe true
+            browser.get("$AUDIT?limit=0").conforms(GET, AUDIT).status shouldBe 400
+            browser.get("$AUDIT?targetType=USER").conforms(GET, AUDIT).status shouldBe 400
+            ordinary.get(AUDIT).conforms(GET, AUDIT).status shouldBe 403
+            Browser(application).get(AUDIT).conforms(GET, AUDIT).status shouldBe 401
         }
 
         test("the Service Providers conform, also when refused") {

@@ -31,6 +31,7 @@ Who may call which function, reach which data and read which field. A new messag
 | `admin` | `admin.policy` | `TENANT_ADMIN` | Read and save the policy | Saving needs a login at most 10 minutes old and the current `If-Match` |
 | `admin` | `admin.service_providers` | `TENANT_ADMIN` | List, read, register from a metadata file and remove SPs, save their settings, list, assign and revoke their users | Saving settings needs a login at most 10 minutes old and the current `If-Match`, removing an SP a login at most 10 minutes old |
 | `admin` | `admin.signing_keys` | `TENANT_ADMIN` | List the SAML signing keys, start and complete a rotation | Completing needs a login at most 10 minutes old |
+| `admin` | `admin.audit` | `TENANT_ADMIN` | Read the journal of the tenant, whole or about one target | |
 | `operator` | `tenants.read` | `Operator`, `OperatorCli` | Read a tenant and an application | |
 | `operator` | `tenants.manage` | `Operator`, `OperatorCli` | Submit and approve an application, suspend, resume, offboard, cancel offboarding, reinvite the admin | |
 | `operator` | `tenants.bootstrap` | `OperatorCli` | Bootstrap the service tenant | The API never holds this role |
@@ -44,7 +45,7 @@ Domain rules stand on top of permissions: the last active admin of a tenant cann
 |---|---|---|
 | Anonymous | The flow bound to their browser, the user named by a valid one-time token | Anything else |
 | `USER` | Their own factors and sessions. A message of `account` names no user, the handler takes the one of the session | Other users: a passkey or a session of someone else reads as missing |
-| `TENANT_ADMIN` | Every user of the tenant, themselves too, the policy, the SPs and their assignments, the signing keys | Users and SPs of other tenants read as missing, a session of another tenant counts as none, and a list of users that names one of another tenant assigns nobody |
+| `TENANT_ADMIN` | Every user of the tenant, themselves too, the policy, the SPs and their assignments, the signing keys, the journal of the tenant | Users and SPs of other tenants read as missing, a session of another tenant counts as none, and a list of users that names one of another tenant assigns nobody |
 | `Operator`, `OperatorCli` | `platform` only, under `ops_runtime` | Tenant schemas and customer data |
 | An SP | The NameID and the attributes released to it, for its assigned users | Everyone else and every attribute not released |
 | System | One tenant per transaction, under the role of its job | |
@@ -63,7 +64,8 @@ Domain rules stand on top of permissions: the last active admin of a tenant cann
 | SP: EntityID, name, endpoints, certificate fingerprints, settings | No | Yes. The file name of the uploaded metadata is never read | Never |
 | SAML signing keys | No | Status, certificate fingerprint and dates. The private key never | Never |
 | Audit records about a user | No | On the card the newest 20: time, action, actor type and ID. The IP and the details stay out | The operator journal only |
+| Audit journal of the tenant | No | Every record: time, action, actor type and ID, target, IP and details. A record whose actor was erased keeps the fact without the IP and the details | Never. The operator journal only |
 | Policy | No | Yes | Never |
 | Tenant | No | No | Name, status, provisioning step, offboarding date |
 
-The admin API for the journal adds its rows here.
+The journal shows the IP and the details, because finding out who did what from where is what an admin reads it for, and the tenant is the controller of that data. Neither names anyone but the actor, see `AuditRecord`. The card leaves them out, since it is a summary that every look at a user opens.

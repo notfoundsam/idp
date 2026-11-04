@@ -93,14 +93,16 @@ class UserCardResponse(
 )
 
 /** An operator acts in `platform.operator_audit`, never in the journal of a tenant. */
+internal fun Actor.typeAndId(): Pair<ActorType, UUID?> =
+    when (this) {
+        is Actor.User -> ActorType.USER to id
+        Actor.System -> ActorType.SYSTEM to null
+        Actor.Anonymous -> ActorType.ANONYMOUS to null
+        is Actor.Operator -> error("An operator in the journal of a tenant")
+    }
+
 private fun AuditEntryView.response(): UserEventResponse {
-    val (type, actorId) =
-        when (val actor = actor) {
-            is Actor.User -> ActorType.USER to actor.id
-            Actor.System -> ActorType.SYSTEM to null
-            Actor.Anonymous -> ActorType.ANONYMOUS to null
-            is Actor.Operator -> error("An operator in the journal of a tenant")
-        }
+    val (type, actorId) = actor.typeAndId()
     return UserEventResponse(id, occurredAt, action, type, actorId)
 }
 

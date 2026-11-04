@@ -72,6 +72,17 @@ class OpenApiContract(
             ?.keys
             .orEmpty()
 
+    fun queryParameters(
+        method: String,
+        path: String,
+    ): Set<String> =
+        (operation(method, path)["parameters"] as List<*>?)
+            .orEmpty()
+            .map { resolve(it.asMap()) }
+            .filter { it["in"] == "query" }
+            .map { it["name"] as String }
+            .toSet()
+
     fun requestSchema(
         method: String,
         path: String,
@@ -92,11 +103,19 @@ class OpenApiContract(
         body.propertyNames().toList().shouldContainExactlyInAnyOrder(properties.keys)
         (schema["required"] as List<*>).toSet() shouldBe properties.keys
         properties.forEach { (name, property) ->
-            val resolved = resolve(property.asMap())
-            typesOf(resolved) shouldContain typeOf(body.get(name))
-            (resolved["enum"] as List<*>?)?.let { values -> values shouldContain body.get(name).asString() }
+            val value = body.get(name)
+            val alternatives = alternativesOf(resolve(property.asMap()))
+            alternatives.flatMap(::typesOf).toSet() shouldContain typeOf(value)
+            val values = alternatives.mapNotNull { it["enum"] as List<*>? }
+            if (values.isNotEmpty() && !value.isNull) values.flatten() shouldContain value.asString()
         }
     }
+
+    fun schema(name: String): Map<String, Any?> = resolve(mapOf("\$ref" to "#/components/schemas/$name"))
+
+    /** A nullable reference is a `oneOf` of the referenced schema and `null`, as OpenAPI 3.1 writes it. */
+    private fun alternativesOf(property: Map<String, Any?>): List<Map<String, Any?>> =
+        (property["oneOf"] as List<*>?)?.map { resolve(it.asMap()) } ?: listOf(property)
 
     private fun resolve(node: Map<String, Any?>): Map<String, Any?> {
         val reference = node["\$ref"] as String? ?: return node

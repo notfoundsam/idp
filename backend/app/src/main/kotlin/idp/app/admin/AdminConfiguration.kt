@@ -25,6 +25,8 @@ import idp.audience.admin.application.query.GetServiceProviderHandler
 import idp.audience.admin.application.query.GetUserCardHandler
 import idp.audience.admin.application.query.ListServiceProvidersHandler
 import idp.audience.admin.application.query.ListSigningKeysHandler
+import idp.audience.admin.application.query.ReadJournalHandler
+import idp.audience.admin.web.AdminAuditController
 import idp.audience.admin.web.AdminPolicyController
 import idp.audience.admin.web.AdminServiceProvidersController
 import idp.audience.admin.web.AdminUsersController
@@ -130,6 +132,12 @@ class AdminConfiguration {
 
     @Bean
     fun completeKeyRotationHandler(federation: FederationService) = CompleteKeyRotationHandler(federation)
+
+    @Bean
+    fun readJournalHandler(audit: AuditService) = ReadJournalHandler(audit)
+
+    @Bean
+    fun adminAuditController(queries: QueryBus) = AdminAuditController(queries)
 
     @Bean
     fun adminServiceProvidersController(

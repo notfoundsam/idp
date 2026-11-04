@@ -351,6 +351,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The journal of the tenant, the newest record first, with the IP and the details. A record whose actor was erased keeps the fact and loses the IP and the details. The next page starts from `next` */
+        get: operations["readAuditJournal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -417,7 +434,10 @@ export interface components {
             passkeyRequired: boolean;
             /** Format: int64 */
             sessionIdleSeconds: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description At least `sessionIdleSeconds`
+             */
             sessionAbsoluteSeconds: number;
         };
         InvitedUser: {
@@ -514,6 +534,42 @@ export interface components {
             notAfter: string;
             /** Format: date-time */
             createdAt: string;
+        };
+        /** @enum {string} */
+        AuditTargetType: "USER" | "TENANT" | "SERVICE_PROVIDER" | "SIGNING_KEY";
+        AuditJournal: {
+            entries: components["schemas"]["AuditEntry"][];
+            /** @description The query parameters of the next page, null on the last one */
+            next: components["schemas"]["AuditCursor"] | null;
+        };
+        AuditCursor: {
+            /** Format: date-time */
+            before: string;
+            /** Format: uuid */
+            beforeId: string;
+        };
+        AuditEntry: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurredAt: string;
+            action: string;
+            /** @enum {string} */
+            actorType: "USER" | "SYSTEM" | "ANONYMOUS";
+            /**
+             * Format: uuid
+             * @description The user who acted, null unless `actorType` is `USER`
+             */
+            actorId: string | null;
+            targetType: components["schemas"]["AuditTargetType"] | null;
+            /** Format: uuid */
+            targetId: string | null;
+            /** @description The address of the actor, null when the record has none or the actor was erased */
+            ip: string | null;
+            /** @description What the action changed, never personal data of anyone but the actor. Null once the actor was erased */
+            details: {
+                [key: string]: string;
+            } | null;
         };
         ReauthenticationRequired: {
             /** @enum {string} */
@@ -1384,6 +1440,47 @@ export interface operations {
                 content?: never;
             };
             413: components["responses"]["TooLarge"];
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    readAuditJournal: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description The time of the last record already read. Comes only with `beforeId` */
+                before?: string;
+                /** @description The ID of the last record already read. Comes only with `before` */
+                beforeId?: string;
+                /** @description Only the records about one target. Comes only with `targetId` */
+                targetType?: components["schemas"]["AuditTargetType"];
+                /** @description Comes only with `targetType` */
+                targetId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the journal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditJournal"];
+                };
+            };
+            /** @description A limit out of range, a malformed value, or one of `before` and `beforeId` or of `targetType` and `targetId` without the other */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Forbidden"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };

@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 115 |
-| Partial | Part of the control is merged, the listed tasks finish it | 41 |
-| Planned | The listed tasks build the control | 26 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 125 |
+| Partial | Part of the control is merged, the listed tasks finish it | 35 |
+| Planned | The listed tasks build the control | 22 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -57,7 +57,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.3.10 | 2 | N/A | | No format string comes from input |
 | V1.3.11 | 2 | Done | T12 | Mail fields go through `MimeMessageHelper`, control characters are removed (`MailTemplatesTest`) |
 | V1.4.1 | 2 | N/A | | JVM and JavaScript are memory safe, the application has no native code of its own |
-| V1.4.2 | 2 | Planned | T36 | Numeric API inputs have ranges in the contracts |
+| V1.4.2 | 2 | Done | T36 | Every numeric input has its range in the contract and on the server, and a number past its type answers `400` instead of wrapping (`AdminPolicyApiTest`, `AdminAuditApiTest`). See [input-validation.md](input-validation.md) |
 | V1.4.3 | 2 | N/A | | Garbage-collected runtimes |
 | V1.5.1 | 1 | Done | T30 | XML parsers refuse DTDs and external entities, with negative tests. The parser of metadata and AuthnRequests refuses DTDs, external entities and XInclude (`MetadataImporterTest`, `AuthnRequestValidatorTest`), `ops` refuses a Response with a DOCTYPE (`OpsSamlLoginTest`) |
 | V1.5.2 | 2 | Done | T8 | Jackson binds fixed types without default typing, no Java serialization (`OutboxDispatcherTest`) |
@@ -66,12 +66,12 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V2.1.1 | 1 | Planned | T36 | `docs/security/input-validation.md` and the OpenAPI contracts define input rules |
-| V2.1.2 | 2 | Planned | T36 | The same document covers combined data items |
+| V2.1.1 | 1 | Done | T36 | [input-validation.md](input-validation.md) defines the rules of every input and the answer to a broken one, and the OpenAPI contracts carry their types, formats, enums, ranges and list sizes, checked against the controllers by the contract tests (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
+| V2.1.2 | 2 | Done | T36 | The same document lists the combinations: the timeouts of the policy, the halves of a journal cursor and target, signed requests and their certificate, the ACS endpoints of metadata, and states that SP settings combine freely |
 | V2.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists per-user and global limits |
-| V2.2.1 | 1 | Partial | T32, T34, T36 | Domain types validate on the server (`TenantTest`), the login API refuses malformed input (`FlowApiTest`), each API adds its inputs |
-| V2.2.2 | 1 | Partial | T32, T34, T36 | Validation lives in the domain and the audience, client checks are convenience only |
-| V2.2.3 | 2 | Partial | T34, T36 | The policy is checked as a combination: an idle timeout longer than the absolute one is refused (`TenantPolicyTest`, `AdminPolicyApiTest`). SP settings remain |
+| V2.2.1 | 1 | Done | T32, T34, T36 | Every input is checked on the server by the rules of [input-validation.md](input-validation.md): domain types validate themselves (`TenantTest`, `TenantPolicyTest`, `ServiceProviderTest`, `MetadataImporterTest`), and every API refuses malformed input (`FlowApiTest`, `AccountApiTest`, `AdminUsersApiTest`, `AdminPolicyApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`, `OpsApiTest`) |
+| V2.2.2 | 1 | Done | T32, T34, T36 | Validation lives in the domain and the audience on the server, and checks of the frontend are a convenience only, by inspection and [input-validation.md](input-validation.md) |
+| V2.2.3 | 2 | Done | T34, T36 | The policy is checked as a combination: an idle timeout longer than the absolute one is refused (`TenantPolicyTest`, `AdminPolicyApiTest`). Half a cursor or half a target of the journal answers `400` (`AdminAuditApiTest`), and metadata that wants signed requests without a certificate is refused (`MetadataImporterTest`). SP settings have no dependent values, see [input-validation.md](input-validation.md) |
 | V2.3.1 | 1 | Done | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API cannot skip one (`FlowApiTest`) |
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
@@ -123,7 +123,7 @@ SP metadata import is the only file upload.
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V5.1.1 | 2 | Planned | T36 | `docs/security/input-validation.md` describes the upload |
+| V5.1.1 | 2 | Done | T36 | [input-validation.md](input-validation.md) describes the only upload, SP metadata: SAML metadata of one SP whatever the file name or part type, 160 KiB for the form and 128 KiB for the file, nothing unpacked, `413` or `422` with no body for a bad file, and the file itself is neither kept nor served |
 | V5.2.1 | 1 | Done | T27 | Metadata over 128 KiB is refused before parsing (`MetadataImporterTest`) |
 | V5.2.2 | 1 | Done | T27 | Content must be one `EntityDescriptor` with an SP role that validates against the SAML metadata schema (`MetadataImporterTest`) |
 | V5.2.3 | 2 | N/A | | Compressed files are not accepted. SAML DEFLATE limits are under V15.2.2 |
@@ -202,11 +202,11 @@ SP metadata import is the only file upload.
 |---|---|---|---|---|
 | V8.1.1 | 1 | Done | T34 | [authorization.md](authorization.md) defines the function rules of every role and the operator, and the data each reaches |
 | V8.1.2 | 2 | Done | T34 | The same document defines which fields each role and the operator read, and `ArchitectureRulesTest` keeps context types out of responses |
-| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages, the policy, the SPs and the signing keys too, to `TENANT_ADMIN` only (`AdminUsersApiTest`, `AdminPolicyApiTest`, `AdminServiceProvidersApiTest`), the operator audience adds its rules |
-| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`). An admin reaches only the users and SPs of the tenant whose schema holds the session, a user or an SP of another tenant reads as missing, an assignment that names a user of another tenant assigns nobody, and a session of another tenant counts as none (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`). The operator audience remains |
-| V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`). A controller returns only types of its audience (`ArchitectureRulesTest`), and the user card leaves out the IP and the details of audit records (`AdminUsersApiTest`) |
-| V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), and the admin API refuses an ordinary user and an admin of another tenant there (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`), the operator audience adds its rules |
-| V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), API and e2e isolation tests remain |
+| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages, the policy, the SPs, the signing keys and the journal too, to `TENANT_ADMIN` only (`AdminUsersApiTest`, `AdminPolicyApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`), the operator audience adds its rules |
+| V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`). An admin reaches only the users and SPs of the tenant whose schema holds the session, a user or an SP of another tenant reads as missing, an assignment that names a user of another tenant assigns nobody, a session of another tenant counts as none, and the journal holds only records of its own tenant (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`). The operator audience remains |
+| V8.2.3 | 2 | Done | T32, T34, T36 | [authorization.md](authorization.md) sets the fields of every role. `ops` reads only the masked contact (`OpsAccessBoundaryTest`). A controller returns only types of its audience (`ArchitectureRulesTest`), the user card leaves out the IP and the details of audit records (`AdminUsersApiTest`), and the journal shows them to an admin, never those of an erased actor (`AdminAuditApiTest`) |
+| V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), and the admin API refuses an ordinary user and an admin of another tenant there (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`), the operator audience adds its rules |
+| V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), and the admin API reaches only the users, SPs and journal of its tenant (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`). e2e isolation tests remain |
 
 ## V9 Self-contained Tokens
 
@@ -333,7 +333,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
 | V15.2.2 | 2 | Done | | Throttling, the hash semaphore and the limits on flows, open SAML requests and request size are merged (`HashLimitTest`, `LoginLimitsTest`, `SamlRequestsTest`). An inflated request is cut at 32 KiB before parsing (`AuthnRequestValidatorTest`) |
 | V15.2.3 | 2 | Partial | T41 | Seed runs only in `local` (`LocalSeedTest`), production must never set that profile |
-| V15.3.1 | 1 | Partial | T32, T34, T36 | Audiences own responses (`OpsApiTest`, `FlowContractTest`), each API adds its own |
+| V15.3.1 | 1 | Done | T32, T34, T36 | Audiences own their responses and build them field by field (`ArchitectureRulesTest`), and every contract test checks that a response carries exactly the fields of its schema (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
 | V15.3.3 | 2 | Done | T23 | Requests list their fields, unknown fields are refused (`FlowApiTest`, `OpsApiTest`) |
 | V15.3.4 | 2 | Partial | T40, T41 | One trusted header (`ClientIpTest`), the edge must set it |
@@ -356,7 +356,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V16.3.3 | 2 | Partial | T38 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`) |
 | V16.3.4 | 2 | Planned | T38 | Unexpected errors and backend TLS failures are logged and alerted |
 | V16.4.1 | 2 | Planned | T38 | The JSON encoder escapes log content |
-| V16.4.2 | 2 | Partial | T41 | Audit is append-only (`AuditTest`), log storage remains |
+| V16.4.2 | 2 | Partial | T41 | Audit is append-only (`AuditTest`), and only an admin of the tenant reads its journal (`AdminAuditApiTest`). Log storage remains |
 | V16.4.3 | 2 | Planned | T38, T41 | Logs leave the services through the collector for a separate store |
 | V16.5.1 | 2 | Done | T23 | `BusExceptionAdvice` answers refusals without a body, an unexpected error answers in general terms (`FailureResponsesTest`) |
 | V16.5.2 | 2 | Done | T23 | Valkey, KMS and database failures are handled (`ThrottleTest`, `KeyHierarchyTest`, `FailureResponsesTest`) |
