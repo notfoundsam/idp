@@ -4,6 +4,8 @@ import com.tngtech.archunit.base.DescribedPredicate.not
 import com.tngtech.archunit.core.domain.JavaClass
 import com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage
 import com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage
+import com.tngtech.archunit.core.domain.JavaMethod
+import com.tngtech.archunit.core.domain.JavaModifier
 import com.tngtech.archunit.core.domain.JavaPackage
 import com.tngtech.archunit.lang.ArchCondition
 import com.tngtech.archunit.lang.ArchRule
@@ -11,6 +13,7 @@ import com.tngtech.archunit.lang.CompositeArchRule
 import com.tngtech.archunit.lang.ConditionEvents
 import com.tngtech.archunit.lang.SimpleConditionEvent
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
+import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.security.SecurityConfig
@@ -304,6 +307,59 @@ object ArchitectureRules {
             .areNotInterfaces()
             .should(publicListed(root))
 
+    private fun isContextType(
+        type: JavaClass,
+        root: String,
+    ) = contexts.any { type.packageName == "$root.$it" || type.packageName.startsWith("$root.$it.") }
+
+    /** Walks into the fields of the audience's own types, because JSON writes them too. */
+    private fun contextTypesIn(
+        types: Collection<JavaClass>,
+        root: String,
+    ): Set<JavaClass> {
+        val seen = mutableSetOf<JavaClass>()
+        val found = mutableSetOf<JavaClass>()
+        val pending = ArrayDeque(types)
+        while (pending.isNotEmpty()) {
+            val type = pending.removeFirst()
+            if (!seen.add(type)) continue
+            when {
+                isContextType(type, root) -> found += type
+                type.packageName.startsWith("$root.audience.") ->
+                    type.allFields
+                        .filterNot { JavaModifier.STATIC in it.modifiers }
+                        .forEach { pending += it.type.allInvolvedRawTypes }
+            }
+        }
+        return found
+    }
+
+    private fun exposeNoContextTypes(root: String) =
+        object : ArchCondition<JavaMethod>("take and return only types of their audience, never those of a context") {
+            override fun check(
+                method: JavaMethod,
+                events: ConditionEvents,
+            ) {
+                val types = (listOf(method.returnType) + method.parameters.map { it.type }).flatMap { it.allInvolvedRawTypes }
+                contextTypesIn(types, root).forEach {
+                    events.add(SimpleConditionEvent.violated(method, "${method.fullName} exposes ${it.name}"))
+                }
+            }
+        }
+
+    /** A response belongs to its audience, so two audiences can shape the same data differently. */
+    private fun audienceResponses(root: String): ArchRule =
+        methods()
+            .that()
+            .areDeclaredInClassesThat()
+            .resideInAPackage("$root.audience..")
+            .and()
+            .areDeclaredInClassesThat()
+            .areMetaAnnotatedWith(CONTROLLER)
+            .and()
+            .arePublic()
+            .should(exposeNoContextTypes(root))
+
     private fun jooqUsage(root: String): ArchRule =
         noClasses()
             .that()
@@ -354,6 +410,7 @@ object ArchitectureRules {
             "throttleonlyinapp" to ::throttleOnlyInApp,
             "audiencemessages" to ::audienceMessages,
             "publicmessages" to ::publicMessagesListed,
+            "audienceresponses" to ::audienceResponses,
             "jooqusage" to ::jooqUsage,
             "tableowner" to ::tableOwner,
             "tableunmapped" to ::tableUnmapped,

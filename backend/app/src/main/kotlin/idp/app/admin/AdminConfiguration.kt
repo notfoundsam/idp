@@ -13,9 +13,12 @@ import idp.audience.admin.application.command.SavePolicyHandler
 import idp.audience.admin.application.command.UnblockUserHandler
 import idp.audience.admin.application.query.FindUserByEmailHandler
 import idp.audience.admin.application.query.GetPolicyHandler
+import idp.audience.admin.application.query.GetUserCardHandler
 import idp.audience.admin.web.AdminPolicyController
 import idp.audience.admin.web.AdminUsersController
+import idp.audit.application.AuditService
 import idp.authentication.application.AuthenticationService
+import idp.federation.application.FederationService
 import idp.identity.application.IdentityService
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
@@ -72,6 +75,13 @@ class AdminConfiguration {
 
     @Bean
     fun findUserByEmailHandler(identity: IdentityService) = FindUserByEmailHandler(identity)
+
+    @Bean
+    fun getUserCardHandler(
+        identity: IdentityService,
+        federation: FederationService,
+        audit: AuditService,
+    ) = GetUserCardHandler(identity, federation, audit)
 
     @Bean
     fun adminUsersController(

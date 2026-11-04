@@ -47,13 +47,14 @@ class AuditService(
         transaction.executeSeparately { dsl -> add(dsl, record) }
     }
 
-    /** One erased actor must not fail the journal, so a row without its key reads as a bare fact. */
+    /** One erased actor must not fail the journal, so a row without its key reads as a bare fact. [target] keeps the records about it. */
     fun read(
         limit: Int,
         before: AuditCursor? = null,
+        target: AuditTarget? = null,
     ): List<AuditEntryView> =
         transaction.execute { dsl ->
-            val page = entries.page(dsl, limit, before)
+            val page = entries.page(dsl, limit, before, target)
             val derived = keys.derivedCipher(DerivedKey.AUDIT)
             val ciphers = keys.userCiphers(page.mapNotNull { it.keyOwner })
             page.map { entry ->

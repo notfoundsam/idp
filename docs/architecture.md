@@ -52,7 +52,7 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 ## Where things go
 
 - **New table:** a new `V<n>__*.sql` in `backend/db/src/main/resources/db/platform` or `db/tenant`, an entry in `tableOwners`, access only from the owner's `adapters/persistence`.
-- **New endpoint:** the contract in `contracts/openapi` first, then the message, its `*SecurityConfig` entry and the controller in the audience.
+- **New endpoint:** the contract in `contracts/openapi` first, then the message, its `*SecurityConfig` entry, the controller and its request and response types in the audience, and its row in `docs/security/authorization.md`. A context type never goes over HTTP.
 - **Sensitive action:** a record through `AuditLog`.
 - **Security control:** its row in `docs/security/asvs-l2.md`.
 - **Work without a user:** a handler or job in `worker` that calls services.
@@ -60,5 +60,5 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 ## Other documents
 
 - `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP
-- `docs/security/`: ASVS map, authentication, sessions, limits, data protection, crypto inventory and runbooks
+- `docs/security/`: ASVS map, authorization, authentication, sessions, limits, data protection, crypto inventory and runbooks
 - `docs/testing.md`: test layers, tools and fixtures

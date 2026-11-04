@@ -139,7 +139,8 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /** The card of a user: who they are, the Service Providers they are assigned to and the newest records of the journal about them */
+        get: operations["getUser"];
         put?: never;
         post?: never;
         /** Erase a user with their data and sessions. The ID is never given out again */
@@ -226,8 +227,41 @@ export interface components {
             /** Format: uuid */
             id: string;
             role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+        };
+        /** @enum {string} */
+        UserStatus: "INVITED" | "ACTIVE" | "BLOCKED";
+        UserCard: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            name: string | null;
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+            /** @description The Service Providers the user is assigned to, by name */
+            serviceProviders: components["schemas"]["AssignedServiceProvider"][];
+            /** @description The newest records of the journal whose target is the user, the newest first. The IP and the details stay out */
+            events: components["schemas"]["UserEvent"][];
+        };
+        AssignedServiceProvider: {
+            /** Format: uuid */
+            id: string;
+            entityId: string;
+            name: string;
+        };
+        UserEvent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurredAt: string;
+            action: string;
             /** @enum {string} */
-            status: "INVITED" | "ACTIVE" | "BLOCKED";
+            actorType: "USER" | "SYSTEM" | "ANONYMOUS";
+            /**
+             * Format: uuid
+             * @description The user who acted, null unless `actorType` is `USER`
+             */
+            actorId: string | null;
         };
         Policy: {
             /** @description Whether the `USER` role logs in with a second factor. An admin always does */
@@ -553,6 +587,34 @@ export interface operations {
             403: components["responses"]["Refused"];
             404: components["responses"]["UserNotFound"];
             413: components["responses"]["TooLarge"];
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The card */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserCard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["NoSession"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["UserNotFound"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };

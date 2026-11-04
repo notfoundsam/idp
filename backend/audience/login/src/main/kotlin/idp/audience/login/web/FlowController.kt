@@ -82,18 +82,52 @@ class PasskeyEnrollmentRequest(
     val clientDataJson: String,
 )
 
+enum class FlowStep {
+    IDENTIFY,
+    PASSWORD,
+    SECOND_FACTOR,
+    ENROLL_MFA,
+    COMPLETE,
+}
+
+enum class FlowFactor {
+    PASSWORD,
+    TOTP,
+    PASSKEY,
+    RECOVERY_CODE,
+}
+
 data class FlowResponse(
     val id: UUID,
-    val step: LoginStep,
-    val factors: List<LoginFactor>,
+    val step: FlowStep,
+    val factors: List<FlowFactor>,
 )
 
 class EnrolledResponse(
     val id: UUID,
-    val step: LoginStep,
-    val factors: List<LoginFactor>,
+    val step: FlowStep,
+    val factors: List<FlowFactor>,
     val recoveryCodes: List<String>,
 )
+
+private fun LoginStep.response() =
+    when (this) {
+        LoginStep.IDENTIFY -> FlowStep.IDENTIFY
+        LoginStep.PASSWORD -> FlowStep.PASSWORD
+        LoginStep.SECOND_FACTOR -> FlowStep.SECOND_FACTOR
+        LoginStep.ENROLL_MFA -> FlowStep.ENROLL_MFA
+        LoginStep.COMPLETE -> FlowStep.COMPLETE
+    }
+
+private fun Set<LoginFactor>.response() =
+    map {
+        when (it) {
+            LoginFactor.PASSWORD -> FlowFactor.PASSWORD
+            LoginFactor.TOTP -> FlowFactor.TOTP
+            LoginFactor.PASSKEY -> FlowFactor.PASSKEY
+            LoginFactor.RECOVERY_CODE -> FlowFactor.RECOVERY_CODE
+        }
+    }.sorted()
 
 class CompletedResponse(
     val returnUrl: String?,
@@ -129,9 +163,9 @@ private fun decoded(value: String): ByteArray =
         throw ResponseStatusException(HttpStatus.BAD_REQUEST)
     }
 
-private fun FlowView.response() = FlowResponse(id, step, factors.sorted())
+private fun FlowView.response() = FlowResponse(id, step.response(), factors.response())
 
-private fun EnrolledFactor.response() = EnrolledResponse(view.id, view.step, view.factors.sorted(), recoveryCodes)
+private fun EnrolledFactor.response() = EnrolledResponse(view.id, view.step.response(), view.factors.response(), recoveryCodes)
 
 /** The flow lives in the URL and its binding in a cookie. A browser without the cookie gets the same answer as for an unknown flow. */
 @RestController

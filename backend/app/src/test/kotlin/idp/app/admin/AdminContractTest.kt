@@ -4,6 +4,9 @@ import idp.app.login.Browser
 import idp.app.login.LoginEnvironment
 import idp.app.login.Reply
 import idp.app.login.text
+import idp.federation.TestSp
+import idp.federation.application.FederationService
+import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.testing.OpenApiContract
 import idp.sharedkernel.testing.asMap
@@ -12,6 +15,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import java.io.File
 import java.util.UUID
 
@@ -116,6 +120,25 @@ class AdminContractTest :
             browser.put(POLICY, policyBody(), IF_MATCH, current).conforms(PUT, POLICY).status shouldBe 204
             environment.age(admin)
             browser.put(POLICY, policyBody(idleSeconds = 1200), IF_MATCH, current).conforms(PUT, POLICY).status shouldBe 403
+        }
+
+        test("the card conforms, also when refused") {
+            val (browser, _) = admin("contract-card-reader")
+            val (ordinary, target) = member("contract-carded")
+            environment.acme.acting {
+                val federation = application.getBean(FederationService::class.java)
+                val metadata = TestSp("https://contract-card.example/saml").metadata().toByteArray()
+                federation.assign(federation.registerServiceProvider("Wiki", metadata, Actor.System), listOf(target), Actor.System)
+            }
+
+            val card = browser.get(USER.of(target)).conforms(GET, USER)
+            card.status shouldBe 200
+            card.json().get("serviceProviders").size() shouldBe 1
+            card.json().get("events").size() shouldNotBe 0
+            browser.get(USER.of(UUID.randomUUID())).conforms(GET, USER).status shouldBe 404
+            browser.get(USER.of("nonsense")).conforms(GET, USER).status shouldBe 400
+            ordinary.get(USER.of(target)).conforms(GET, USER).status shouldBe 403
+            Browser(application).get(USER.of(target)).conforms(GET, USER).status shouldBe 401
         }
 
         test("inviting and resending conform, also when refused") {

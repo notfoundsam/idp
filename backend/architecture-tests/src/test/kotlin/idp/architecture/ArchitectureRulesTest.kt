@@ -31,6 +31,17 @@ class ArchitectureRulesTest :
             failure.message shouldNotContain "SsoEndpoint"
         }
 
+        test("a context type is caught as a response, inside a generic one, in a field of a response and as a request") {
+            val failure =
+                shouldThrow<AssertionError> {
+                    ArchitectureRules.all.getValue("audienceresponses")("archfixtures.audienceresponses").check(fixtures)
+                }
+            listOf("Violation.user()", "Violation.users()", "Violation.wrapped()", "Violation.save(").forEach {
+                failure.message shouldContain it
+            }
+            failure.message shouldNotContain "Violation.allowed()"
+        }
+
         test("app may wire the SAML adapter and nothing else inside a context, and nobody else may") {
             val failure =
                 shouldThrow<AssertionError> {

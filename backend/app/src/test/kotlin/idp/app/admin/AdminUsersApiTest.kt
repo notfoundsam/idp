@@ -1,5 +1,8 @@
 package idp.app.admin
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import idp.app.login.Browser
 import idp.app.login.LoginEnvironment
 import idp.app.login.Reply
@@ -7,10 +10,14 @@ import idp.app.login.TestTenant
 import idp.app.login.codeBody
 import idp.app.login.text
 import idp.app.login.totpCode
+import idp.federation.TestSp
+import idp.federation.application.FederationService
 import idp.identity.application.IdentityService
+import idp.identity.application.ProfileChange
 import idp.identity.application.UserView
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
+import idp.sharedkernel.bus.decorators.LoggerDecorator
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
 import io.kotest.core.spec.style.FunSpec
@@ -23,6 +30,8 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldBeEmpty
+import io.kotest.matchers.string.shouldContain
+import org.slf4j.LoggerFactory
 import java.util.UUID
 
 private const val USERS = "/api/admin/users"
@@ -120,6 +129,8 @@ class AdminUsersApiTest :
 
         fun Reply.found() = users().map { UUID.fromString(it.text("id")) }
 
+        fun Reply.events() = json().get("events").values()
+
         /** Every call of the audience, each with a body and the headers it would take. */
         fun Browser.everyCall(target: UUID): List<Reply> =
             listOf(
@@ -132,6 +143,7 @@ class AdminUsersApiTest :
                 post(block(target)),
                 post(unblock(target)),
                 post(mfaReset(target)),
+                get(userPath(target)),
                 delete(userPath(target)),
                 delete(sessions(target)),
                 delete(ALL_SESSIONS),
@@ -169,7 +181,7 @@ class AdminUsersApiTest :
                 stored(target).shouldNotBeNull().role shouldBe UserRole.USER
                 liveSessions(target) shouldBe 1
                 mfaForUsers() shouldBe false
-                audit(user).filter { it.action == ACCESS_DENIED } shouldHaveSize 12
+                audit(user).filter { it.action == ACCESS_DENIED } shouldHaveSize 13
             }
 
             test("an admin of another tenant has no session here") {
@@ -188,8 +200,9 @@ class AdminUsersApiTest :
                 val (browser, _) = admin("reaches-out")
                 val (_, target) = member("out-of-reach", globex)
 
-                listOf(browser.post(block(target)), browser.post(mfaReset(target)), browser.delete(userPath(target)))
+                listOf(browser.get(userPath(target)), browser.post(block(target)), browser.post(mfaReset(target)))
                     .forEach { it.status shouldBe 404 }
+                browser.delete(userPath(target)).status shouldBe 404
                 browser.put(role(target), roleBody(UserRole.TENANT_ADMIN)).status shouldBe 404
                 browser.delete(sessions(target)).status shouldBe 404
 
@@ -242,6 +255,104 @@ class AdminUsersApiTest :
 
                 listOf("{}", """{"prefix":"sought"}""", """{"email":"${email("searcher")}","exact":false}""")
                     .forEach { browser.post(SEARCH, it).status shouldBe 400 }
+            }
+        }
+
+        context("the card") {
+            fun register(name: String): UUID =
+                acme.acting {
+                    val metadata = TestSp("https://${UUID.randomUUID()}.example/saml").metadata().toByteArray()
+                    application.getBean(FederationService::class.java).registerServiceProvider(name, metadata, Actor.System)
+                }
+
+            fun assign(
+                sp: UUID,
+                user: UUID,
+            ) = acme.acting { application.getBean(FederationService::class.java).assign(sp, listOf(user), Actor.System) }
+
+            fun messagesDuring(action: () -> Reply): Pair<Reply, List<String>> {
+                val logger = LoggerFactory.getLogger(LoggerDecorator::class.java) as Logger
+                val lines = ListAppender<ILoggingEvent>().also { it.start() }
+                logger.addAppender(lines)
+                val reply =
+                    try {
+                        action()
+                    } finally {
+                        logger.detachAppender(lines)
+                    }
+                return reply to lines.list.map { it.formattedMessage }.filter { "message=idp.audience.admin." in it }
+            }
+
+            test("assembles the user, their Service Providers and the journal about them in one query") {
+                val (browser, admin) = admin("card-reader")
+                val (_, user) = member("carded")
+                acme.acting {
+                    application.getBean(IdentityService::class.java).updateProfile(user, ProfileChange("Ada", null), Actor.System)
+                }
+                val wiki = register("Wiki")
+                val mail = register("Mail")
+                register("Unassigned")
+                assign(wiki, user)
+                assign(mail, user)
+                browser.put(role(user), roleBody(UserRole.TENANT_ADMIN)).status shouldBe 204
+
+                val (card, messages) = messagesDuring { browser.get(userPath(user)) }
+
+                card.status shouldBe 200
+                messages.single() shouldContain "message=idp.audience.admin.application.query.GetUserCard outcome=OK"
+                val json = card.json()
+                json.text("id") shouldBe "$user"
+                json.text("email") shouldBe email("carded")
+                json.text("name") shouldBe "Ada"
+                json.text("role") shouldBe "TENANT_ADMIN"
+                json.text("status") shouldBe "ACTIVE"
+                json.get("serviceProviders").values().map { it.text("name") } shouldBe listOf("Mail", "Wiki")
+                json.get("serviceProviders").values().map { UUID.fromString(it.text("id")) } shouldBe listOf(mail, wiki)
+                val events = json.get("events").values()
+                events.first().run {
+                    text("action") shouldBe "user.role_changed"
+                    text("actorType") shouldBe "USER"
+                    text("actorId") shouldBe "$admin"
+                }
+                events.map { it.text("action") } shouldContain "sp.user_assigned"
+                val journal = with(environment) { application.audit(acme) }.filter { it.target == AuditTarget.user(user) }
+                events.map { UUID.fromString(it.text("id")) } shouldBe journal.take(20).map { it.id }
+                events.forEach { it.propertyNames().toSet() shouldBe setOf("id", "occurredAt", "action", "actorType", "actorId") }
+            }
+
+            test("shows a user who waits for the invitation with no name, no Service Provider and the admin who invited them") {
+                val (browser, admin) = admin("card-inviter")
+                val invited = UUID.fromString(browser.post(USERS, inviteBody(email("card-invited"), UserRole.USER)).json().text("id"))
+
+                val card = browser.get(userPath(invited)).json()
+
+                card.text("status") shouldBe "INVITED"
+                card.get("name").isNull shouldBe true
+                card.get("serviceProviders").values().shouldBeEmpty()
+                card.get("events").values().single().run {
+                    text("action") shouldBe "user.created"
+                    text("actorType") shouldBe "USER"
+                    text("actorId") shouldBe "$admin"
+                }
+            }
+
+            test("a system action names no actor") {
+                val (browser, _) = admin("card-system")
+                val (_, user) = member("card-assigned")
+                assign(register("Portal"), user)
+
+                val event = browser.get(userPath(user)).events().first()
+
+                event.text("action") shouldBe "sp.user_assigned"
+                event.text("actorType") shouldBe "SYSTEM"
+                event.get("actorId").isNull shouldBe true
+            }
+
+            test("an unknown user and a malformed ID are refused") {
+                val (browser, _) = admin("card-guesser")
+
+                browser.get(userPath(UUID.randomUUID())).status shouldBe 404
+                browser.get("$USERS/not-an-id").status shouldBe 400
             }
         }
 
@@ -451,6 +562,7 @@ class AdminUsersApiTest :
                 target.isSignedIn() shouldBe false
                 audit(admin).single { it.action == "user.erased" }.target shouldBe AuditTarget.user(user)
                 browser.delete(userPath(user)).status shouldBe 404
+                browser.get(userPath(user)).status shouldBe 404
             }
 
             test("needs a fresh login, and the refusal is audited") {

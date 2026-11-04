@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 112 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 115 |
 | Partial | Part of the control is merged, the listed tasks finish it | 41 |
-| Planned | The listed tasks build the control | 29 |
+| Planned | The listed tasks build the control | 26 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -200,11 +200,11 @@ SP metadata import is the only file upload.
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
-| V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
+| V8.1.1 | 1 | Done | T34 | [authorization.md](authorization.md) defines the function rules of every role and the operator, and the data each reaches |
+| V8.1.2 | 2 | Done | T34 | The same document defines which fields each role and the operator read, and `ArchitectureRulesTest` keeps context types out of responses |
 | V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages, the policy too, to `TENANT_ADMIN` only (`AdminUsersApiTest`, `AdminPolicyApiTest`), the operator audience adds its rules |
 | V8.2.2 | 1 | Partial | T32, T34, T36 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`). An admin reaches only the users of the tenant whose schema holds the session, a user of another tenant reads as missing, and a session of another tenant counts as none (`AdminUsersApiTest`). The operator audience remains |
-| V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
+| V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`). A controller returns only types of its audience (`ArchitectureRulesTest`), and the user card leaves out the IP and the details of audit records (`AdminUsersApiTest`) |
 | V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), and the admin API refuses an ordinary user and an admin of another tenant there (`AdminUsersApiTest`), the operator audience adds its rules |
 | V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), API and e2e isolation tests remain |
 

@@ -12,6 +12,7 @@ import idp.audience.admin.application.command.SavePolicy
 import idp.audience.admin.application.command.UnblockUser
 import idp.audience.admin.application.query.FindUserByEmail
 import idp.audience.admin.application.query.GetPolicy
+import idp.audience.admin.application.query.GetUserCard
 import idp.sharedkernel.bus.Message
 import idp.sharedkernel.security.Permission
 import idp.sharedkernel.security.Role
@@ -30,6 +31,7 @@ object AdminSecurityConfig : SecurityConfig {
     override val permissions: Map<KClass<out Message<*>>, Permission?> =
         mapOf(
             FindUserByEmail::class to MANAGE_USERS,
+            GetUserCard::class to MANAGE_USERS,
             InviteUser::class to MANAGE_USERS,
             ResendInvitation::class to MANAGE_USERS,
             ChangeRole::class to MANAGE_USERS,

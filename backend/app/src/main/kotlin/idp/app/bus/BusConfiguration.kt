@@ -41,11 +41,12 @@ class BusConfiguration {
         @Value("\${idp.kms.key-cache-ttl}") ttl: Duration,
     ) = KeyHierarchy(kms, transaction, platform, ttl)
 
+    /** Typed as the service, so a composite query of an audience can read the journal through the same bean. */
     @Bean
     fun auditLog(
         transaction: TenantTransaction,
         keys: KeyHierarchy,
-    ): AuditLog = AuditService(transaction, keys)
+    ) = AuditService(transaction, keys)
 
     @Bean
     fun busPipeline(

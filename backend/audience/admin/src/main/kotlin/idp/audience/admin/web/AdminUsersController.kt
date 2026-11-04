@@ -10,12 +10,17 @@ import idp.audience.admin.application.command.ResendInvitation
 import idp.audience.admin.application.command.ResetMfa
 import idp.audience.admin.application.command.UnblockUser
 import idp.audience.admin.application.query.FindUserByEmail
+import idp.audience.admin.application.query.GetUserCard
+import idp.audience.admin.application.query.UserCard
+import idp.audit.application.AuditEntryView
+import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -23,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
 import java.util.UUID
 
 /** Not a data class: `toString` must not print the email. */
@@ -54,6 +60,61 @@ data class UserSearchResponse(
     val users: List<FoundUserResponse>,
 )
 
+data class AssignedServiceProviderResponse(
+    val id: UUID,
+    val entityId: String,
+    val name: String,
+)
+
+/** The IP and the details of a record stay out of the card, see `docs/security/authorization.md`. */
+data class UserEventResponse(
+    val id: UUID,
+    val occurredAt: Instant,
+    val action: String,
+    val actorType: ActorType,
+    val actorId: UUID?,
+)
+
+enum class ActorType {
+    USER,
+    SYSTEM,
+    ANONYMOUS,
+}
+
+/** Not a data class: `toString` must not print the email or the name. */
+class UserCardResponse(
+    val id: UUID,
+    val email: String,
+    val name: String?,
+    val role: UserRole,
+    val status: UserStatus,
+    val serviceProviders: List<AssignedServiceProviderResponse>,
+    val events: List<UserEventResponse>,
+)
+
+/** An operator acts in `platform.operator_audit`, never in the journal of a tenant. */
+private fun AuditEntryView.response(): UserEventResponse {
+    val (type, actorId) =
+        when (val actor = actor) {
+            is Actor.User -> ActorType.USER to actor.id
+            Actor.System -> ActorType.SYSTEM to null
+            Actor.Anonymous -> ActorType.ANONYMOUS to null
+            is Actor.Operator -> error("An operator in the journal of a tenant")
+        }
+    return UserEventResponse(id, occurredAt, action, type, actorId)
+}
+
+private fun UserCard.response() =
+    UserCardResponse(
+        user.id,
+        email,
+        name,
+        user.role,
+        user.status,
+        serviceProviders.map { AssignedServiceProviderResponse(it.id, it.entityId, it.name) },
+        events.map { it.response() },
+    )
+
 @RestController
 @RequestMapping("/api/admin")
 class AdminUsersController(
@@ -68,6 +129,11 @@ class AdminUsersController(
         val found = queries.ask(FindUserByEmail(request.email))
         return UserSearchResponse(listOfNotNull(found?.let { FoundUserResponse(it.id, it.role, it.status) }))
     }
+
+    @GetMapping("/users/{id}")
+    fun card(
+        @PathVariable id: UUID,
+    ): UserCardResponse = queries.ask(GetUserCard(id)).response()
 
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)

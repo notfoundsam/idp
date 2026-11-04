@@ -207,6 +207,29 @@ paths:
   /api/admin/users/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getUser
+      summary: >-
+        The card of a user: who they are, the Service Providers they are assigned to and the newest records of the journal about them
+      responses:
+        "200":
+          description: The card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserCard"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     delete:
       operationId: eraseUser
       summary: Erase a user with their data and sessions. The ID is never given out again
@@ -420,8 +443,69 @@ components:
         role:
           $ref: "#/components/schemas/Role"
         status:
+          $ref: "#/components/schemas/UserStatus"
+    UserStatus:
+      type: string
+      enum: [INVITED, ACTIVE, BLOCKED]
+    UserCard:
+      type: object
+      additionalProperties: false
+      required: [id, email, name, role, status, serviceProviders, events]
+      properties:
+        id:
           type: string
-          enum: [INVITED, ACTIVE, BLOCKED]
+          format: uuid
+        email:
+          type: string
+        name:
+          type: [string, "null"]
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        serviceProviders:
+          type: array
+          description: The Service Providers the user is assigned to, by name
+          items:
+            $ref: "#/components/schemas/AssignedServiceProvider"
+        events:
+          type: array
+          maxItems: 20
+          description: The newest records of the journal whose target is the user, the newest first. The IP and the details stay out
+          items:
+            $ref: "#/components/schemas/UserEvent"
+    AssignedServiceProvider:
+      type: object
+      additionalProperties: false
+      required: [id, entityId, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityId:
+          type: string
+        name:
+          type: string
+    UserEvent:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, action, actorType, actorId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        actorType:
+          type: string
+          enum: [USER, SYSTEM, ANONYMOUS]
+        actorId:
+          type: [string, "null"]
+          format: uuid
+          description: The user who acted, null unless `actorType` is `USER`
     Policy:
       type: object
       additionalProperties: false
