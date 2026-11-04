@@ -16,6 +16,8 @@ export const INVITEE = 'invitee@acme.test'
 export const PASSKEY_USER = 'passkey@acme.test'
 export const ACCOUNT_USER = 'account@acme.test'
 export const ADMIN_USER = 'admin@acme.test'
+/** Mailpit finds an address also inside a longer one, so no address of a fixture ends with another. */
+export const SP_ADMIN = 'services@acme.test'
 
 /** Hex has none of the words the password policy refuses, such as parts of the address or the product name. */
 export const newPassword = () => randomBytes(16).toString('hex')

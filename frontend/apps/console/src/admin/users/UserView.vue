@@ -12,6 +12,7 @@ import {
   ALREADY_ACCEPTED,
   BLOCK_REFUSED,
   isMissing,
+  journalOf,
   LAST_ADMIN,
   ROLES,
   roleOf,
@@ -130,7 +131,8 @@ function act(action: { mutate: (variables: undefined) => void }) {
       <h2 id="services-heading">Services</h2>
       <ul v-if="card.data.value.serviceProviders.length > 0">
         <li v-for="provider in card.data.value.serviceProviders" :key="provider.id" data-testid="service-provider">
-          {{ provider.name }} <small>{{ provider.entityId }}</small>
+          <RouterLink :to="{ name: 'service-provider', params: { id: provider.id } }">{{ provider.name }}</RouterLink>
+          <small>{{ provider.entityId }}</small>
         </li>
       </ul>
       <p v-else data-testid="no-service-providers">The user is assigned to no service.</p>
@@ -144,6 +146,9 @@ function act(action: { mutate: (variables: undefined) => void }) {
         </li>
       </ol>
       <p v-else>Nothing yet.</p>
+      <RouterLink :to="journalOf({ type: 'USER', id: card.data.value.id })" data-testid="user-journal">
+        Journal of this user, with the addresses and details
+      </RouterLink>
     </section>
 
     <section aria-labelledby="erase-heading">

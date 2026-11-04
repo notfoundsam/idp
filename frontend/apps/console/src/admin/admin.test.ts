@@ -25,6 +25,18 @@ const ADMIN_OPERATIONS: Operation[] = [
   'endAllSessions',
   'getPolicy',
   'savePolicy',
+  'listServiceProviders',
+  'registerServiceProvider',
+  'getServiceProvider',
+  'saveServiceProviderSettings',
+  'removeServiceProvider',
+  'listAssignedUsers',
+  'assignUsers',
+  'unassignUsers',
+  'listSigningKeys',
+  'startKeyRotation',
+  'completeKeyRotation',
+  'readAuditJournal',
 ]
 
 const ID = '5d2c8a90-7b1e-4f43-9c55-0e6a3b1f2d47'
@@ -71,6 +83,9 @@ describe('the admin pages', () => {
     expect(links.map((it) => [it.text(), it.attributes('href')])).toEqual([
       ['Users', '/console/admin/users'],
       ['Policy', '/console/admin/policy'],
+      ['Services', '/console/admin/service-providers'],
+      ['Signing keys', '/console/admin/signing-keys'],
+      ['Journal', '/console/admin/audit'],
     ])
   })
 
@@ -80,7 +95,15 @@ describe('the admin pages', () => {
     expect(page.router.currentRoute.value.name).toBe('users')
   })
 
-  test.each(['/admin/users', `/admin/users/${ID}`, '/admin/policy'])(
+  test.each([
+    '/admin/users',
+    `/admin/users/${ID}`,
+    '/admin/policy',
+    '/admin/service-providers',
+    `/admin/service-providers/${ID}`,
+    '/admin/signing-keys',
+    `/admin/audit?targetType=USER&targetId=${ID}`,
+  ])(
     'are hidden from a user who is no admin, and %s asks the admin API nothing',
     async (path) => {
       const page = await consoleAt(path)
@@ -187,6 +210,10 @@ describe('the card of a user', () => {
     expect(wrapper.text()).toContain('Carol')
     expect(wrapper.get('[data-testid="user-role"]').text()).toBe('User')
     expect(wrapper.get('[data-testid="service-provider"]').text()).toContain('Wiki')
+    expect(wrapper.get('[data-testid="service-provider"] a').attributes('href')).toBe('/console/admin/service-providers/sp')
+    expect(wrapper.get('[data-testid="user-journal"]').attributes('href')).toBe(
+      `/console/admin/audit?targetType=USER&targetId=${ID}`,
+    )
     const events = wrapper.findAll('[data-testid="user-event"]').map((it) => it.text())
     expect(events[0]).toContain('user.blocked by the user someone')
     expect(events[1]).toContain('login.succeeded by the user')

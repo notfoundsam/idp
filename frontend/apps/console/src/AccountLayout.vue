@@ -16,6 +16,9 @@ const { logout, busy } = useLogout()
     <nav v-if="isAdmin" aria-label="Organisation" data-testid="admin-nav">
       <RouterLink :to="{ name: 'users' }">Users</RouterLink>
       <RouterLink :to="{ name: 'policy' }">Policy</RouterLink>
+      <RouterLink :to="{ name: 'service-providers' }">Services</RouterLink>
+      <RouterLink :to="{ name: 'signing-keys' }">Signing keys</RouterLink>
+      <RouterLink :to="{ name: 'audit' }">Journal</RouterLink>
     </nav>
     <p v-if="sessions.data.value" data-testid="account-email">{{ sessions.data.value.email }}</p>
     <button type="button" :disabled="busy" @click="logout">Sign out</button>

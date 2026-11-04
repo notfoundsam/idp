@@ -95,6 +95,19 @@ export async function consoleAt(path: string, options: { credentials?: Credentia
   }
 }
 
+/** The console of an admin, whose layout reads the sessions and the first page the factors. */
+export async function adminAt(path: string) {
+  const page = await consoleAt(path)
+  page.answer('getSessions', adminSessions())
+  page.answer('getFactors', factorsWith())
+  return page
+}
+
+export async function submit(wrapper: VueWrapper, form: string) {
+  await wrapper.get(`[data-testid="${form}"]`).trigger('submit')
+  await settle()
+}
+
 export function button(wrapper: VueWrapper, name: string): DOMWrapper<HTMLButtonElement> {
   const found = wrapper.findAll('button').find((it) => it.text() === name)
   if (found === undefined) throw new Error(`No button "${name}" in ${wrapper.text()}`)

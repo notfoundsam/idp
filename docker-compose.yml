@@ -355,6 +355,7 @@ services:
       CI:
       CERTS_DIR: /certs
       NODE_EXTRA_CA_CERTS: /certs/rootCA.pem
+      SAML_METADATA_DIR: /saml-metadata
     extra_hosts:
       - acme.idp.test:host-gateway
       - globex.idp.test:host-gateway
@@ -366,6 +367,8 @@ services:
       - ./frontend:/app/frontend
       - idp-frontend-node-modules:/app/frontend/node_modules
       - ./dev-tools/certs:/certs:ro
+      # A test that rotates the signing key of acme hands SimpleSAMLphp the new metadata, as fetch-idp-metadata.sh does.
+      - ./dev-tools/simplesamlphp/metadata:/saml-metadata
 
   nginx-config:
     image: node:24.22.2-alpine

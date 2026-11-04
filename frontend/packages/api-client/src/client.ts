@@ -83,9 +83,14 @@ export function createTransport(options: ClientOptions) {
       const csrf = cookie(cookies(), CSRF_COOKIE)
       if (csrf !== null) headers.set('X-CSRF-Token', csrf)
     }
-    if (body !== undefined) headers.set('Content-Type', 'application/json')
     const init: RequestInit = { method, headers, credentials: 'same-origin', cache: 'no-store' }
-    if (body !== undefined) init.body = JSON.stringify(body)
+    if (body instanceof FormData) {
+      // The browser sets the multipart Content-Type itself, with the boundary of the parts.
+      init.body = body
+    } else if (body !== undefined) {
+      headers.set('Content-Type', 'application/json')
+      init.body = JSON.stringify(body)
+    }
     const response = await send(path, init)
     const appVersion = response.headers.get('X-App-Version')
     if (appVersion !== null) options.onAppVersion?.(appVersion)
