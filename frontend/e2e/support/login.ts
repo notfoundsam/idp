@@ -15,6 +15,7 @@ export const BOB = { login: 'bob@acme.test', password: 'local-fixture-password-a
 export const INVITEE = 'invitee@acme.test'
 export const PASSKEY_USER = 'passkey@acme.test'
 export const ACCOUNT_USER = 'account@acme.test'
+export const ADMIN_USER = 'admin@acme.test'
 
 /** Hex has none of the words the password policy refuses, such as parts of the address or the product name. */
 export const newPassword = () => randomBytes(16).toString('hex')
@@ -47,6 +48,19 @@ export async function atConsole(page: Page, login: string, origin = ACME) {
 export async function saveRecoveryCodes(page: Page) {
   await expect(page.getByTestId('recovery-codes').locator('li').first()).toBeVisible()
   await page.getByRole('button', { name: 'I have saved them' }).click()
+}
+
+/** Sets up TOTP at the step the policy asks for and answers its secret and the recovery codes shown once. */
+export async function enrollTotp(page: Page): Promise<{ secret: string; codes: string[] }> {
+  await page.getByRole('button', { name: 'Set up an authenticator app' }).click()
+  const secret = (await page.getByTestId('totp-secret').innerText()).replace(/\s/g, '')
+  await page.getByLabel('Code from your authenticator app').fill(totp(secret))
+  await page.getByRole('button', { name: 'Confirm' }).click()
+  const shown = page.getByTestId('recovery-codes').locator('li')
+  await expect(shown.first()).toBeVisible()
+  const codes = (await shown.allInnerTexts()).map((it) => it.trim())
+  await page.getByRole('button', { name: 'I have saved them' }).click()
+  return { secret, codes }
 }
 
 /** Types nothing: the text comes from the clipboard, as from a password manager. */

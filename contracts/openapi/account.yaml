@@ -218,7 +218,7 @@ paths:
   /api/account/sessions:
     get:
       operationId: getSessions
-      summary: Read the email of the user and their live sessions
+      summary: Read the email and the role of the user and their live sessions
       responses:
         "200":
           description: The sessions
@@ -412,10 +412,14 @@ components:
     Sessions:
       type: object
       additionalProperties: false
-      required: [email, sessions]
+      required: [email, role, sessions]
       properties:
         email:
           type: string
+        role:
+          type: string
+          enum: [TENANT_ADMIN, USER]
+          description: The role of the user, so the console shows the admin pages only to an admin. The admin API checks it anew
         sessions:
           type: array
           description: The one seen last first

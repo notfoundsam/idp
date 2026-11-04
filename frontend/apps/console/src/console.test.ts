@@ -1,7 +1,7 @@
-import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
+import type { VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, test } from 'vitest'
 import { PASSWORD_REFUSED } from './messages'
-import { consoleAt, EMAIL, factorsWith, refused, sessionsOf, settle } from './testing'
+import { button, click, consoleAt, EMAIL, factorsWith, hasButton, refused, sessionsOf, settle } from './testing'
 
 let mounted: VueWrapper | null = null
 
@@ -13,19 +13,6 @@ afterEach(() => {
 async function start(page: Awaited<ReturnType<typeof consoleAt>>) {
   mounted = await page.start()
   return mounted
-}
-
-function button(wrapper: VueWrapper, name: string): DOMWrapper<HTMLButtonElement> {
-  const found = wrapper.findAll('button').find((it) => it.text() === name)
-  if (found === undefined) throw new Error(`No button "${name}" in ${wrapper.text()}`)
-  return found as DOMWrapper<HTMLButtonElement>
-}
-
-const hasButton = (wrapper: VueWrapper, name: string) => wrapper.findAll('button').some((it) => it.text() === name)
-
-async function click(wrapper: VueWrapper, name: string) {
-  await button(wrapper, name).trigger('click')
-  await settle()
 }
 
 const PASSKEY = {

@@ -24,5 +24,6 @@ reinvite() {
 reinvite acme.idp.test invitee@acme.test
 reinvite acme.idp.test passkey@acme.test
 reinvite acme.idp.test account@acme.test
+reinvite acme.idp.test admin@acme.test
 reinvite ops-sso.idp.test operator@ops-sso.test
 reinvite ops-sso.idp.test outsider@ops-sso.test

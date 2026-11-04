@@ -1,5 +1,5 @@
-import { ApiError, Release, type AccountClient, type Factors, type Sessions } from '@idp/api-client'
-import { flushPromises, mount } from '@vue/test-utils'
+import { ApiError, Release, type AccountClient, type AdminClient, type Factors, type Sessions } from '@idp/api-client'
+import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { vi } from 'vitest'
 import { reactive } from 'vue'
 import { createMemoryHistory } from 'vue-router'
@@ -19,6 +19,7 @@ export const factorsWith = (overrides: Partial<Factors> = {}): Factors => ({
 
 export const sessionsOf = (...others: string[]): Sessions => ({
   email: EMAIL,
+  role: 'USER',
   sessions: [
     { id: 'current', current: true, authenticatedAt: '2026-11-03T08:00:00Z', lastSeenAt: '2026-11-03T09:00:00Z', ip: '192.0.2.1', userAgent: 'This one' },
     ...others.map((id) => ({
@@ -32,18 +33,23 @@ export const sessionsOf = (...others: string[]): Sessions => ({
   ],
 })
 
+export const adminSessions = (): Sessions => ({ ...sessionsOf(), role: 'TENANT_ADMIN' })
+
 type Answer = unknown
+
+/** The two clients name no operation alike, so one script answers both. */
+export type Operation = keyof AccountClient | keyof AdminClient
 
 /** A client that answers each operation from a queue the test fills, repeating the last answer, and records what it was asked. */
 export function scriptedClient() {
   const answers = new Map<string, Answer[]>()
   const calls: { operation: string; args: unknown[] }[] = []
 
-  function answer(operation: keyof AccountClient, ...values: Answer[]) {
+  function answer(operation: Operation, ...values: Answer[]) {
     answers.set(operation, [...(answers.get(operation) ?? []), ...values])
   }
 
-  const client = new Proxy({} as AccountClient, {
+  const client = new Proxy({} as AccountClient & AdminClient, {
     get: (_, operation: string) =>
       async (...args: unknown[]) => {
         calls.push({ operation, args })
@@ -54,7 +60,7 @@ export function scriptedClient() {
         return next
       },
   })
-  const called = (operation: keyof AccountClient) => calls.filter((it) => it.operation === operation)
+  const called = (operation: Operation) => calls.filter((it) => it.operation === operation)
   return { client, answer, calls, called }
 }
 
@@ -74,7 +80,7 @@ export async function consoleAt(path: string, options: { credentials?: Credentia
     },
   }
   const history = createMemoryHistory('/console/')
-  const built = createConsole({ client: scripted.client, release, browser, history })
+  const built = createConsole({ client: scripted.client, admin: scripted.client, release, browser, history })
   return {
     ...scripted,
     ...built,
@@ -87,6 +93,19 @@ export async function consoleAt(path: string, options: { credentials?: Credentia
       return wrapper
     },
   }
+}
+
+export function button(wrapper: VueWrapper, name: string): DOMWrapper<HTMLButtonElement> {
+  const found = wrapper.findAll('button').find((it) => it.text() === name)
+  if (found === undefined) throw new Error(`No button "${name}" in ${wrapper.text()}`)
+  return found as DOMWrapper<HTMLButtonElement>
+}
+
+export const hasButton = (wrapper: VueWrapper, name: string) => wrapper.findAll('button').some((it) => it.text() === name)
+
+export async function click(wrapper: VueWrapper, name: string) {
+  await button(wrapper, name).trigger('click')
+  await settle()
 }
 
 /** Lazy pages and queries resolve over several ticks. */

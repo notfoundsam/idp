@@ -7,11 +7,13 @@ import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.MessageHandler
 import idp.sharedkernel.bus.Query
 import idp.sharedkernel.security.SecurityContext
+import idp.sharedkernel.security.UserRole
 import java.util.UUID
 
 /** Not a data class: `toString` must not print the email, the IPs or the User-Agents. */
 class AccountSessions(
     val email: String,
+    val role: UserRole,
     val sessions: List<UserSessionView>,
     val current: UUID,
 )
@@ -31,6 +33,7 @@ class GetSessionsHandler(
         val user = principal.actor as Actor.User
         return AccountSessions(
             checkNotNull(identity.emailOf(user.id)),
+            UserRole.valueOf(principal.role.name),
             authentication.sessionsOf(user.id),
             checkNotNull(principal.sessionId),
         )

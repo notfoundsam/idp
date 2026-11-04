@@ -63,14 +63,22 @@ async function errorOf(response: Response): Promise<string | null> {
   return null
 }
 
-export type Method = 'GET' | 'POST' | 'DELETE'
+export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
+
+/** An answer with the version of the resource in `ETag`, null when the server sent none. */
+export interface Exchanged<T> {
+  body: T
+  etag: string | null
+}
 
 export function createTransport(options: ClientOptions) {
   const send = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
   const cookies = options.cookies ?? (() => document.cookie)
 
-  return async function call<T>(method: Method, path: string, body?: unknown): Promise<T> {
-    const headers = new Headers({ Accept: 'application/json', 'X-Client-Version': options.version })
+  async function exchange<T>(method: Method, path: string, body?: unknown, extra?: HeadersInit): Promise<Exchanged<T>> {
+    const headers = new Headers(extra)
+    headers.set('Accept', 'application/json')
+    headers.set('X-Client-Version', options.version)
     if (method !== 'GET') {
       const csrf = cookie(cookies(), CSRF_COOKIE)
       if (csrf !== null) headers.set('X-CSRF-Token', csrf)
@@ -83,9 +91,16 @@ export function createTransport(options: ClientOptions) {
     if (appVersion !== null) options.onAppVersion?.(appVersion)
     if (response.status === UPGRADE_REQUIRED) options.onUpgradeRequired?.()
     if (!response.ok) throw new ApiError(response.status, retryAfterOf(response), await errorOf(response))
-    if (response.status === 202 || response.status === 204) return undefined as T
-    return (await response.json()) as T
+    const etag = response.headers.get('ETag')
+    if (response.status === 202 || response.status === 204) return { body: undefined as T, etag }
+    return { body: (await response.json()) as T, etag }
   }
+
+  async function call<T>(method: Method, path: string, body?: unknown): Promise<T> {
+    return (await exchange<T>(method, path, body)).body
+  }
+
+  return Object.assign(call, { exchange })
 }
 
 export function createClient(options: ClientOptions) {

@@ -1,4 +1,4 @@
-import { browserPage, createAccountClient, createReloader, Release, reloadOnChunkError } from '@idp/api-client'
+import { browserPage, createAccountClient, createAdminClient, createReloader, Release, reloadOnChunkError } from '@idp/api-client'
 import { passkeysSupported } from '@idp/ui'
 import { reactive } from 'vue'
 import { createWebHistory } from 'vue-router'
@@ -7,14 +7,15 @@ import { createConsoleApp } from './console'
 const release = reactive(new Release(__APP_VERSION__))
 reloadOnChunkError(window, createReloader(browserPage(window)))
 
-const client = createAccountClient({
+const options = {
   version: release.version,
-  onAppVersion: (version) => release.observe(version),
+  onAppVersion: (version: string) => release.observe(version),
   onUpgradeRequired: () => release.upgradeRequired(),
-})
+}
 
 createConsoleApp({
-  client,
+  client: createAccountClient(options),
+  admin: createAdminClient(options),
   release,
   history: createWebHistory('/console/'),
   browser: {

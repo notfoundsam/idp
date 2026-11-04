@@ -1,4 +1,4 @@
-import { ApiError, type AccountClient, type Release } from '@idp/api-client'
+import { ApiError, type AccountClient, type AdminClient, type Release } from '@idp/api-client'
 import { MutationCache, QueryCache, QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { createPinia } from 'pinia'
 import { createApp, type App, type Plugin } from 'vue'
@@ -9,6 +9,7 @@ import { resettable } from './store'
 
 export interface ConsoleDependencies {
   client: AccountClient
+  admin: AdminClient
   release: Release
   browser: Browser
   history: RouterHistory
@@ -22,13 +23,23 @@ export const routes = [
     children: [
       { path: '', name: 'security', component: () => import('./views/SecurityView.vue') },
       { path: 'sessions', name: 'sessions', component: () => import('./views/SessionsView.vue') },
+      {
+        path: 'admin',
+        component: () => import('./admin/AdminSection.vue'),
+        children: [
+          { path: '', redirect: { name: 'users' } },
+          { path: 'users', name: 'users', component: () => import('./admin/users/UsersView.vue') },
+          { path: 'users/:id', name: 'user', component: () => import('./admin/users/UserView.vue'), props: true },
+          { path: 'policy', name: 'policy', component: () => import('./admin/policies/PolicyView.vue') },
+        ],
+      },
     ],
   },
   { path: '/signed-out', name: 'signed-out', component: () => import('./views/SignedOutView.vue') },
   { path: '/:rest(.*)*', redirect: '/' },
 ]
 
-export function createConsole({ client, release, browser, history }: ConsoleDependencies) {
+export function createConsole({ client, admin, release, browser, history }: ConsoleDependencies) {
   const signIn = (error: unknown) => {
     if (error instanceof ApiError && error.status === 401) browser.assign(LOGIN_PATH)
   }
@@ -53,7 +64,7 @@ export function createConsole({ client, release, browser, history }: ConsoleDepe
       app.use(pinia)
       app.use(router)
       app.use(VueQueryPlugin, { queryClient: queries })
-      app.provide(CONSOLE, { client, release, browser, resetStores })
+      app.provide(CONSOLE, { client, admin, release, browser, resetStores })
     },
   }
   return { plugin, router, queries, pinia }

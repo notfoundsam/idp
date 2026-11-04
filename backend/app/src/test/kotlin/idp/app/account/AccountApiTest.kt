@@ -1,5 +1,8 @@
 package idp.app.account
 
+import idp.app.admin.put
+import idp.app.admin.roleBody
+import idp.app.admin.signedIn
 import idp.app.login.ACME
 import idp.app.login.Browser
 import idp.app.login.LoginEnvironment
@@ -17,6 +20,7 @@ import idp.authentication.application.CsrfCookie
 import idp.authentication.application.SessionCookie
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
+import idp.sharedkernel.security.UserRole
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
@@ -469,6 +473,20 @@ class AccountApiTest :
                     Instant.parse(it.text("authenticatedAt")).isAfter(Instant.now().minus(AGED)) shouldBe true
                     Instant.parse(it.text("lastSeenAt")).isAfter(Instant.now().minus(AGED)) shouldBe true
                 }
+            }
+
+            test("the list names the role of the user, which follows a change on the next request") {
+                fun Browser.role(): String = get(SESSIONS).json().text("role")
+
+                val (browser, _) = signedIn("lists-role")
+                browser.role() shouldBe "USER"
+
+                val admin = environment.signedIn(application, email("lists-role-admin"))
+                val demoted = environment.signedIn(application, email("lists-role-demoted"))
+                demoted.browser.role() shouldBe "TENANT_ADMIN"
+                admin.browser.put("/api/admin/users/${demoted.user}/role", roleBody(UserRole.USER)).status shouldBe 204
+
+                demoted.browser.role() shouldBe "USER"
             }
 
             test("each user sees only their own sessions, and a session of someone else reads as missing and lives on") {

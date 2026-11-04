@@ -19,6 +19,7 @@ import idp.authentication.application.SessionCookie
 import idp.identity.application.PasskeyAttestation
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
+import idp.sharedkernel.security.UserRole
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -60,6 +61,7 @@ class SessionResponse(
 /** Not a data class: `toString` must not print the email. */
 class SessionsResponse(
     val email: String,
+    val role: UserRole,
     val sessions: List<SessionResponse>,
 )
 
@@ -191,6 +193,7 @@ class AccountController(
         val listed = queries.ask(GetSessions())
         return SessionsResponse(
             listed.email,
+            listed.role,
             listed.sessions.map { SessionResponse(it.id, it.id == listed.current, it.authenticatedAt, it.lastSeenAt, it.ip, it.userAgent) },
         )
     }

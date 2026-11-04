@@ -54,7 +54,7 @@ Domain rules stand on top of permissions: the last active admin of a tenant cann
 | Email | Yes, on the sessions page | On the card, and as a search term that must match whole. Never in a list | Never. The application contact only as a mask |
 | Name | No API yet | On the card | Never |
 | Phone | No API yet | Never | Never |
-| Role, status | No | On the card and in a search hit | Never |
+| Role, status | Their own role, on the sessions page, so the console shows the admin pages only to an admin | On the card and in a search hit | Never |
 | Password hash, TOTP secret, recovery codes, passkey keys | The TOTP secret and recovery codes once, when issued. Passkeys as ID, dates and backup state | Never. MFA can only be reset | Never |
 | Sessions: IP, User-Agent, times | Their own | Never listed, only ended | Never |
 | SP assignments | No | On the card, with the SP name and EntityID | Never |

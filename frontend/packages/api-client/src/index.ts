@@ -5,5 +5,6 @@ export type { components, operations, paths } from './generated/auth'
 export type Schemas = components['schemas']
 
 export * from './account'
+export * from './admin'
 export * from './client'
 export * from './release'

@@ -147,7 +147,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the email of the user and their live sessions */
+        /** Read the email and the role of the user and their live sessions */
         get: operations["getSessions"];
         put?: never;
         post?: never;
@@ -237,6 +237,11 @@ export interface components {
         };
         Sessions: {
             email: string;
+            /**
+             * @description The role of the user, so the console shows the admin pages only to an admin. The admin API checks it anew
+             * @enum {string}
+             */
+            role: "TENANT_ADMIN" | "USER";
             /** @description The one seen last first */
             sessions: components["schemas"]["Session"][];
         };

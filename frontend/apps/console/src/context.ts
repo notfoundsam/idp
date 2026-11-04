@@ -1,4 +1,4 @@
-import type { AccountClient, Release } from '@idp/api-client'
+import type { AccountClient, AdminClient, Release } from '@idp/api-client'
 import { inject, type InjectionKey } from 'vue'
 
 export const LOGIN_PATH = '/login/'
@@ -14,6 +14,7 @@ export interface Browser {
 
 export interface Console {
   client: AccountClient
+  admin: AdminClient
   release: Release
   browser: Browser
   resetStores: () => void
