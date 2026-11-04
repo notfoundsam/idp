@@ -1,14 +1,20 @@
 package idp.app.admin
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import idp.app.login.Browser
 import idp.app.login.LoginEnvironment
+import idp.app.login.MultipartForm
 import idp.app.login.Reply
 import idp.app.login.TestTenant
 import idp.app.login.codeBody
 import idp.app.login.text
 import idp.app.login.totpCode
 import idp.authentication.application.CsrfCookie
+import idp.sharedkernel.bus.decorators.LoggerDecorator
 import idp.sharedkernel.security.UserRole
+import org.slf4j.LoggerFactory
 import org.springframework.context.ConfigurableApplicationContext
 import java.net.http.HttpRequest
 import java.sql.Timestamp
@@ -26,6 +32,38 @@ fun inviteBody(
 ) = """{"email":"$email","role":"$role"}"""
 
 fun searchBody(email: String) = """{"email":"$email"}"""
+
+fun usersBody(vararg ids: Any?) = """{"userIds":[${ids.joinToString(",") { if (it == null) "null" else "\"$it\"" }}]}"""
+
+/** The values `SpSettings` starts with, unless a test names others. */
+fun spSettingsBody(
+    nameIdFormat: String = "PERSISTENT",
+    signedPart: String = "ASSERTION",
+    signatureAlgorithm: String = "RSA_PSS_SHA256",
+    attributes: List<String> = emptyList(),
+) = """{"nameIdFormat":"$nameIdFormat","signedPart":"$signedPart","signatureAlgorithm":"$signatureAlgorithm",""" +
+    """"attributes":[${attributes.joinToString(",") { "\"$it\"" }}]}"""
+
+/** The upload of the console: a name and the metadata as a file. */
+fun metadataForm(
+    name: String,
+    metadata: ByteArray,
+    fileName: String = "sp-metadata.xml",
+) = MultipartForm().field("name", name).file("metadata", fileName, metadata)
+
+/** The admin messages the bus ran during [action], so a test can tell that a page came from one query. */
+fun messagesDuring(action: () -> Reply): Pair<Reply, List<String>> {
+    val logger = LoggerFactory.getLogger(LoggerDecorator::class.java) as Logger
+    val lines = ListAppender<ILoggingEvent>().also { it.start() }
+    logger.addAppender(lines)
+    val reply =
+        try {
+            action()
+        } finally {
+            logger.detachAppender(lines)
+        }
+    return reply to lines.list.map { it.formattedMessage }.filter { "message=idp.audience.admin." in it }
+}
 
 /** The values of the relaxed policy of `acme` in `LoginEnvironment`, unless a test names others. */
 fun policyBody(

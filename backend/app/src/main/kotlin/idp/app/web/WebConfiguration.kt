@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.util.unit.DataSize
 
 private const val API = "/api/*"
+private const val METADATA_UPLOAD = "/api/admin/service-providers"
 
 @Configuration(proxyBeanMethods = false)
 class WebConfiguration {
@@ -35,7 +36,8 @@ class WebConfiguration {
     @Bean
     fun requestSizeFilter(
         @Value("\${idp.login.max-request-size}") maxSize: DataSize,
-    ) = FilterRegistrationBean(RequestSizeFilter(maxSize.toBytes())).apply {
+        @Value("\${idp.admin.max-upload-size}") maxUpload: DataSize,
+    ) = FilterRegistrationBean(RequestSizeFilter(maxSize.toBytes(), mapOf(METADATA_UPLOAD to maxUpload.toBytes()))).apply {
         order = RequestSizeFilter.ORDER
         addUrlPatterns(API, "/saml/*")
     }

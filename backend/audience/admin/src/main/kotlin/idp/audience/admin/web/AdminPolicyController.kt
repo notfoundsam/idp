@@ -18,8 +18,6 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.time.Duration
 
-private val ETAG = Regex("\"(\\d{1,18})\"")
-
 /** MFA for `TENANT_ADMIN` and an expiry of the password have no field, so a body that names one is refused. */
 data class PolicyRequest(
     val mfaForUsers: Boolean,
@@ -34,15 +32,6 @@ data class PolicyResponse(
     val sessionIdleSeconds: Long,
     val sessionAbsoluteSeconds: Long,
 )
-
-private fun etag(version: Long) = "\"$version\""
-
-/** A save without the version it read could undo a change of another admin unseen, so it is refused rather than let through. */
-private fun versionOf(ifMatch: String?): Long {
-    ifMatch ?: throw ResponseStatusException(HttpStatus.PRECONDITION_REQUIRED)
-    val version = ETAG.matchEntire(ifMatch.trim())?.groupValues?.get(1)
-    return version?.toLong() ?: throw ResponseStatusException(HttpStatus.PRECONDITION_FAILED)
-}
 
 /** The policy is read and replaced as a whole, so its version travels as the `ETag` and comes back in `If-Match`. */
 @RestController

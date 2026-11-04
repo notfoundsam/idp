@@ -30,6 +30,7 @@ import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.domain.Conflict
 import idp.sharedkernel.domain.NotFound
+import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.throttle.TooManyRequestsException
@@ -60,6 +61,7 @@ private const val PRIVATE_KEY_FIELD = "saml_signing_keys.private_key_ciphertext"
 private const val REQUEST_FIELD = "saml_requests.request_ciphertext"
 private const val RELAY_STATE_FIELD = "saml_requests.relay_state_ciphertext"
 private const val METADATA_PATH = "/saml/metadata"
+private const val SERVICE_PROVIDERS_TABLE = "service_providers"
 
 private val REQUESTS_FULL_RETRY: Duration = Duration.ofMinutes(1)
 
@@ -119,6 +121,14 @@ class ServiceProviderView(
     val authnRequestsSigned: Boolean,
     val settings: SpSettings,
     val version: Long,
+)
+
+/** A published key. A [next] one is in metadata beside the active one, and signs only once the rotation completes. */
+class SigningKeyView(
+    val id: UUID,
+    val next: Boolean,
+    val certificate: X509Certificate,
+    val createdAt: Instant,
 )
 
 /** Not a data class: `toString` must not print the private key. */
@@ -202,6 +212,12 @@ class FederationService(
 
     fun entityId(): String? = transaction.execute { dsl -> identities.find(dsl)?.entityId }
 
+    /** The active key first, as in metadata. */
+    fun signingKeys(): List<SigningKeyView> =
+        transaction.execute { dsl ->
+            signingKeys.ring(dsl).published.map { SigningKeyView(it.id, it.status == SigningKeyStatus.NEXT, it.certificate, it.createdAt) }
+        }
+
     fun signingCredential(): SigningCredential {
         val key = transaction.execute { dsl -> signingKeys.ring(dsl).active } ?: throw SamlIdentityMissing()
         val pkcs8 = keys.derivedCipher(DerivedKey.SAML_SIGNING).decrypt(key.privateKeyCiphertext, FieldContext(PRIVATE_KEY_FIELD, key.id))
@@ -225,17 +241,23 @@ class FederationService(
         return sp.id
     }
 
+    /**
+     * [version] is the one the caller read, so a change made meanwhile is not undone unseen. A system caller that never read the
+     * settings passes none. Returns the version after the change.
+     */
     fun changeSettings(
         spId: UUID,
         settings: SpSettings,
         actor: Actor,
         ip: String? = null,
-    ) {
+        version: Long? = null,
+    ): Long =
         transaction.execute { dsl ->
             val sp = load(dsl, spId)
-            if (sp.settings == settings) return@execute
+            if (version != null && version != sp.version) throw VersionConflictException(SERVICE_PROVIDERS_TABLE, spId, version)
+            if (sp.settings == settings) return@execute sp.version
             sp.changeSettings(settings)
-            serviceProviders.save(dsl, sp)
+            val saved = serviceProviders.save(dsl, sp)
             audit.recordChange(
                 AuditRecord(
                     actor,
@@ -254,8 +276,8 @@ class FederationService(
                     ),
                 ),
             )
+            saved
         }
-    }
 
     /** The assignments go with it by FK, so a later SP with the same EntityID starts with nobody. */
     fun removeServiceProvider(

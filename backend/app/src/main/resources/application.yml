@@ -11,6 +11,11 @@ spring:
   servlet:
     encoding:
       force-response: true
+    multipart:
+      max-file-size: ${idp.admin.max-upload-size}
+      max-request-size: ${idp.admin.max-upload-size}
+      # A file below it stays in memory, so an upload never lands on the disk.
+      file-size-threshold: ${idp.admin.max-upload-size}
 
 idp:
   tenants:
@@ -22,6 +27,9 @@ idp:
     # Above what the limit on starting flows lets in during the 15 minutes a flow lives, so filling it needs Valkey to be down.
     max-open-flows: 100000
     max-request-size: 32KB
+  admin:
+    # The largest metadata file of 128 KiB with the name and the framing of the form. A larger file within it is refused by the importer.
+    max-upload-size: 160KB
   client-ip:
     trusted-header: ${CLIENT_IP_HEADER:}
   kms:

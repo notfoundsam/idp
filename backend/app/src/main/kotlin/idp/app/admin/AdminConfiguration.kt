@@ -1,20 +1,32 @@
 package idp.app.admin
 
 import idp.audience.admin.AdminSecurityConfig
+import idp.audience.admin.application.command.AssignUsersHandler
 import idp.audience.admin.application.command.BlockUserHandler
 import idp.audience.admin.application.command.ChangeRoleHandler
+import idp.audience.admin.application.command.ChangeSpSettingsHandler
+import idp.audience.admin.application.command.CompleteKeyRotationHandler
 import idp.audience.admin.application.command.EndAllSessionsHandler
 import idp.audience.admin.application.command.EndUserSessionsHandler
 import idp.audience.admin.application.command.EraseUserHandler
 import idp.audience.admin.application.command.InviteUserHandler
+import idp.audience.admin.application.command.RegisterServiceProviderHandler
+import idp.audience.admin.application.command.RemoveServiceProviderHandler
 import idp.audience.admin.application.command.ResendInvitationHandler
 import idp.audience.admin.application.command.ResetMfaHandler
 import idp.audience.admin.application.command.SavePolicyHandler
+import idp.audience.admin.application.command.StartKeyRotationHandler
+import idp.audience.admin.application.command.UnassignUsersHandler
 import idp.audience.admin.application.command.UnblockUserHandler
 import idp.audience.admin.application.query.FindUserByEmailHandler
+import idp.audience.admin.application.query.GetAssignedUsersHandler
 import idp.audience.admin.application.query.GetPolicyHandler
+import idp.audience.admin.application.query.GetServiceProviderHandler
 import idp.audience.admin.application.query.GetUserCardHandler
+import idp.audience.admin.application.query.ListServiceProvidersHandler
+import idp.audience.admin.application.query.ListSigningKeysHandler
 import idp.audience.admin.web.AdminPolicyController
+import idp.audience.admin.web.AdminServiceProvidersController
 import idp.audience.admin.web.AdminUsersController
 import idp.audit.application.AuditService
 import idp.authentication.application.AuthenticationService
@@ -82,6 +94,48 @@ class AdminConfiguration {
         federation: FederationService,
         audit: AuditService,
     ) = GetUserCardHandler(identity, federation, audit)
+
+    @Bean
+    fun listServiceProvidersHandler(federation: FederationService) = ListServiceProvidersHandler(federation)
+
+    @Bean
+    fun getServiceProviderHandler(federation: FederationService) = GetServiceProviderHandler(federation)
+
+    @Bean
+    fun registerServiceProviderHandler(federation: FederationService) = RegisterServiceProviderHandler(federation)
+
+    @Bean
+    fun changeSpSettingsHandler(federation: FederationService) = ChangeSpSettingsHandler(federation)
+
+    @Bean
+    fun removeServiceProviderHandler(federation: FederationService) = RemoveServiceProviderHandler(federation)
+
+    @Bean
+    fun getAssignedUsersHandler(
+        federation: FederationService,
+        identity: IdentityService,
+    ) = GetAssignedUsersHandler(federation, identity)
+
+    @Bean
+    fun assignUsersHandler(federation: FederationService) = AssignUsersHandler(federation)
+
+    @Bean
+    fun unassignUsersHandler(federation: FederationService) = UnassignUsersHandler(federation)
+
+    @Bean
+    fun listSigningKeysHandler(federation: FederationService) = ListSigningKeysHandler(federation)
+
+    @Bean
+    fun startKeyRotationHandler(federation: FederationService) = StartKeyRotationHandler(federation)
+
+    @Bean
+    fun completeKeyRotationHandler(federation: FederationService) = CompleteKeyRotationHandler(federation)
+
+    @Bean
+    fun adminServiceProvidersController(
+        commands: CommandBus,
+        queries: QueryBus,
+    ) = AdminServiceProvidersController(commands, queries)
 
     @Bean
     fun adminUsersController(

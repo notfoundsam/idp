@@ -1,8 +1,5 @@
 package idp.app.admin
 
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import idp.app.login.Browser
 import idp.app.login.LoginEnvironment
 import idp.app.login.Reply
@@ -17,7 +14,6 @@ import idp.identity.application.ProfileChange
 import idp.identity.application.UserView
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
-import idp.sharedkernel.bus.decorators.LoggerDecorator
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
 import io.kotest.core.spec.style.FunSpec
@@ -31,7 +27,6 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldBeEmpty
 import io.kotest.matchers.string.shouldContain
-import org.slf4j.LoggerFactory
 import java.util.UUID
 
 private const val USERS = "/api/admin/users"
@@ -269,19 +264,6 @@ class AdminUsersApiTest :
                 sp: UUID,
                 user: UUID,
             ) = acme.acting { application.getBean(FederationService::class.java).assign(sp, listOf(user), Actor.System) }
-
-            fun messagesDuring(action: () -> Reply): Pair<Reply, List<String>> {
-                val logger = LoggerFactory.getLogger(LoggerDecorator::class.java) as Logger
-                val lines = ListAppender<ILoggingEvent>().also { it.start() }
-                logger.addAppender(lines)
-                val reply =
-                    try {
-                        action()
-                    } finally {
-                        logger.detachAppender(lines)
-                    }
-                return reply to lines.list.map { it.formattedMessage }.filter { "message=idp.audience.admin." in it }
-            }
 
             test("assembles the user, their Service Providers and the journal about them in one query") {
                 val (browser, admin) = admin("card-reader")

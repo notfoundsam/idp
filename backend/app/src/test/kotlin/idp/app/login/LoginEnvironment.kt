@@ -22,6 +22,7 @@ import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.jdbc.core.JdbcTemplate
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
+import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -194,6 +195,17 @@ class Browser(
         vararg headers: String,
     ) = send(request(path, *headers).header("Content-Type", "application/json").method(method, publisher))
 
+    /** A form with files, as `FormData` of a page sends it, with the CSRF token echoed. */
+    fun multipart(
+        path: String,
+        form: MultipartForm,
+        echoCsrf: Boolean = true,
+    ): Reply {
+        val request = request(path).header("Content-Type", form.contentType)
+        if (echoCsrf) cookies[CsrfCookie.NAME]?.let { request.header(CsrfCookie.HEADER, it) }
+        return send(request.POST(HttpRequest.BodyPublishers.ofByteArray(form.body())))
+    }
+
     private fun request(
         path: String,
         vararg headers: String,
@@ -243,6 +255,40 @@ class Browser(
         check(password(flow, password).status == 200) { "The password was refused" }
         check(complete(flow).status == 200) { "The login did not complete" }
         return this
+    }
+}
+
+/** The parts of a `multipart/form-data` body, written by hand so a test can name any file name. */
+class MultipartForm {
+    private val boundary = "----idp-test-${UUID.randomUUID()}"
+    private val out = ByteArrayOutputStream()
+
+    val contentType: String get() = "multipart/form-data; boundary=$boundary"
+
+    fun field(
+        name: String,
+        value: String,
+    ) = apply { part("""form-data; name="$name"""", null, value.toByteArray()) }
+
+    fun file(
+        name: String,
+        fileName: String,
+        content: ByteArray,
+        type: String = "text/xml",
+    ) = apply { part("""form-data; name="$name"; filename="$fileName"""", type, content) }
+
+    fun body(): ByteArray = out.toByteArray() + "--$boundary--\r\n".toByteArray()
+
+    private fun part(
+        disposition: String,
+        type: String?,
+        content: ByteArray,
+    ) {
+        out.write("--$boundary\r\nContent-Disposition: $disposition\r\n".toByteArray())
+        type?.let { out.write("Content-Type: $it\r\n".toByteArray()) }
+        out.write("\r\n".toByteArray())
+        out.write(content)
+        out.write("\r\n".toByteArray())
     }
 }
 

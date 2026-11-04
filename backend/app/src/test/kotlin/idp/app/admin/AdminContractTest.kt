@@ -2,6 +2,7 @@ package idp.app.admin
 
 import idp.app.login.Browser
 import idp.app.login.LoginEnvironment
+import idp.app.login.MultipartForm
 import idp.app.login.Reply
 import idp.app.login.text
 import idp.federation.TestSp
@@ -30,6 +31,14 @@ private const val USER_SESSIONS = "/api/admin/users/{id}/sessions"
 private const val ALL_SESSIONS = "/api/admin/sessions"
 private const val SEARCH = "/api/admin/users/search"
 private const val POLICY = "/api/admin/policy"
+private const val SPS = "/api/admin/service-providers"
+private const val SP = "/api/admin/service-providers/{id}"
+private const val SP_SETTINGS = "/api/admin/service-providers/{id}/settings"
+private const val SP_USERS = "/api/admin/service-providers/{id}/users"
+private const val SP_REMOVAL = "/api/admin/service-providers/{id}/users/removal"
+private const val KEYS = "/api/admin/signing-keys"
+private const val ROTATION = "/api/admin/signing-keys/rotation"
+private const val COMPLETION = "/api/admin/signing-keys/rotation/completion"
 private const val ADMIN = " /api/admin/"
 private const val ETAG = "ETag"
 private const val IF_MATCH = "If-Match"
@@ -78,6 +87,82 @@ class AdminContractTest :
             requestFields(PUT, ROLE) shouldBe setOf("role")
             requestFields(POST, SEARCH) shouldBe setOf("email")
             requestFields(PUT, POLICY) shouldBe setOf("mfaForUsers", "passkeyRequired", "sessionIdleSeconds", "sessionAbsoluteSeconds")
+            requestFields(PUT, SP_SETTINGS) shouldBe setOf("nameIdFormat", "signedPart", "signatureAlgorithm", "attributes")
+            requestFields(POST, SP_USERS) shouldBe setOf("userIds")
+            requestFields(POST, SP_REMOVAL) shouldBe setOf("userIds")
+        }
+
+        test("the Service Providers conform, also when refused") {
+            val (browser, admin) = admin("contract-sp-admin")
+            val (ordinary, user) = member("contract-sp-member")
+            val content = TestSp("https://contract-sp-${UUID.randomUUID()}.example/saml").metadata().toByteArray()
+
+            val created = browser.multipart(SPS, metadataForm("Contract", content)).conforms(POST, SPS)
+            created.status shouldBe 201
+            val id = created.json().text("id")
+            browser.multipart(SPS, metadataForm("Again", content)).conforms(POST, SPS).status shouldBe 409
+            browser.multipart(SPS, metadataForm("Broken", "<x/>".toByteArray())).conforms(POST, SPS).status shouldBe 422
+            browser.multipart(SPS, MultipartForm().field("name", "Fileless")).conforms(POST, SPS).status shouldBe 400
+            browser.post(SPS, "{}").conforms(POST, SPS).status shouldBe 415
+            browser.get(SPS).conforms(GET, SPS).status shouldBe 200
+            val read = browser.get(SP.of(id)).conforms(GET, SP)
+            read.status shouldBe 200
+            val etag = read.header(ETAG).shouldNotBeNull()
+            val body = spSettingsBody(attributes = listOf("EMAIL"))
+            val saved = browser.put(SP_SETTINGS.of(id), body, IF_MATCH, etag).conforms(PUT, SP_SETTINGS)
+            saved.status shouldBe 204
+            contract.responseHeaders(PUT, SP_SETTINGS, 204).forEach { saved.header(it).shouldNotBeNull() }
+            browser.put(SP_SETTINGS.of(id), body, IF_MATCH, etag).conforms(PUT, SP_SETTINGS).status shouldBe 412
+            browser.put(SP_SETTINGS.of(id), body).conforms(PUT, SP_SETTINGS).status shouldBe 428
+            browser.put(SP_SETTINGS.of(id), "{}", IF_MATCH, etag).conforms(PUT, SP_SETTINGS).status shouldBe 400
+            browser.post(SP_USERS.of(id), usersBody(user)).conforms(POST, SP_USERS).status shouldBe 204
+            browser.post(SP_USERS.of(id), usersBody(UUID.randomUUID())).conforms(POST, SP_USERS).status shouldBe 404
+            browser.post(SP_USERS.of(id), usersBody()).conforms(POST, SP_USERS).status shouldBe 400
+            val assigned = browser.get(SP_USERS.of(id)).conforms(GET, SP_USERS)
+            assigned.status shouldBe 200
+            assigned.json().get("users").size() shouldBe 1
+            browser.post(SP_REMOVAL.of(id), usersBody(user)).conforms(POST, SP_REMOVAL).status shouldBe 204
+            browser.post(SP_REMOVAL.of(UUID.randomUUID()), usersBody(user)).conforms(POST, SP_REMOVAL).status shouldBe 404
+            ordinary.get(SPS).conforms(GET, SPS).status shouldBe 403
+            ordinary.get(SP.of(id)).conforms(GET, SP).status shouldBe 403
+            ordinary.delete(SP.of(id)).conforms(DELETE, SP).status shouldBe 403
+            Browser(application).get(SP_USERS.of(id)).conforms(GET, SP_USERS).status shouldBe 401
+            browser.get(SP.of(UUID.randomUUID())).conforms(GET, SP).status shouldBe 404
+            environment.age(admin)
+            browser.delete(SP.of(id)).conforms(DELETE, SP).status shouldBe 403
+        }
+
+        test("removing a Service Provider conforms") {
+            val (browser, _) = admin("contract-sp-remover")
+            val content = TestSp("https://contract-removed-${UUID.randomUUID()}.example/saml").metadata().toByteArray()
+            val id = browser.multipart(SPS, metadataForm("Removed", content)).json().text("id")
+
+            browser.delete(SP.of(id)).conforms(DELETE, SP).status shouldBe 204
+            browser.delete(SP.of(id)).conforms(DELETE, SP).status shouldBe 404
+            browser.delete(SP.of("nonsense")).conforms(DELETE, SP).status shouldBe 400
+        }
+
+        test("the signing keys conform, also when refused") {
+            val (browser, admin) = admin("contract-key-rotator")
+            val (ordinary, _) = member("contract-key-onlooker")
+            environment.acme.acting { application.getBean(FederationService::class.java).createIdentity(environment.acme.host) }
+
+            val keys = browser.get(KEYS).conforms(GET, KEYS)
+            keys.status shouldBe 200
+            keys.json().get("keys").size() shouldBe 1
+            browser.post(COMPLETION).conforms(POST, COMPLETION).status shouldBe 409
+            browser.post(ROTATION).conforms(POST, ROTATION).status shouldBe 201
+            browser.post(ROTATION).conforms(POST, ROTATION).status shouldBe 409
+            val rotating = browser.get(KEYS).conforms(GET, KEYS)
+            rotating.json().get("keys").size() shouldBe 2
+            ordinary.get(KEYS).conforms(GET, KEYS).status shouldBe 403
+            ordinary.post(ROTATION).conforms(POST, ROTATION).status shouldBe 403
+            ordinary.post(COMPLETION).conforms(POST, COMPLETION).status shouldBe 403
+            Browser(application).post(ROTATION).conforms(POST, ROTATION).status shouldBe 401
+            browser.post(COMPLETION).conforms(POST, COMPLETION).status shouldBe 204
+            environment.age(admin)
+            browser.post(ROTATION).conforms(POST, ROTATION).status shouldBe 201
+            browser.post(COMPLETION).conforms(POST, COMPLETION).status shouldBe 403
         }
 
         test("searching conforms, also when refused") {
