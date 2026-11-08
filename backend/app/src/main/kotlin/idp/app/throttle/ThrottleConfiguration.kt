@@ -19,6 +19,7 @@ import java.time.Duration
 
 private const val PROD = "prod"
 private const val MIN_PROD_KEY_LENGTH = 32
+private val UNTRUSTED_CLIENT_IP_HEADERS = listOf("X-Forwarded-For", "Forwarded")
 
 @Configuration(proxyBeanMethods = false)
 class ThrottleGuard(
@@ -39,6 +40,13 @@ class ThrottleGuard(
             }
             check(environment.getRequiredProperty("idp.throttle.ip-hmac-key").length >= MIN_PROD_KEY_LENGTH) {
                 "A THROTTLE_IP_HMAC_KEY shorter than $MIN_PROD_KEY_LENGTH characters is refused in the $PROD profile"
+            }
+            val clientIpHeader = environment.getProperty("idp.client-ip.trusted-header").orEmpty()
+            check(clientIpHeader.isNotBlank()) {
+                "An empty CLIENT_IP_HEADER is refused in the $PROD profile, every client would share the address of the load balancer"
+            }
+            check(UNTRUSTED_CLIENT_IP_HEADERS.none { it.equals(clientIpHeader.trim(), ignoreCase = true) }) {
+                "CLIENT_IP_HEADER=$clientIpHeader is refused in the $PROD profile, a proxy appends to what the client sent in it"
             }
         }
     }

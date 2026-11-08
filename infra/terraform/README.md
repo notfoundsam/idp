@@ -9,12 +9,12 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB |
 | `modules/registry` | ECR repositories with immutable tags |
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
-| `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. The certificates of both and the HTTPS listener of the ALB |
+| `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. Its WAF, the certificates of both, the HTTPS listener of the ALB and the ingress of the ALB from CloudFront alone |
 | `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
 | `modules/pki` | The internal CA and the server certificates it issues, their keys in Secrets Manager |
 | `modules/data` | RDS, the role passwords, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
 | `modules/valkey` | ElastiCache Valkey with TLS and an AUTH token, reachable from `app` alone |
-| `modules/keys` | The platform KEK and the HMAC key of Throttle |
+| `modules/keys` | The platform KEK, the HMAC key of Throttle and the origin header of CloudFront |
 | `modules/erasure-journal` | The bucket of the erasure journal under Object Lock, see `docs/security/restore-runbook.md` |
 | `modules/mail` | The SMTP credentials of SES for one sender |
 
@@ -42,7 +42,16 @@ Every tenant domain is a subdomain of `domain` and reaches one CloudFront distri
 
 `app` selects the tenant by the `Host`, so CloudFront passes it on, and the certificate of the ALB matches it. The edge caches no error either: the cache key holds no `Host`, and an error of one tenant would reach the others. A missing file in S3 is therefore a `403`, as CloudFront may not list the bucket, and the error pages of a distribution cannot turn it into a `404` without replacing the errors of the API too.
 
-The listener answers `404` until a rule forwards to a service. CloudFront takes certificates only from `us-east-1`, so the environment has a second provider `aws.us_east_1`.
+CloudFront takes certificates and web ACLs only from `us-east-1`, so the environment has a second provider `aws.us_east_1`.
+
+Nothing reaches the ALB past CloudFront and its WAF:
+
+- **WAF:** the web ACL of the distribution limits each client address, see `docs/security/limits.md`. Behind CloudFront every request would come from an edge server, so only the edge can count by the viewer.
+- **Security group:** the ALB takes HTTPS only from the managed prefix list `com.amazonaws.global.cloudfront.origin-facing`. It weighs 55 of the 60 inbound rules a security group takes by default, so the group of the ALB gets no other ingress.
+- **Origin header:** the prefix list admits the distributions of every AWS account, so CloudFront also sends `X-Origin-Verify` with a generated value, and the listener answers `403` without it. Every rule that forwards to a service has to require it too, with the output `origin_header` of the module as the name and `module.keys.origin_header_value` as the value. A request with the header that no rule takes gets `404`.
+- **Client address:** the origin request policy of `app` adds `CloudFront-Viewer-Address`, which CloudFront overwrites when a viewer sends it, and the output `services` hands `app` its name as `CLIENT_IP_HEADER`. `app` reads the address from that header alone and never from `X-Forwarded-For`, which keeps what the client sent.
+
+The plan cannot prove that CloudFront overwrites the address a client sends, so a new environment is checked once: from one client, start 31 flows in a minute, each with another forged `CloudFront-Viewer-Address`. The last one must get `429`, as all of them count under the real address of the client.
 
 DNS hosting is not decided, so Terraform creates no records. On the first apply:
 
@@ -77,9 +86,10 @@ Terraform generates every credential of the services into Secrets Manager, and n
 | AUTH token of Valkey, `VALKEY_PASSWORD` | `<env>/valkey/auth-token` | `credential_versions.valkey_auth_token` |
 | HMAC key of Throttle, `THROTTLE_IP_HMAC_KEY` | `<env>/app/throttle-ip-hmac-key` | `credential_versions.throttle_ip_hmac_key` |
 | SMTP credentials of SES, `MAIL_USERNAME` and `MAIL_PASSWORD` | `<env>/mail/smtp`, keys `username` and `password` | `credential_versions.smtp` |
+| Origin header of CloudFront, `X-Origin-Verify` | `<env>/edge/origin-header` | `credential_versions.origin_header` |
 | TLS key of PgBouncer | `<env>/tls/pgbouncer` | An apply in the last 60 days of its certificate |
 
-The passwords, the token and the HMAC key are write-only values, so they reach neither the plan, the state nor the repository. SES derives SMTP credentials only from the access key of an IAM user, which AWS cannot create write-only, so that key lives in the encrypted state like the keys of `modules/pki`. `ProductionDatabaseTest` runs the database images and connection settings against a Postgres that behaves like RDS, `ValkeyTlsTest` the client of `app` against a Valkey that serves TLS alone.
+The passwords, the token and the HMAC key are write-only values, so they reach neither the plan, the state nor the repository. The origin header is written the same way, but CloudFront and the ALB keep it in their configuration, so Terraform reads it back and it lives in the encrypted state, marked sensitive in the plan. SES derives SMTP credentials only from the access key of an IAM user, which AWS cannot create write-only, so that key lives in the encrypted state like the keys of `modules/pki`. `ProductionDatabaseTest` runs the database images and connection settings against a Postgres that behaves like RDS, `ValkeyTlsTest` the client of `app` against a Valkey that serves TLS alone.
 
 To replace a database password, raise its version and apply. Then run `owner` for `idp_owner` and `provisioner` or `role-passwords` for a runtime role, and redeploy PgBouncer and the services that use the role. Connections that PgBouncer opened before keep working until they close.
 
@@ -88,6 +98,7 @@ To replace another credential, raise its version, apply and redeploy the service
 - **Valkey token:** ElastiCache accepts the new token beside the previous one, so `app` keeps working while it redeploys. A leaked token stays valid until the next replacement, so raise the version twice, with a redeploy of `app` in between.
 - **HMAC key:** the counters start over, nothing else depends on the key.
 - **SMTP credentials:** the old access key is deleted in the same apply, so redeploy `worker` right after it. Until then sends fail and the outbox retries them.
+- **Origin header:** the listener takes the new value at once, while CloudFront needs some minutes to deploy it to every edge, and the ALB refuses the API and SAML with `403` meanwhile. Nothing redeploys, but replace it only after a leak and outside working hours.
 
 ## Platform KEK and erasure journal
 

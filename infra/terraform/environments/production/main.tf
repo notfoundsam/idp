@@ -32,12 +32,14 @@ module "edge" {
     aws.us_east_1 = aws.us_east_1
   }
 
-  name                 = local.name
-  domain               = var.domain
-  alb_arn              = module.network.alb_arn
-  alb_dns_name         = module.network.alb_dns_name
-  static_origin_domain = module.static.bucket_regional_domain_name
-  security_headers     = jsondecode(file("${path.module}/../../../web/security-headers.json"))
+  name                  = local.name
+  domain                = var.domain
+  alb_arn               = module.network.alb_arn
+  alb_dns_name          = module.network.alb_dns_name
+  alb_security_group_id = module.network.security_group_ids["alb"]
+  origin_header_value   = module.keys.origin_header_value
+  static_origin_domain  = module.static.bucket_regional_domain_name
+  security_headers      = jsondecode(file("${path.module}/../../../web/security-headers.json"))
 }
 
 module "cluster" {
@@ -89,6 +91,7 @@ module "keys" {
 
   name                         = local.name
   throttle_ip_hmac_key_version = lookup(var.credential_versions, "throttle_ip_hmac_key", 1)
+  origin_header_version        = lookup(var.credential_versions, "origin_header", 1)
 }
 
 module "erasure_journal" {
@@ -117,8 +120,9 @@ locals {
   services = {
     app = {
       environment = {
-        VALKEY_URL    = module.valkey.url
-        VALKEY_TLS_CA = module.valkey.tls_ca_pem
+        VALKEY_URL       = module.valkey.url
+        VALKEY_TLS_CA    = module.valkey.tls_ca_pem
+        CLIENT_IP_HEADER = module.edge.client_ip_header
       }
       secrets = {
         VALKEY_PASSWORD      = module.valkey.auth_token_secret_arn

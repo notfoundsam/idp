@@ -76,7 +76,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
 | V2.3.4 | 2 | Done | T23, T24 | Invitation, reset and email change tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `AccountRecoveryTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
-| V2.4.1 | 2 | Partial | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`). Switching them off with `THROTTLE_ENABLED=false` or raising them with `THROTTLE_MULTIPLIER`, which only the local environment and e2e do, is refused in the `prod` profile (`ThrottleApplicationTest`), WAF remains |
+| V2.4.1 | 2 | Done | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`). Switching them off with `THROTTLE_ENABLED=false` or raising them with `THROTTLE_MULTIPLIER`, which only the local environment and e2e do, is refused in the `prod` profile (`ThrottleApplicationTest`). In front of them the WAF of CloudFront limits each client address, all requests and those of `app` apart, with a `429` (`edge.tftest.hcl`, `docs/security/limits.md`), and the ALB takes only requests that passed it |
 
 ## V3 Web Frontend Security
 
@@ -108,8 +108,8 @@ A change that adds, removes or weakens a control updates its row in the same pul
 |---|---|---|---|---|
 | V4.1.1 | 1 | Partial | T42 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), and so does nginx for the static files (`render-nginx.test.mjs`, `make smoke`). The upload to S3 remains |
 | V4.1.2 | 2 | Done | T40 | Only the pages of S3 redirect to HTTPS: `/login/*`, `/console/*`, `/` and the links of the mails. `/api/*` and `/saml/*` refuse plain HTTP, and the ALB has no listener for it (`edge.tftest.hcl`) |
-| V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
-| V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
+| V4.1.3 | 2 | Partial | T40 | `app` trusts one configured header, `CloudFront-Viewer-Address`, and ignores `X-Forwarded-For` and a malformed or missing value (`ClientIpTest`, `ThrottleApplicationTest`). The `prod` profile refuses an empty `CLIENT_IP_HEADER` and the headers a proxy appends to. CloudFront generates it through the origin request policy of `app`, overwrites the origin header `X-Origin-Verify`, and the ALB takes only CloudFront with that header (`edge.tftest.hcl`). Proving on staging that a value sent by the client does not reach `app` remains |
+| V4.2.1 | 2 | Done | T39, T40 | The public ALB drops invalid header fields and uses the `strictest` desync mitigation (`network.tftest.hcl`) |
 | V4.3.1 | 2 | N/A | | No GraphQL |
 | V4.3.2 | 2 | N/A | | No GraphQL |
 | V4.4.1 | 1 | N/A | | No WebSocket |
@@ -298,7 +298,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V13.1.1 | 2 | Planned | T41 | `docs/security/communications.md` lists every connection |
 | V13.2.1 | 2 | Partial | T39, T41 | Each service has its own database role (`DatabaseRolesTest`), IAM roles remain |
 | V13.2.2 | 2 | Partial | T39, T41 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`), IAM remains |
-| V13.2.3 | 2 | Done | T39 | Terraform generates every credential of the services into Secrets Manager: database passwords, the Valkey token and the HMAC key of Throttle as write-only values, the SMTP credentials of SES from an IAM key of their own (`modules/data`, `modules/valkey`, `modules/keys`, `modules/mail`), and RDS manages the master password itself. Default ones stay in the local environment, and the prod profile of `app` refuses its Valkey and HMAC key (`ThrottleApplicationTest`) |
+| V13.2.3 | 2 | Done | T39 | Terraform generates every credential of the services into Secrets Manager: database passwords, the Valkey token and the HMAC key of Throttle as write-only values, the SMTP credentials of SES from an IAM key of their own (`modules/data`, `modules/valkey`, `modules/keys`, `modules/mail`), and RDS manages the master password itself. The origin header of CloudFront is written the same way and reaches the state only through CloudFront and the ALB, which keep it in their configuration. Default ones stay in the local environment, and the prod profile of `app` refuses its Valkey and HMAC key (`ThrottleApplicationTest`) |
 | V13.2.4 | 2 | Planned | T41 | Security groups allow only listed destinations |
 | V13.2.5 | 2 | Planned | T41 | The same egress allowlist |
 | V13.3.1 | 2 | Partial | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The secrets of the services are there too, listed by variable in the output `services` of `infra/terraform`. Their task definitions remain |
@@ -336,7 +336,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.3.1 | 1 | Done | T32, T34, T36 | Audiences own their responses and build them field by field (`ArchitectureRulesTest`), and every contract test checks that a response carries exactly the fields of its schema (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
 | V15.3.3 | 2 | Done | T23 | Requests list their fields, unknown fields are refused (`FlowApiTest`, `OpsApiTest`) |
-| V15.3.4 | 2 | Partial | T40, T41 | One trusted header (`ClientIpTest`), the edge must set it |
+| V15.3.4 | 2 | Partial | T40 | One trusted header, `CloudFront-Viewer-Address` as `address:port` with IPv4 or IPv6, and the address of the socket when it is missing or malformed, never `X-Forwarded-For` (`ClientIpTest`, `ThrottleApplicationTest`). CloudFront sets it for `/api/*` and `/saml/*`, the WAF counts the same viewer address, and Terraform hands `app` the header as `CLIENT_IP_HEADER` (`edge.tftest.hcl`). Proving on staging that CloudFront overwrites a value sent by the client remains |
 | V15.3.5 | 2 | Done | T31 | Kotlin is statically typed. The frontend is strict TypeScript with `noUncheckedIndexedAccess`, checked by `make lint-frontend` in CI, and lint enforces `eqeqeq` (`lint.test.ts`) |
 | V15.3.6 | 2 | Done | T31 | Lint forbids index signatures and `Record`, so data with keys from outside goes in `Map` and `Set` (`lint.test.ts`) |
 | V15.3.7 | 2 | Done | | Each value of the API has one declared source (`FlowApiTest`). A repeated SAML parameter, an encoded copy of its name, or one in the URL of a POST is refused (`AuthnRequestValidatorTest`, `SsoApiTest`) |

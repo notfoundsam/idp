@@ -19,6 +19,28 @@ mock_provider "aws" {
       region = "us-east-1"
     }
   }
+
+  mock_resource "aws_wafv2_web_acl" {
+    defaults = {
+      arn    = "arn:aws:wafv2:us-east-1:111111111111:global/webacl/idp-test-edge/a1b2c3d4-5678-90ab-cdef-111111111111"
+      region = "us-east-1"
+    }
+  }
+}
+
+override_data {
+  target = data.aws_ec2_managed_prefix_list.cloudfront
+  values = {
+    id = "pl-a3a144ca"
+  }
+}
+
+override_resource {
+  target          = aws_lb_listener.https
+  override_during = plan
+  values = {
+    arn = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:listener/app/idp-test-public/50dc6c495c0c9188/f2f7dc8efc522ab2"
+  }
 }
 
 override_resource {
@@ -78,12 +100,14 @@ override_resource {
 }
 
 variables {
-  name                 = "idp-test"
-  domain               = "idp.example.com"
-  alb_arn              = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:loadbalancer/app/idp-test-public/50dc6c495c0c9188"
-  alb_dns_name         = "idp-test-public-1234567890.eu-central-1.elb.amazonaws.com"
-  static_origin_domain = "idp-test-static-111111111111.s3.eu-central-1.amazonaws.com"
-  security_headers     = jsondecode(file("../../../web/security-headers.json"))
+  name                  = "idp-test"
+  domain                = "idp.example.com"
+  alb_arn               = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:loadbalancer/app/idp-test-public/50dc6c495c0c9188"
+  alb_dns_name          = "idp-test-public-1234567890.eu-central-1.elb.amazonaws.com"
+  alb_security_group_id = "sg-0a1b2c3d4e5f60718"
+  origin_header_value   = "Origin0Header0Of0The0Test0Distribution0Only0Letters0And0Digits0"
+  static_origin_domain  = "idp-test-static-111111111111.s3.eu-central-1.amazonaws.com"
+  security_headers      = jsondecode(file("../../../web/security-headers.json"))
 }
 
 run "headers_of_the_static_files_come_from_security_headers_json" {
@@ -380,11 +404,166 @@ run "api_and_saml_reach_app_uncached_with_the_whole_viewer_request" {
 
   assert {
     condition = (
-      one(aws_cloudfront_origin_request_policy.api.headers_config).header_behavior == "allViewer" &&
+      one(aws_cloudfront_origin_request_policy.api.headers_config).header_behavior == "allViewerAndWhitelistCloudFront" &&
       one(aws_cloudfront_origin_request_policy.api.cookies_config).cookie_behavior == "all" &&
       one(aws_cloudfront_origin_request_policy.api.query_strings_config).query_string_behavior == "all"
     )
     error_message = "app does not get the Host, every cookie and the query string of the viewer."
+  }
+}
+
+run "app_gets_the_address_of_the_viewer_from_cloudfront" {
+  command = plan
+
+  assert {
+    condition     = one(one(aws_cloudfront_origin_request_policy.api.headers_config).headers).items == toset(["CloudFront-Viewer-Address"])
+    error_message = "CloudFront does not send the address of the viewer, or sends another header it generates."
+  }
+
+  assert {
+    condition     = output.client_ip_header == "CloudFront-Viewer-Address"
+    error_message = "app would read the client address from another header than the one CloudFront sets."
+  }
+}
+
+run "the_waf_of_us_east_1_limits_each_client_address" {
+  command = plan
+
+  assert {
+    condition = (
+      aws_wafv2_web_acl.edge.scope == "CLOUDFRONT" &&
+      aws_wafv2_web_acl.edge.region == "us-east-1" &&
+      aws_cloudfront_distribution.this.web_acl_id == aws_wafv2_web_acl.edge.arn
+    )
+    error_message = "The distribution has no web ACL of CloudFront in us-east-1."
+  }
+
+  assert {
+    condition     = length(one(aws_wafv2_web_acl.edge.default_action).allow) == 1
+    error_message = "The web ACL blocks what no rule names."
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_wafv2_web_acl.edge.rule : (
+        one(one(rule.statement).rate_based_statement).aggregate_key_type == "IP" &&
+        one(one(rule.statement).rate_based_statement).evaluation_window_sec == 300 &&
+        length(one(one(rule.statement).rate_based_statement).forwarded_ip_config) == 0 &&
+        one(one(one(rule.action).block).custom_response).response_code == 429
+      )
+    ])
+    error_message = "A rule counts by something else than the address of the viewer, or refuses without a 429."
+  }
+
+  assert {
+    condition = {
+      for rule in aws_wafv2_web_acl.edge.rule : rule.name => one(one(rule.statement).rate_based_statement).limit
+      } == {
+      "requests-per-address"     = 20000
+      "app-requests-per-address" = 10000
+    }
+    error_message = "The limits differ from docs/security/limits.md."
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_wafv2_web_acl.edge.rule :
+      length(one(one(rule.statement).rate_based_statement).scope_down_statement) == 0
+      if rule.name == "requests-per-address"
+    ])
+    error_message = "The limit of all requests leaves some out."
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_wafv2_web_acl.edge.rule : [
+        for statement in one(one(one(one(rule.statement).rate_based_statement).scope_down_statement).or_statement).statement : {
+          path       = one(statement.byte_match_statement).search_string
+          constraint = one(statement.byte_match_statement).positional_constraint
+          uri_path   = length(one(one(statement.byte_match_statement).field_to_match).uri_path) == 1
+        }
+        ] == [
+        { path = "/api/", constraint = "STARTS_WITH", uri_path = true },
+        { path = "/saml/", constraint = "STARTS_WITH", uri_path = true },
+      ]
+      if rule.name == "app-requests-per-address"
+    ])
+    error_message = "The limit of app counts other paths than /api/ and /saml/."
+  }
+}
+
+run "the_alb_takes_https_from_cloudfront_alone" {
+  command = plan
+
+  assert {
+    condition = (
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.security_group_id == var.alb_security_group_id &&
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.prefix_list_id == "pl-a3a144ca" &&
+      data.aws_ec2_managed_prefix_list.cloudfront.name == "com.amazonaws.global.cloudfront.origin-facing" &&
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.cidr_ipv4 == null &&
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.cidr_ipv6 == null
+    )
+    error_message = "The ALB admits addresses beyond the origin-facing servers of CloudFront."
+  }
+
+  assert {
+    condition = (
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.ip_protocol == "tcp" &&
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.from_port == 443 &&
+      aws_vpc_security_group_ingress_rule.alb_from_cloudfront.to_port == 443
+    )
+    error_message = "CloudFront reaches the ALB on another port than HTTPS."
+  }
+}
+
+run "the_alb_refuses_a_request_without_the_header_of_this_distribution" {
+  command = plan
+
+  assert {
+    condition = anytrue([
+      for origin in aws_cloudfront_distribution.this.origin :
+      origin.custom_header == toset([{ name = "X-Origin-Verify", value = var.origin_header_value }])
+      if origin.origin_id == "app"
+    ])
+    error_message = "CloudFront does not send the generated header to the ALB."
+  }
+
+  assert {
+    condition = alltrue([
+      for origin in aws_cloudfront_distribution.this.origin : length(origin.custom_header) == 0 if origin.origin_id == "static"
+    ])
+    error_message = "The header of the ALB reaches S3."
+  }
+
+  assert {
+    condition = (
+      one(aws_lb_listener.https.default_action).type == "fixed-response" &&
+      one(one(aws_lb_listener.https.default_action).fixed_response).status_code == "403"
+    )
+    error_message = "A request without the header gets something else than a 403."
+  }
+
+  assert {
+    condition = (
+      aws_lb_listener_rule.from_cloudfront.listener_arn == aws_lb_listener.https.arn &&
+      aws_lb_listener_rule.from_cloudfront.priority == 50000 &&
+      one(one(aws_lb_listener_rule.from_cloudfront.condition).http_header).http_header_name == "X-Origin-Verify" &&
+      one(one(aws_lb_listener_rule.from_cloudfront.condition).http_header).values == toset([var.origin_header_value])
+    )
+    error_message = "The last rule of the listener does not require the header of the distribution."
+  }
+
+  assert {
+    condition = (
+      one(aws_lb_listener_rule.from_cloudfront.action).type == "fixed-response" &&
+      one(one(aws_lb_listener_rule.from_cloudfront.action).fixed_response).status_code == "404"
+    )
+    error_message = "A request of the distribution that no service takes reaches one."
+  }
+
+  assert {
+    condition     = output.origin_header == "X-Origin-Verify"
+    error_message = "The rules of the services would require another header."
   }
 }
 
@@ -454,10 +633,7 @@ run "the_alb_serves_tls_with_the_certificate_of_its_region" {
   }
 
   assert {
-    condition = (
-      one(aws_lb_listener.https.default_action).type == "fixed-response" &&
-      one(one(aws_lb_listener.https.default_action).fixed_response).status_code == "404"
-    )
+    condition     = one(aws_lb_listener.https.default_action).type == "fixed-response"
     error_message = "A request that no rule takes reaches a service."
   }
 }
@@ -660,6 +836,46 @@ run "a_network_load_balancer_refused" {
   }
 
   expect_failures = [var.alb_arn]
+}
+
+run "a_security_group_by_name_refused" {
+  command = plan
+
+  variables {
+    alb_security_group_id = "idp-test-alb"
+  }
+
+  expect_failures = [var.alb_security_group_id]
+}
+
+run "an_origin_header_with_a_wildcard_refused" {
+  command = plan
+
+  variables {
+    origin_header_value = "Origin0Header0Of0The0Test0Distribution*"
+  }
+
+  expect_failures = [var.origin_header_value]
+}
+
+run "a_short_origin_header_refused" {
+  command = plan
+
+  variables {
+    origin_header_value = "Short0Header"
+  }
+
+  expect_failures = [var.origin_header_value]
+}
+
+run "an_origin_header_longer_than_the_alb_compares_refused" {
+  command = plan
+
+  variables {
+    origin_header_value = join("", [for index in range(129) : "a"])
+  }
+
+  expect_failures = [var.origin_header_value]
 }
 
 run "the_website_endpoint_of_a_bucket_refused" {

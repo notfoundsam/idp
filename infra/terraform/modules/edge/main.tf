@@ -8,6 +8,17 @@ locals {
 
   # Every code that CloudFront lets a distribution configure.
   error_codes = [400, 403, 404, 405, 414, 416, 500, 501, 502, 503, 504]
+
+  # CloudFront overwrites both when a viewer sends them, so app and the ALB may trust them.
+  client_ip_header = "CloudFront-Viewer-Address"
+  origin_header    = "X-Origin-Verify"
+
+  # Requests of one client address in five minutes, see docs/security/limits.md.
+  rate_window = 300
+  rate_limits = {
+    all = 20000
+    app = 10000
+  }
 }
 
 resource "aws_cloudfront_function" "spa" {
@@ -174,16 +185,21 @@ resource "aws_cloudfront_cache_policy" "api" {
 }
 
 # app selects the tenant by the Host of the viewer, and the ALB certificate matches that Host, not the name of the ALB.
+# allViewer alone leaves out the headers CloudFront generates, the address of the viewer among them.
 resource "aws_cloudfront_origin_request_policy" "api" {
   name    = "${var.name}-api"
-  comment = "Everything of the viewer request reaches app"
+  comment = "Everything of the viewer request and its address reach app"
 
   cookies_config {
     cookie_behavior = "all"
   }
 
   headers_config {
-    header_behavior = "allViewer"
+    header_behavior = "allViewerAndWhitelistCloudFront"
+
+    headers {
+      items = [local.client_ip_header]
+    }
   }
 
   query_strings_config {
@@ -222,6 +238,20 @@ resource "aws_acm_certificate_validation" "alb" {
   certificate_arn = aws_acm_certificate.alb.arn
 }
 
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+# The prefix list weighs 55 of the 60 inbound rules a security group takes by default.
+resource "aws_vpc_security_group_ingress_rule" "alb_from_cloudfront" {
+  security_group_id = var.alb_security_group_id
+  description       = "HTTPS from the origin-facing servers of CloudFront"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+}
+
 resource "aws_lb_listener" "https" {
   load_balancer_arn = var.alb_arn
   port              = 443
@@ -234,8 +264,128 @@ resource "aws_lb_listener" "https" {
 
     fixed_response {
       content_type = "text/plain"
+      status_code  = "403"
+    }
+  }
+}
+
+# The prefix list admits every distribution of every account, so only the header proves that a request passed this one and
+# its WAF. Every rule that forwards to a service carries the same condition, and this last one answers the rest with a 404.
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 50000
+
+  condition {
+    http_header {
+      http_header_name = local.origin_header
+      values           = [var.origin_header_value]
+    }
+  }
+
+  action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
       status_code  = "404"
     }
+  }
+}
+
+# CloudFront takes only web ACLs of us-east-1. Its client address is the viewer, not an edge server.
+resource "aws_wafv2_web_acl" "edge" {
+  provider = aws.us_east_1
+
+  name        = "${var.name}-edge"
+  description = "Limits per client address in front of the tenant domains"
+  scope       = "CLOUDFRONT"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "requests-per-address"
+    priority = 0
+
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+
+    statement {
+      rate_based_statement {
+        limit                 = local.rate_limits.all
+        aggregate_key_type    = "IP"
+        evaluation_window_sec = local.rate_window
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-requests-per-address"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "app-requests-per-address"
+    priority = 1
+
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+
+    statement {
+      rate_based_statement {
+        limit                 = local.rate_limits.app
+        aggregate_key_type    = "IP"
+        evaluation_window_sec = local.rate_window
+
+        scope_down_statement {
+          or_statement {
+            dynamic "statement" {
+              for_each = ["/api/", "/saml/"]
+
+              content {
+                byte_match_statement {
+                  search_string         = statement.value
+                  positional_constraint = "STARTS_WITH"
+
+                  field_to_match {
+                    uri_path {}
+                  }
+
+                  text_transformation {
+                    priority = 0
+                    type     = "NONE"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-app-requests-per-address"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${var.name}-edge"
+    sampled_requests_enabled   = true
   }
 }
 
@@ -245,6 +395,7 @@ resource "aws_cloudfront_distribution" "this" {
   aliases         = ["*.${var.domain}"]
   is_ipv6_enabled = true
   http_version    = "http2and3"
+  web_acl_id      = aws_wafv2_web_acl.edge.arn
 
   origin {
     origin_id                = local.static_origin
@@ -255,6 +406,11 @@ resource "aws_cloudfront_distribution" "this" {
   origin {
     origin_id   = local.app_origin
     domain_name = var.alb_dns_name
+
+    custom_header {
+      name  = local.origin_header
+      value = var.origin_header_value
+    }
 
     custom_origin_config {
       http_port              = 80

@@ -33,6 +33,28 @@ variable "alb_dns_name" {
   }
 }
 
+variable "alb_security_group_id" {
+  description = "Security group of the public ALB, which gets HTTPS from CloudFront alone."
+  type        = string
+
+  validation {
+    condition     = can(regex("^sg-[0-9a-f]+$", var.alb_security_group_id))
+    error_message = "The id of a security group."
+  }
+}
+
+variable "origin_header_value" {
+  description = "Secret value of the header that CloudFront sends the ALB, from modules/keys."
+  type        = string
+  sensitive   = true
+
+  # A rule of the ALB reads * and ? in a header value as wildcards and compares at most 128 characters.
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]{32,128}$", var.origin_header_value))
+    error_message = "Between 32 and 128 letters and digits."
+  }
+}
+
 variable "static_origin_domain" {
   description = "Regional domain name of the bucket of the frontend files, the origin of everything else."
   type        = string

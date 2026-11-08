@@ -59,12 +59,12 @@ variable "valkey_node_type" {
 }
 
 variable "credential_versions" {
-  description = "Version of each other generated credential: valkey_auth_token, throttle_ip_hmac_key and smtp. Raising one replaces it."
+  description = "Version of each other generated credential: valkey_auth_token, throttle_ip_hmac_key, smtp and origin_header. Raising one replaces it."
   type        = map(number)
   default     = {}
 
   validation {
-    condition     = alltrue([for name in keys(var.credential_versions) : contains(["valkey_auth_token", "throttle_ip_hmac_key", "smtp"], name)])
-    error_message = "Only valkey_auth_token, throttle_ip_hmac_key and smtp have versions."
+    condition     = alltrue([for name in keys(var.credential_versions) : contains(["valkey_auth_token", "throttle_ip_hmac_key", "smtp", "origin_header"], name)])
+    error_message = "Only valkey_auth_token, throttle_ip_hmac_key, smtp and origin_header have versions."
   }
 }

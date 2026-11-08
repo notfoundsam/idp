@@ -58,6 +58,7 @@ private const val DEAD_VALKEY = "redis://127.0.0.1:1"
 private const val TLS_VALKEY = "rediss://127.0.0.1:1"
 private const val PROD = "--spring.profiles.active=prod"
 private const val PASSWORD = "--VALKEY_PASSWORD=valkey-secret"
+private const val EDGE = "--CLIENT_IP_HEADER=$VIEWER_HEADER"
 private val READ = Permission("read")
 
 private class Ping : Query<String> {
@@ -240,9 +241,29 @@ class ThrottleApplicationTest :
             NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_MULTIPLIER=100"
         }
 
-        test("the prod profile starts with limits on and Valkey over TLS with a password") {
-            start(PROD, PASSWORD, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY).use { application ->
+        test("the prod profile starts with limits on, Valkey over TLS with a password and the address from the edge") {
+            start(PROD, PASSWORD, EDGE, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY).use { application ->
                 application.getBean(ThrottleDecorator::class.java).shouldNotBeNull()
+
+                val response = application.get("/probe/ip", VIEWER_HEADER, "[2001:db8::7]:50000", "X-Forwarded-For", "198.51.100.9")
+                response.body() shouldBe "2001:db8:0:0:0:0:0:7"
+            }
+        }
+
+        test("the prod profile refuses to start without CLIENT_IP_HEADER") {
+            val failure = shouldThrow<Exception> { start(PROD, PASSWORD, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY) }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "empty CLIENT_IP_HEADER"
+        }
+
+        test("the prod profile refuses a CLIENT_IP_HEADER that a proxy appends to") {
+            listOf("X-Forwarded-For", "forwarded").forEach { header ->
+                val failure =
+                    shouldThrow<Exception> {
+                        start(PROD, PASSWORD, "--CLIENT_IP_HEADER=$header", "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY)
+                    }
+
+                NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "CLIENT_IP_HEADER=$header"
             }
         }
 

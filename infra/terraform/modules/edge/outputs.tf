@@ -9,10 +9,19 @@ output "distribution_domain_name" {
 }
 
 output "https_listener_arn" {
-  description = "HTTPS listener of the public ALB, which answers 404 until a rule forwards to a service."
+  description = "HTTPS listener of the public ALB. It answers 403 without origin_header and 404 until a rule forwards to a service."
   value       = aws_lb_listener.https.arn
 }
 
+output "origin_header" {
+  description = "Name of the header with origin_header_value, which every rule that forwards to a service requires."
+  value       = local.origin_header
+}
+
+output "client_ip_header" {
+  description = "CLIENT_IP_HEADER of app: the header with the address of the viewer, which CloudFront overwrites."
+  value       = local.client_ip_header
+}
 output "certificate_validation_records" {
   description = "DNS records that validate the certificates of CloudFront and of the ALB."
   value = distinct([

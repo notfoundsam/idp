@@ -2,6 +2,19 @@
 
 Every limit a client can reach. Limits in Postgres survive anything. Limits in Valkey stop being enforced when Valkey fails, and the failure raises an alert, so the Postgres limits are the ones that protect an account.
 
+## Limits at the edge
+
+The WAF of CloudFront counts every request by the address of the viewer, across tenants, over a sliding window of five minutes, and answers `429` beyond a limit until the rate drops below it again.
+
+| Requests | Per address in 5 minutes |
+|---|---|
+| All, the files of S3 included | 20,000 |
+| `/api/*` and `/saml/*` | 10,000 |
+
+They stop floods before `app` and leave the fine limits to the tables below, so a company behind one NAT address must not reach them. The limits of `app` let one address start 30 flows a minute, 150 logins in the window at about 15 requests each, and a signed-in user of the console makes a few requests a minute: 10,000 leaves room for that load and hundreds of users working at once behind the same address. A single client reaching 33 requests a second to `app` is not a person. The limits live in `modules/edge` and `edge.tftest.hcl` holds them to this table.
+
+`app` counts by the same address: CloudFront sends it as `CloudFront-Viewer-Address`, the one header `app` trusts, and the ALB takes only requests of the distribution, so nobody can skip the WAF or name another address. The `prod` profile refuses to start with an empty `CLIENT_IP_HEADER`, under which every client would share the address of the ALB, and with `X-Forwarded-For` or `Forwarded`, which keep what the client sent.
+
 ## Limits by caller
 
 Valkey counts these in `app`, one bucket per message, and every key holds the tenant, so tenants share nothing. An address is stored as a keyed HMAC. A message checks the address first, so a blocked address spends nothing of its tenant.

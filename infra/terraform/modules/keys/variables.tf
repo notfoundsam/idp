@@ -8,3 +8,9 @@ variable "throttle_ip_hmac_key_version" {
   type        = number
   default     = 1
 }
+
+variable "origin_header_version" {
+  description = "Version of the generated header that CloudFront sends the public ALB. Raising it writes a new value."
+  type        = number
+  default     = 1
+}
