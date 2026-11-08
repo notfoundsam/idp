@@ -69,6 +69,12 @@ idp:
 server:
   port: 8081
 
+# One JSON object per line, in UTC, with the MDC fields as keys. See docs/security/logging.md.
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
   health:
     # A mail outage is retried through the outbox, it is no reason to replace the worker.

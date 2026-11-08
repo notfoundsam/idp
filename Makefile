@@ -1,7 +1,7 @@
 FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-e2e lint lint-backend lint-frontend frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-e2e load lint lint-backend lint-frontend frontend-install
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -58,6 +58,13 @@ test-e2e: frontend-install
 	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
 	dev-tools/e2e-invitation.sh
 	docker compose run --rm e2e
+
+# Runs one scenario of dev-tools/k6 against `make up-observability`, for example `make load SCENARIO=saml DURATION=1m`. k6 trusts the
+# mkcert CA, as Node does in test-e2e.
+SCENARIO ?= login
+load:
+	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	docker compose run --rm -e DURATION -e RATE k6 run -o opentelemetry --tag testid=$(SCENARIO) $(SCENARIO).js
 
 lint: lint-backend lint-frontend
 

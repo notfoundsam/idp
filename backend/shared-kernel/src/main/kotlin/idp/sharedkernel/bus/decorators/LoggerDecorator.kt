@@ -20,13 +20,13 @@ class LoggerDecorator(
     ): R {
         val started = nanoTime()
         val cause = EventCause.currentOrNull() ?: EventCause(UUID.randomUUID(), null)
-        try {
-            val result = EventCause.with(cause, next)
-            write(message, OK, started, cause.correlationId)
-            return result
-        } catch (failure: Exception) {
-            write(message, failure.javaClass.simpleName, started, cause.correlationId)
-            throw failure
+        return EventCause.with(cause) {
+            try {
+                next().also { write(message, OK, started, cause.correlationId) }
+            } catch (failure: Exception) {
+                write(message, failure.javaClass.simpleName, started, cause.correlationId)
+                throw failure
+            }
         }
     }
 

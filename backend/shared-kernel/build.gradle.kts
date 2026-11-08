@@ -19,6 +19,8 @@ dependencies {
     implementation(libs.lettuce.core)
     implementation(libs.bucket4j.lettuce)
     implementation(libs.micrometer.core)
+    implementation(libs.opentelemetry.api)
+    compileOnly(libs.logback.classic)
     compileOnly(libs.spring.web)
     compileOnly(libs.spring.context)
     compileOnly(libs.jakarta.servlet.api)

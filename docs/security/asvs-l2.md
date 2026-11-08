@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 129 |
-| Partial | Part of the control is merged, the listed tasks finish it | 31 |
-| Planned | The listed tasks build the control | 22 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 139 |
+| Partial | Part of the control is merged, the listed tasks finish it | 27 |
+| Planned | The listed tasks build the control | 16 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -318,7 +318,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.2.1 | 1 | Done | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page takes the token from the fragment and drops the fragment from the address before it calls the API (`pages.test.ts`, `login.spec.ts`) |
 | V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
 | V14.2.3 | 2 | Done | T31 | The pages load nothing from another origin: the CSP allows only `'self'` (`render-nginx.test.mjs`), and a whole login requests nothing from elsewhere and runs only the scripts of its own bundle (`login.spec.ts`) |
-| V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
+| V14.2.4 | 2 | Done | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), and logs hold no personal data (`NoPiiInLogsTest`) |
 | V14.3.1 | 1 | Done | T32, T33 | Logout answers with `Clear-Site-Data: "cache", "storage"` and clears the session and CSRF cookies, also without a live session (`AccountApiTest`). The console leaves the pages of the account, then drops the TanStack Query cache and resets every Pinia store, also when the server cannot be reached (`console.test.ts`, `account.spec.ts`) |
 | V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
 | V14.3.3 | 2 | Done | T31 | The login keeps nothing in local or session storage, IndexedDB or Cache Storage, and a script can read only the `__Host-csrf` cookie, the others are `HttpOnly`. `login.spec.ts` reads all of it midway through a login and after it, `account.spec.ts` after the console has shown recovery codes. The one key a page may write is `idp:reloaded-at` in session storage, the time of its last reload |
@@ -345,19 +345,19 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V16.1.1 | 2 | Planned | T38 | `docs/security/logging.md` holds the log inventory |
-| V16.2.1 | 2 | Partial | T38 | Audit records actor, action, target, IP and time (`AuditTest`), application logs remain |
-| V16.2.2 | 2 | Partial | T38 | Audit stores instants, logs need UTC |
-| V16.2.3 | 2 | Planned | T38 | Logs go only to the listed destinations |
-| V16.2.4 | 2 | Planned | T38 | Structured JSON logs |
-| V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), request spans carry the tenant ID but no email, password or SAML message (`TracingTest`), `NoPiiInLogsTest` covers the rest |
+| V16.1.1 | 2 | Done | T38 | [logging.md](logging.md) lists the lines of every layer, their format, destinations, retention and access, by inspection |
+| V16.2.1 | 2 | Done | T38 | Audit records actor, action, target, IP and time (`AuditTest`), a log line names the service, the tenant, the correlation and the span (`LogsTest`) |
+| V16.2.2 | 2 | Done | T38 | Audit stores instants, log lines carry `@timestamp` in UTC (`LogsTest`) |
+| V16.2.3 | 2 | Done | T38 | The console and OTLP to the collector, the latter only with an endpoint (`AppApplicationTest`), as [logging.md](logging.md) lists |
+| V16.2.4 | 2 | Done | T38 | ECS JSON on the console and OTLP records with the same fields (`LogsTest`) |
+| V16.2.5 | 2 | Done | T38 | The bus logs no payloads (`BusDecoratorsTest`), failures drop exception texts (`FailuresTest`), request spans carry no email, password or SAML message (`TracingTest`), and neither do the lines of logins, refusals, failures and a SAML login (`NoPiiInLogsTest`) |
 | V16.3.1 | 2 | Done | T23 | Successful and failed logins with the factor type (`FlowApiTest`) |
 | V16.3.2 | 2 | Done | | Bus denials are audited (`BusDenialTest`). A refused AuthnRequest reaches the log of security events and not the journal, since an anonymous caller sends it (`SsoApiTest`). A user refused for lack of an assignment is audited as `sp.login_denied` (`SignInTest`, `ResumeApiTest`) |
-| V16.3.3 | 2 | Partial | T38 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`) |
-| V16.3.4 | 2 | Planned | T38 | Unexpected errors and backend TLS failures are logged and alerted |
-| V16.4.1 | 2 | Planned | T38 | The JSON encoder escapes log content |
+| V16.3.3 | 2 | Done | T38 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`). Failed logins are counted (`FailureMetricsTest`), and both have alerts in `dev-tools/lgtm/alerts.yaml` |
+| V16.3.4 | 2 | Done | T38 | An unexpected failure and a TLS failure to a backend are logged without their text and counted in `idp.failures` with `tls` (`FailureMetricsTest`, `FailuresTest`, `OutboxDispatcherTest`), with alerts in `dev-tools/lgtm/alerts.yaml` |
+| V16.4.1 | 2 | Done | T38 | The JSON encoder escapes line breaks and control characters (`LogsTest`) |
 | V16.4.2 | 2 | Partial | T41 | Audit is append-only (`AuditTest`), and only an admin of the tenant reads its journal (`AdminAuditApiTest`). Log storage remains |
-| V16.4.3 | 2 | Planned | T38, T41 | Logs leave the services through the collector for a separate store |
+| V16.4.3 | 2 | Partial | T41 | Logs leave the services over OTLP for the collector (`LogsTest`), its separate store remains |
 | V16.5.1 | 2 | Done | T23 | `BusExceptionAdvice` answers refusals without a body, an unexpected error answers in general terms (`FailureResponsesTest`) |
 | V16.5.2 | 2 | Done | T23 | Valkey, KMS and database failures are handled (`ThrottleTest`, `KeyHierarchyTest`, `FailureResponsesTest`) |
 | V16.5.3 | 2 | Done | T23 | The bus denies on a missing rule (`BusDecoratorsTest`), a failed step proves nothing and opens no session (`FailureResponsesTest`) |

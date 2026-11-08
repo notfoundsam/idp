@@ -1,6 +1,7 @@
 package idp.sharedkernel.outbox
 
 import idp.db.jooq.platform.tables.Outbox.OUTBOX
+import idp.sharedkernel.observability.LogFields
 import idp.sharedkernel.tenant.TenantContext
 import org.jooq.DSLContext
 import org.jooq.JSONB
@@ -33,7 +34,10 @@ internal data class EventCause(
         fun <T> with(
             cause: EventCause,
             block: () -> T,
-        ): T = ScopedValue.where(current, cause).call(ScopedValue.CallableOp<T, Exception> { block() })
+        ): T =
+            LogFields.with(LogFields.CORRELATION_ID, cause.correlationId.toString()) {
+                ScopedValue.where(current, cause).call(ScopedValue.CallableOp<T, Exception> { block() })
+            }
     }
 }
 

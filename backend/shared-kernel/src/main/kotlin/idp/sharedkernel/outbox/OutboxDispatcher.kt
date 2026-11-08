@@ -2,6 +2,9 @@ package idp.sharedkernel.outbox
 
 import idp.db.jooq.platform.tables.Outbox.OUTBOX
 import idp.db.jooq.platform.tables.Tenants.TENANTS
+import idp.sharedkernel.observability.FailureSource
+import idp.sharedkernel.observability.Failures
+import idp.sharedkernel.observability.LogFields
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantStatus
 import org.jooq.DSLContext
@@ -37,6 +40,7 @@ class OutboxDispatcher(
     private val lease: Duration = Duration.ofMinutes(5),
     private val retryDelay: Duration = Duration.ofSeconds(30),
     private val maxAttempts: Int = 8,
+    private val failures: Failures = Failures(),
 ) {
     private val handlers = handlers.groupBy { it.eventType }
 
@@ -131,14 +135,14 @@ class OutboxDispatcher(
                     handlersOf(claim).forEach { idempotent.deliver(event, claim.kekUri, it) }
                 }
             }.exceptionOrNull()
-        when {
-            failure == null -> settle(event, DONE, now())
-            event.attempts >= maxAttempts -> {
-                log.error("Outbox event {} is dead after {} attempts", event.id, event.attempts, failure)
+        if (failure == null) return settle(event, DONE, now())
+        withEventFields(event) {
+            failures.record(FailureSource.OUTBOX, failure)
+            if (event.attempts >= maxAttempts) {
+                log.error("Outbox event {} is dead after {} attempts", event.id, event.attempts)
                 settle(event, DEAD, now())
-            }
-            else -> {
-                log.warn("Outbox event {} failed on attempt {}", event.id, event.attempts, failure)
+            } else {
+                log.warn("Outbox event {} failed on attempt {}", event.id, event.attempts)
                 settle(event, PENDING, now().plus(retryDelay.multipliedBy(1L shl (event.attempts - 1))))
             }
         }
@@ -170,4 +174,11 @@ class OutboxDispatcher(
     }
 
     private fun now(): OffsetDateTime = clock.instant().atOffset(ZoneOffset.UTC)
+
+    private fun withEventFields(
+        event: OutboxEvent,
+        block: () -> Unit,
+    ) = LogFields.with(LogFields.CORRELATION_ID, event.correlationId.toString()) {
+        event.tenantId?.let { LogFields.with(LogFields.TENANT_ID, it.toString(), block) } ?: block()
+    }
 }

@@ -4,6 +4,7 @@ package idp.sharedkernel.testing
 val OTLP_EXPORT =
     arrayOf(
         "--management.opentelemetry.tracing.export.otlp.endpoint=http://127.0.0.1:1/v1/traces",
+        "--management.opentelemetry.logging.export.otlp.endpoint=http://127.0.0.1:1/v1/logs",
         "--management.otlp.metrics.export.url=http://127.0.0.1:1/v1/metrics",
         "--management.otlp.metrics.export.enabled=true",
     )

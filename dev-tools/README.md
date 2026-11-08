@@ -97,15 +97,29 @@ Without an operation it prints the usage. It exits with 1 when an operation is r
 
 ## Observability
 
-`app`, `worker` and `ops` send traces and metrics over OTLP only when they get `OTEL_EXPORTER_OTLP_ENDPOINT`, and metrics also need `OTEL_METRICS_EXPORTER=otlp`. Spring Boot maps these OpenTelemetry variables to its own properties. `make up` passes neither, so the services export nothing. Compose passes them on from the shell, so a shell that sets them for something else sends telemetry there.
+The services log one JSON object per line, so `docker compose logs app` shows JSON, see [logging.md](../docs/security/logging.md). `app`, `worker` and `ops` send traces, logs and metrics over OTLP only when they get `OTEL_EXPORTER_OTLP_ENDPOINT`, and metrics also need `OTEL_METRICS_EXPORTER=otlp`. Spring Boot maps these OpenTelemetry variables to its own properties. `make up` passes neither, so the services export nothing. Compose passes them on from the shell, so a shell that sets them for something else sends telemetry there.
 
-`make up-observability` starts `grafana/otel-lgtm` under the `observability` profile and points the services at it. Every local request is sampled. Grafana with Tempo, Prometheus and Loki opens at http://localhost:3000 as `admin` / `admin`, and the data stays in the `idp-lgtm` volume. Logs do not reach Loki yet.
+`make up-observability` starts `grafana/otel-lgtm` under the `observability` profile and points the services at it. Every local request is sampled. Grafana with Tempo, Prometheus and Loki opens at http://localhost:3000 as `admin` / `admin`, and the data stays in the `idp-lgtm` volume.
 
-A request span carries `tenant_id`. In Tempo, search with TraceQL, for example `{ resource.service.name = "app" && span.tenant_id = "<id>" }`. Metrics take about a minute to appear, because they are pushed once a minute.
+A request span carries `tenant_id`. In Tempo, search with TraceQL, for example `{ resource.service.name = "app" && span.tenant_id = "<id>" }`. In Loki a line carries `tenant_id` and `correlation_id` as structured metadata, for example `{service_name="worker"} | correlation_id = "<id>"` follows a request into the events it published. Metrics take about a minute to appear, because they are pushed once a minute.
+
+`dev-tools/lgtm` provisions the dashboard IdP overview in the folder IdP and the alerts of `logging.md`, both read only in Grafana: change the files and restart LGTM. The alerts fire in Grafana only and send nothing.
 
 LGTM takes about 730 MiB when idle and about 790 MiB after a few hundred requests, while `app`, `worker` and `ops` take 330 to 410 MiB each. Measured on 2026-11-02 with `docker stats`.
 
 `make stop` and `make clean` include LGTM. `make up` alone leaves a running LGTM as it is.
+
+### Load tests
+
+The k6 scenarios in `dev-tools/k6` run in `grafana/k6` under the `load` profile and send their metrics to LGTM, so start `make up-observability` first:
+
+```bash
+make load SCENARIO=login                 # password logins of alice up to the second factor, one after another
+make load SCENARIO=saml RATE=5           # logins through SimpleSAMLphp with the session of one full login
+make load SCENARIO=throttle              # 150 flows a second in globex, until Throttle refuses with 429
+```
+
+`DURATION` and `RATE` change the run. The numbers find bottlenecks and regressions, not the capacity, which staging measures. The Load tests row of the dashboard shows them by `testid`. The SAML scenario needs the metadata of `acme` in SimpleSAMLphp, see [SAML](#saml). The throttle scenario fills the bucket of the address in `globex` for about a minute, and leaves `acme` alone.
 
 ### Grafana for Claude Code
 

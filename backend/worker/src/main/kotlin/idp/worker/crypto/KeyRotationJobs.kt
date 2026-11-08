@@ -6,6 +6,9 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.KeyManagementService
+import idp.sharedkernel.observability.FailureSource
+import idp.sharedkernel.observability.Failures
+import idp.sharedkernel.observability.LogFields
 import idp.sharedkernel.scheduling.JobLease
 import idp.sharedkernel.scheduling.ScheduledJob
 import idp.sharedkernel.tenant.TenantContext
@@ -18,6 +21,7 @@ import java.time.Clock
 import java.time.Duration
 
 private val log = LoggerFactory.getLogger(KekMoveJob::class.java)
+private val failures = Failures()
 
 const val KEK_REPLACED = "tenant.kek_replaced"
 const val PREVIOUS_KEK_DESTROYED = "tenant.previous_kek_destroyed"
@@ -108,6 +112,11 @@ private fun TenancyService.forEachTenantWithKek(
             log.warn("Job {} lost its lease and stops", job)
             return
         }
-        runCatching { block(tenant) }.onFailure { log.error("Job {} failed for tenant {}", job, tenant.id, it) }
+        runCatching { block(tenant) }.onFailure {
+            LogFields.with(LogFields.TENANT_ID, tenant.id.toString()) {
+                log.error("Job {} failed for tenant {}", job, tenant.id)
+                failures.record(FailureSource.JOB, it)
+            }
+        }
     }
 }

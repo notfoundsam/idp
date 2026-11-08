@@ -1,5 +1,6 @@
 package idp.sharedkernel.tenant
 
+import idp.sharedkernel.observability.LogFields
 import java.util.UUID
 
 class TenantContextRequired : IllegalStateException("No tenant in the current scope")
@@ -20,6 +21,9 @@ data class TenantContext(
         fun <T> with(
             context: TenantContext,
             block: () -> T,
-        ): T = ScopedValue.where(current, context).call(ScopedValue.CallableOp<T, Exception> { block() })
+        ): T =
+            LogFields.with(LogFields.TENANT_ID, context.tenantId.toString()) {
+                ScopedValue.where(current, context).call(ScopedValue.CallableOp<T, Exception> { block() })
+            }
     }
 }

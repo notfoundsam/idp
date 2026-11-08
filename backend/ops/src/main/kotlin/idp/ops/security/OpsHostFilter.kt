@@ -1,5 +1,6 @@
 package idp.ops.security
 
+import idp.sharedkernel.observability.UnexpectedErrorFilter
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -15,7 +16,7 @@ class OpsHostFilter(
 ) : OncePerRequestFilter(),
     Ordered {
     /** After the headers and the client address, before Spring Security. */
-    override fun getOrder(): Int = Ordered.HIGHEST_PRECEDENCE + 1
+    override fun getOrder(): Int = UnexpectedErrorFilter.ORDER + 1
 
     override fun doFilterInternal(
         request: HttpServletRequest,

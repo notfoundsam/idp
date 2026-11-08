@@ -35,6 +35,7 @@ import idp.sharedkernel.security.SecurityConfig
 import idp.sharedkernel.tenant.TenantResolver
 import idp.sharedkernel.tenant.TenantTransaction
 import idp.sharedkernel.throttle.ThrottleConfig
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -50,7 +51,8 @@ class LoginConfiguration {
     fun loginAttempts(
         authentication: AuthenticationService,
         audit: AuditLog,
-    ) = LoginAttempts(authentication, audit)
+        registry: MeterRegistry,
+    ) = LoginAttempts(authentication, audit, registry)
 
     @Bean
     fun startFlowHandler(authentication: AuthenticationService) = StartFlowHandler(authentication)

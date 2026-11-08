@@ -57,7 +57,17 @@ idp:
 server:
   port: 8080
 
+# One JSON object per line, in UTC, with the MDC fields as keys. See docs/security/logging.md.
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
+  tracing:
+    propagation:
+      # app faces the internet, and a client that sets traceparent would choose the sampling and the trace IDs of the services.
+      consume: ""
   server:
     port: 8081
   endpoint:

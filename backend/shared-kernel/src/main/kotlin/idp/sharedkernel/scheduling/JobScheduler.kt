@@ -1,5 +1,7 @@
 package idp.sharedkernel.scheduling
 
+import idp.sharedkernel.observability.FailureSource
+import idp.sharedkernel.observability.Failures
 import org.slf4j.LoggerFactory
 import java.time.Duration
 
@@ -18,6 +20,7 @@ interface ScheduledJob {
 class JobScheduler(
     private val jobs: List<ScheduledJob>,
     private val locks: JobLocks,
+    private val failures: Failures = Failures(),
 ) {
     init {
         val names = jobs.map { it.name }
@@ -36,6 +39,9 @@ class JobScheduler(
             } finally {
                 lease.release(job.interval)
             }
-        }.onFailure { log.error("Scheduled job {} failed", job.name, it) }
+        }.onFailure {
+            log.error("Scheduled job {} failed", job.name)
+            failures.record(FailureSource.JOB, it)
+        }
     }
 }

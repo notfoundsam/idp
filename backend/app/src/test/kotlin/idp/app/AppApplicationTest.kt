@@ -4,6 +4,7 @@ import idp.audit.application.AuditService
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
+import idp.sharedkernel.observability.LogExport
 import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.testing.TestDatabase
 import io.kotest.assertions.throwables.shouldThrowAny
@@ -15,6 +16,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.micrometer.registry.otlp.OtlpMeterRegistry
+import io.opentelemetry.sdk.logs.export.LogRecordExporter
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import org.springframework.boot.runApplication
 import java.net.URI
@@ -83,14 +85,28 @@ class AppApplicationTest :
             shouldThrowAny { runApplication<AppApplication>(*arguments, "--KMS_NEW_KEYS=aws-kms") }
         }
 
-        "traces and metrics leave only for an OTLP endpoint" {
+        "traces, metrics and logs leave only for an OTLP endpoint" {
             runApplication<AppApplication>(*arguments).use { context ->
                 context.getBeansOfType(SpanExporter::class.java).shouldBeEmpty()
                 context.getBeansOfType(OtlpMeterRegistry::class.java).shouldBeEmpty()
+                context.getBeansOfType(LogRecordExporter::class.java).shouldBeEmpty()
+                context.getBeansOfType(LogExport::class.java).shouldBeEmpty()
             }
             runApplication<AppApplication>(*arguments, *OTLP_EXPORT).use { context ->
                 context.getBeansOfType(SpanExporter::class.java).shouldNotBeEmpty()
                 context.getBeansOfType(OtlpMeterRegistry::class.java).shouldNotBeEmpty()
+                context.getBeansOfType(LogRecordExporter::class.java).shouldNotBeEmpty()
+                context.getBeansOfType(LogExport::class.java).shouldNotBeEmpty()
+            }
+        }
+
+        "the counter of Valkey failures leaves with the OTLP metrics" {
+            runApplication<AppApplication>(*arguments, *OTLP_EXPORT).use { context ->
+                context
+                    .getBean(OtlpMeterRegistry::class.java)
+                    .find("idp.throttle.failures")
+                    .counter()
+                    .shouldNotBeNull()
             }
         }
     })

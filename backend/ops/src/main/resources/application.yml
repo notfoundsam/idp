@@ -49,6 +49,12 @@ server:
         # The IdP lives on a sibling host, so its form post to the ACS is same-site and carries the cookie.
         same-site: strict
 
+# One JSON object per line, in UTC, with the MDC fields as keys. See docs/security/logging.md.
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
   server:
     port: 8081

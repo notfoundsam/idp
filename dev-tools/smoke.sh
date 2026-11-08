@@ -98,11 +98,21 @@ lgtm_running() {
   [ -n "$(docker compose --profile '*' ps -q --status running lgtm 2>/dev/null)" ]
 }
 
-# Spans leave in batches every five seconds, and the checks above have just sent the requests.
+# Spans leave in batches every five seconds, and the checks above have just sent the requests. A service that has just started
+# takes longer for its first batch.
 traces_reach_tempo() {
-  for _ in $(seq 1 15); do
+  for _ in $(seq 1 30); do
     docker compose --profile '*' exec -T lgtm curl -s -G http://127.0.0.1:3200/api/search \
       --data-urlencode "q={ resource.service.name = \"$1\" }" | grep -q '"traceID"' && return
+    sleep 1
+  done
+  return 1
+}
+
+logs_reach_loki() {
+  for _ in $(seq 1 30); do
+    docker compose --profile '*' exec -T lgtm curl -s -G http://127.0.0.1:3100/loki/api/v1/query_range \
+      --data-urlencode "query={service_name=\"$1\"}" --data-urlencode 'limit=1' | grep -q '"values":\[\[' && return
     sleep 1
   done
   return 1
@@ -140,6 +150,9 @@ if lgtm_running; then
   check "app traces reach Tempo" traces_reach_tempo app
   check "worker traces reach Tempo" traces_reach_tempo worker
   check "ops traces reach Tempo" traces_reach_tempo ops
+  check "app logs reach Loki" logs_reach_loki app
+  check "worker logs reach Loki" logs_reach_loki worker
+  check "ops logs reach Loki" logs_reach_loki ops
 fi
 
 exit "$failed"

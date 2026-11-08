@@ -56,6 +56,7 @@ jooq-codegen = { module = "org.jooq:jooq-codegen" }
 postgresql = { module = "org.postgresql:postgresql" }
 testcontainers = { module = "org.testcontainers:testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
 
 [plugins]

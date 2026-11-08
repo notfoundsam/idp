@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: idp
+    folder: IdP
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /idp/dashboards
+      foldersFromFilesStructure: false

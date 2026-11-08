@@ -318,6 +318,33 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - idp-lgtm:/data
+      - ./dev-tools/lgtm/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/idp.yaml:ro
+      - ./dev-tools/lgtm/dashboards:/idp/dashboards:ro
+      - ./dev-tools/lgtm/alerts.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/idp.yaml:ro
+
+  # Load scenarios of dev-tools/k6, see dev-tools/README.md. Their metrics go to LGTM, so `make load` needs `make up-observability`.
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: [load]
+    working_dir: /scripts
+    environment:
+      # Go reads the CA of mkcert from here, so the tenants are trusted as in a browser of a developer.
+      SSL_CERT_FILE: /certs/rootCA.pem
+      K6_NO_USAGE_REPORT: "true"
+      K6_OTEL_EXPORTER_PROTOCOL: http/protobuf
+      K6_OTEL_HTTP_EXPORTER_ENDPOINT: lgtm:4318
+      K6_OTEL_HTTP_EXPORTER_INSECURE: "true"
+      K6_OTEL_FLUSH_INTERVAL: 1s
+      K6_OTEL_EXPORT_INTERVAL: 5s
+      K6_OTEL_SERVICE_NAME: k6
+      K6_OTEL_METRIC_PREFIX: k6_
+    extra_hosts:
+      - acme.idp.test:host-gateway
+      - globex.idp.test:host-gateway
+      - sp.idp.test:host-gateway
+    volumes:
+      - ./dev-tools/k6:/scripts:ro
+      - ./dev-tools/certs:/certs:ro
 
   # Builds the apps into idp-web on every change. `make` runs its other commands in one-off containers of the same service.
   frontend:
