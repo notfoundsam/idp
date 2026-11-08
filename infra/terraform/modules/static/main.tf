@@ -78,6 +78,19 @@ data "aws_iam_policy_document" "this" {
     }
   }
 
+  # Without the right to list, a key that is missing is a 403 and no request through CloudFront can enumerate the files.
+  statement {
+    sid       = "CloudFrontListsNothing"
+    effect    = "Deny"
+    actions   = ["s3:ListBucket", "s3:ListBucketVersions"]
+    resources = [aws_s3_bucket.this.arn]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+  }
+
   dynamic "statement" {
     for_each = length(var.cloudfront_distribution_arns) > 0 ? [1] : []
 

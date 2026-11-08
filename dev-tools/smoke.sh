@@ -40,6 +40,11 @@ login_page_has_policy() {
     grep -qi "^content-security-policy: default-src 'none'; script-src 'self';"
 }
 
+# The cases the CloudFront Function is tested on, against nginx itself.
+spa_routes_on_nginx() {
+  docker compose run --rm --no-deps nginx-config node /infra/web/check-nginx.mjs http://nginx
+}
+
 root_leads_to_console() {
   [ "$(curl -s -o /dev/null -w '%{redirect_url}' --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/)" = "https://acme.idp.test/console/" ]
 }
@@ -136,6 +141,7 @@ check "invitation link opens the login" expect_status acme.idp.test /invite 200
 check "reset link opens the login" expect_status acme.idp.test /reset-password 200
 check "confirmation link opens the login" expect_status acme.idp.test /confirm-email 200
 check "/ leads to the console" root_leads_to_console
+check "nginx serves the routes of spa-routes.json" spa_routes_on_nginx
 check "postgres through pgbouncer" pgbouncer_query
 check "platform schema migrated" platform_migrated
 check "runtime role connects" runtime_role_connects

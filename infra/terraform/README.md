@@ -9,6 +9,7 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB |
 | `modules/registry` | ECR repositories with immutable tags |
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
+| `modules/edge` | CloudFront: the function of `infra/web/spa-rewrite.js` for the routes of the apps and their `Cache-Control`, the headers of `infra/web/security-headers.json`, the cache policies of chunks and pages, and the origin access control of the bucket |
 | `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
 | `modules/pki` | The internal CA and the server certificates it issues, their keys in Secrets Manager |
 | `modules/data` | RDS, the role passwords, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
@@ -19,7 +20,7 @@ Terraform for staging and production. Each environment lives in an AWS account o
 
 The region and the domain are variables, and only the `*.example` files hold placeholders. Both must be chosen before the first customer: passkeys are bound to the domain, so changing it later locks every user out.
 
-`make lint-infra` checks formatting, validates every root without its backend and runs TFLint. It reads no state and calls no AWS API.
+`make lint-infra` checks formatting, validates every root without its backend and runs TFLint. `make test-infra` runs `terraform test` of the modules against a mocked provider. Neither reads state or calls an AWS API.
 
 ## Setting up an environment
 

@@ -34,6 +34,8 @@ Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0
 
 The headers of the static files live in `infra/web/security-headers.json`, and `nginx-config` renders them into the nginx config on every `up`. After changing either file run `docker compose up -d --force-recreate nginx-config nginx`.
 
+In AWS the CloudFront Function `infra/web/spa-rewrite.js` does what `nginx.conf.template` does. Both follow the cases of `infra/web/spa-routes.json`: `make test-frontend` runs the function on them, `make smoke` nginx. A new route goes into all three files.
+
 The links of mails, `/invite`, `/reset-password` and `/confirm-email`, get the `index.html` of the login app, which reads the token from the URL fragment.
 
 `make test-e2e` runs the Playwright tests of `frontend/e2e` in the `e2e` container against the running environment. It first hands SimpleSAMLphp the metadata of `acme`, copies the mkcert CA into `dev-tools/certs` and runs `dev-tools/e2e-invitation.sh`, which reinvites `invitee@acme.test`, `passkey@acme.test`, `account@acme.test`, `admin@acme.test` and `services@acme.test` as admins of `acme`, and `operator@ops-sso.test` and `outsider@ops-sso.test` as admins of `ops-sso`, through the operator CLI. So a run removes the password and the passkeys of the first operator, and leaves a fresh invitation for it in Mailpit. `frontend/e2e/admin-sp.spec.ts` rotates the signing key of `acme` and writes its new metadata into `dev-tools/simplesamlphp/metadata`, which the `e2e` container mounts. A report of a failed run stays in `frontend/e2e/playwright-report`. CI runs the same steps in the job `e2e`.

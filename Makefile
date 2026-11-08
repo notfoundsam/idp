@@ -2,9 +2,10 @@ FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 TERRAFORM := docker compose run --rm terraform
 TERRAFORM_ROOTS := bootstrap environments/staging environments/production
+TERRAFORM_TESTED_MODULES := modules/edge modules/static
 TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-e2e load lint lint-backend lint-frontend lint-infra frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -52,7 +53,14 @@ test-backend:
 test-frontend: frontend-install
 	$(FRONTEND) test
 	$(FRONTEND) -r --filter '!e2e' test
-	docker compose run --rm frontend node --test /app/infra/web/render-nginx.test.mjs
+	docker compose run --rm frontend node --test '/app/infra/web/*.test.mjs'
+
+# terraform test against a mocked AWS provider: plans only, reads no state and calls no AWS API.
+test-infra:
+	for module in $(TERRAFORM_TESTED_MODULES); do \
+	  $(TERRAFORM) -chdir=$$module init -backend=false -input=false -lockfile=readonly >/dev/null && \
+	  $(TERRAFORM) -chdir=$$module test || exit 1; \
+	done
 
 # Runs against the environment of `make up`. SimpleSAMLphp needs the metadata of acme, Node in the container the mkcert CA, and the
 # tests fresh invitations. CI runs the same target.

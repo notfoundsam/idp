@@ -23,6 +23,13 @@ module "static" {
   bucket = "${local.name}-static-${var.account_id}"
 }
 
+module "edge" {
+  source = "../../modules/edge"
+
+  name             = local.name
+  security_headers = jsondecode(file("${path.module}/../../../web/security-headers.json"))
+}
+
 module "cluster" {
   source = "../../modules/cluster"
 

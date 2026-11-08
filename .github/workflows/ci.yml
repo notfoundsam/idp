@@ -47,6 +47,7 @@ jobs:
       - run: make lint-infra
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - run: make test-infra
 
   # The local environment of dev-tools/README.md, set up on the runner as on a laptop: tenants in /etc/hosts, the mkcert CA trusted.
   e2e:
