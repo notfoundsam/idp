@@ -8,6 +8,21 @@ output "alb_dns_name" {
   value       = module.network.alb_dns_name
 }
 
+output "https_listener_arn" {
+  description = "HTTPS listener of the public ALB, for the rules of the services."
+  value       = module.edge.https_listener_arn
+}
+
+output "distribution_domain_name" {
+  description = "Target of the record *.<domain>, a CNAME or an alias at the DNS host."
+  value       = module.edge.distribution_domain_name
+}
+
+output "certificate_validation_records" {
+  description = "DNS records to create at the DNS host before the certificates are issued, see infra/terraform/README.md."
+  value       = module.edge.certificate_validation_records
+}
+
 output "static_bucket" {
   description = "Bucket of the frontend files."
   value       = module.static.bucket

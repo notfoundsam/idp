@@ -31,7 +31,7 @@ A map of the code: where things live and how a request moves through them. Decis
 ## A request in `app`
 
 1. **Filters**, in order: `ClientVersionFilter` (`426` for an outdated frontend), `RequestSizeFilter`, `TenantFilter`, `SessionFilter`, then `CsrfFilter` and `SamlThrottleFilter`.
-2. **Tenant:** `TenantFilter` looks up the full `Host` in `platform.tenant_domains` through a cache. Only an `ACTIVE` tenant passes, and its id is bound to `TenantContext` for the rest of the request.
+2. **Tenant:** `TenantFilter` looks up the full `Host` in `platform.tenant_domains` through a cache. Only an `ACTIVE` tenant passes, and its id is bound to `TenantContext` for the rest of the request. In AWS that `Host` is the one of the viewer, which CloudFront passes on to the ALB (`modules/edge`).
 3. **Session:** `SessionFilter` reads the session cookie and calls `AuthenticationService.resolveSession` in the tenant's schema. A found session puts a `Principal` into the security context. Without a cookie the database is not touched.
 4. **Controller and bus:** a controller in an audience dispatches one message. The bus runs Throttle, Security, Logger, Transaction and the handler, in that order.
 5. **Transaction:** `TenantTransaction` takes the schema name from the tenant UUID and runs `SET LOCAL ROLE` and `SET LOCAL search_path`. jOOQ queries carry no schema, so they hit that tenant's tables.

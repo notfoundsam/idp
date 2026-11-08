@@ -36,3 +36,18 @@ provider "aws" {
     }
   }
 }
+
+# CloudFront takes certificates and web ACLs only from us-east-1.
+provider "aws" {
+  alias               = "us_east_1"
+  region              = "us-east-1"
+  allowed_account_ids = [var.account_id]
+
+  default_tags {
+    tags = {
+      Project     = "idp"
+      Environment = local.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}

@@ -20,14 +20,24 @@ module "registry" {
 module "static" {
   source = "../../modules/static"
 
-  bucket = "${local.name}-static-${var.account_id}"
+  bucket                       = "${local.name}-static-${var.account_id}"
+  cloudfront_distribution_arns = [module.edge.distribution_arn]
 }
 
 module "edge" {
   source = "../../modules/edge"
 
-  name             = local.name
-  security_headers = jsondecode(file("${path.module}/../../../web/security-headers.json"))
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name                 = local.name
+  domain               = var.domain
+  alb_arn              = module.network.alb_arn
+  alb_dns_name         = module.network.alb_dns_name
+  static_origin_domain = module.static.bucket_regional_domain_name
+  security_headers     = jsondecode(file("${path.module}/../../../web/security-headers.json"))
 }
 
 module "cluster" {

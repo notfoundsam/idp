@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 139 |
-| Partial | Part of the control is merged, the listed tasks finish it | 30 |
-| Planned | The listed tasks build the control | 13 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 150 |
+| Partial | Part of the control is merged, the listed tasks finish it | 24 |
+| Planned | The listed tasks build the control | 8 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -88,12 +88,12 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V3.3.2 | 2 | Done | T23 | The session cookie is `SameSite=Lax`, the flow and CSRF cookies `SameSite=Strict` (`SessionCookieTest`, `FlowCookieTest`, `CsrfCookieTest`, `ResponseHeadersTest`) |
 | V3.3.3 | 2 | Done | T23 | Every cookie uses `__Host-` (`ResponseHeadersTest`) |
 | V3.3.4 | 2 | Done | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` (`SessionCookieTest`) |
-| V3.4.1 | 1 | Partial | T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files in `infra/web/security-headers.json` (`render-nginx.test.mjs`), which the response headers policy of `modules/edge` sets from the same file (`edge.tftest.hcl`). Attaching it to the distribution remains |
+| V3.4.1 | 1 | Done | T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files in `infra/web/security-headers.json` (`render-nginx.test.mjs`), which the response headers policy of `modules/edge` sets from the same file on every behavior of S3 (`edge.tftest.hcl`) |
 | V3.4.2 | 1 | Done | T23 | The API is same-origin and sends no CORS headers (`ResponseHeadersTest`) |
-| V3.4.3 | 2 | Partial | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`). The static files allow only their own origin and close `object-src`, `base-uri`, `form-action` and `frame-ancestors` (`render-nginx.test.mjs`), in nginx and in the response headers policy of `modules/edge` (`edge.tftest.hcl`). Attaching it to the distribution remains |
-| V3.4.4 | 2 | Partial | T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of `modules/edge` (`edge.tftest.hcl`). Attaching it to the distribution remains |
-| V3.4.5 | 2 | Partial | T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of `modules/edge` (`edge.tftest.hcl`). Attaching it to the distribution remains |
-| V3.4.6 | 2 | Partial | T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of `modules/edge` (`edge.tftest.hcl`). Attaching it to the distribution remains |
+| V3.4.3 | 2 | Done | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`). The static files allow only their own origin and close `object-src`, `base-uri`, `form-action` and `frame-ancestors` (`render-nginx.test.mjs`), in nginx and in the response headers policy that every behavior of S3 in `modules/edge` uses (`edge.tftest.hcl`) |
+| V3.4.4 | 2 | Done | T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of every behavior of S3 in `modules/edge` (`edge.tftest.hcl`) |
+| V3.4.5 | 2 | Done | T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of every behavior of S3 in `modules/edge` (`edge.tftest.hcl`) |
+| V3.4.6 | 2 | Done | T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of every behavior of S3 in `modules/edge` (`edge.tftest.hcl`) |
 | V3.5.1 | 1 | Done | T23, T30 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`). In `ops` Spring Security checks the `XSRF-TOKEN` cookie echoed in `X-XSRF-TOKEN` for every unsafe call of an operator session (`OpsSamlLoginTest`, `OpsContractTest`) |
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
 | V3.5.3 | 1 | Partial | T34 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The admin API remains |
@@ -107,7 +107,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V4.1.1 | 1 | Partial | T42 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), and so does nginx for the static files (`render-nginx.test.mjs`, `make smoke`). The upload to S3 remains |
-| V4.1.2 | 2 | Planned | T40 | Only `/login/*` and `/console/*` redirect to HTTPS, `/api/*` and `/saml/*` refuse plain HTTP |
+| V4.1.2 | 2 | Done | T40 | Only the pages of S3 redirect to HTTPS: `/login/*`, `/console/*`, `/` and the links of the mails. `/api/*` and `/saml/*` refuse plain HTTP, and the ALB has no listener for it (`edge.tftest.hcl`) |
 | V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
 | V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
 | V4.3.1 | 2 | N/A | | No GraphQL |
@@ -281,11 +281,11 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V12.1.1 | 1 | Partial | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`). So do RDS through `ssl_min_protocol_version` and PgBouncer on both sides (`modules/data`, `infra/pgbouncer`), and `app` towards Valkey (`ValkeyRateLimiter`). The edge and the other connections remain |
-| V12.1.2 | 2 | Planned | T40, T41 | Edge and load balancer security policies with recommended suites |
+| V12.1.1 | 1 | Partial | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`). So do RDS through `ssl_min_protocol_version` and PgBouncer on both sides (`modules/data`, `infra/pgbouncer`), and `app` towards Valkey (`ValkeyRateLimiter`). So does the edge: CloudFront towards viewers through `TLSv1.2_2021` and towards the ALB, and the public ALB through `ELBSecurityPolicy-TLS13-1-2-Res-2021-06` (`edge.tftest.hcl`). The other connections remain |
+| V12.1.2 | 2 | Partial | T40, T41 | CloudFront serves viewers with `TLSv1.2_2021`, the public ALB with `ELBSecurityPolicy-TLS13-1-2-Res-2021-06`: TLS 1.2 and 1.3, only ECDHE key exchange and AEAD ciphers (`edge.tftest.hcl`). The internal ALB of `ops` remains |
 | V12.1.3 | 2 | N/A | | No mTLS |
-| V12.2.1 | 1 | Planned | T40 | HTTPS only at the edge |
-| V12.2.2 | 1 | Planned | T40 | Public certificates from ACM |
+| V12.2.1 | 1 | Done | T40 | HTTPS only at the edge: pages redirect, the API and SAML refuse plain HTTP, CloudFront reaches the ALB by HTTPS alone, and the ALB has only an HTTPS listener (`edge.tftest.hcl`) |
+| V12.2.2 | 1 | Done | T40 | Public certificates from ACM for `*.<domain>`, in `us-east-1` for CloudFront and in the region of the ALB, validated by DNS (`edge.tftest.hcl`) |
 | V12.3.1 | 2 | Partial | T39, T41 | SMTP requires STARTTLS. Every connection to Postgres is TLS: RDS refuses others with `rds.force_ssl`, PgBouncer with `client_tls_sslmode = require` (`ProductionDatabaseTest`). ElastiCache takes only TLS with `transit_encryption_mode = "required"` (`modules/valkey`), and the prod profile of `app` refuses a `VALKEY_URL` without it (`ThrottleApplicationTest`). Telemetry and targets remain |
 | V12.3.2 | 2 | Partial | T39, T41 | SMTP verifies the server name (`WorkerApplicationTest`). Every client of Postgres uses `verify-full`: the services and `migrator` through the JDBC URLs of `modules/data`, PgBouncer towards RDS, the bootstrap tasks through libpq (`ProductionDatabaseTest`). `app` verifies the certificate and name of Valkey, which `verifyPeer` in the URL cannot turn off (`ValkeyTlsTest`). The other clients remain |
 | V12.3.3 | 2 | Planned | T41 | TLS between the load balancer and services |
@@ -305,7 +305,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V13.3.2 | 2 | Planned | T41 | One IAM role per service, `ops` has no `Decrypt` |
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
 | V13.4.2 | 2 | Partial | T41 | JDWP exists only in local compose, production task definitions must prove it |
-| V13.4.3 | 2 | Partial | T40 | nginx runs with `autoindex off` and answers a directory under `assets/` with `404` (`render-nginx.test.mjs`, `make smoke`). In AWS the CloudFront Function asks S3 only for an `index.html` or a key under `assets/`, never for the root of the bucket, on the same cases as nginx (`spa-rewrite.test.mjs`, `check-nginx.mjs` in `make smoke`). The bucket is read only through CloudFront with origin access control, and its policy denies CloudFront every listing, so a missing key is a `403` (`static.tftest.hcl`, `edge.tftest.hcl`). Attaching the function to the distribution remains |
+| V13.4.3 | 2 | Done | T40 | nginx runs with `autoindex off` and answers a directory under `assets/` with `404` (`render-nginx.test.mjs`, `make smoke`). In AWS the CloudFront Function, on the request of every behavior of S3, asks S3 only for an `index.html` or a key under `assets/`, never for the root of the bucket, on the same cases as nginx (`spa-rewrite.test.mjs`, `check-nginx.mjs` in `make smoke`, `edge.tftest.hcl`). The bucket is read only through CloudFront with origin access control, and its policy denies CloudFront every listing, so a missing key is a `403` that the distribution passes on uncached (`static.tftest.hcl`, `edge.tftest.hcl`) |
 | V13.4.4 | 2 | Done | T23 | `TRACE` is refused (`ResponseHeadersTest`, `OpsApiTest`) |
 | V13.4.5 | 2 | Partial | T41 | Management port exposes only health (`AppApplicationTest`), it must stay private |
 
@@ -316,7 +316,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V14.1.1 | 2 | Done | T25 | [data-protection.md](data-protection.md) classifies data, by inspection |
 | V14.1.2 | 2 | Done | T25 | The same document sets encryption, integrity, retention, logging and access per class, by inspection |
 | V14.2.1 | 1 | Done | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page takes the token from the fragment and drops the fragment from the address before it calls the API (`pages.test.ts`, `login.spec.ts`) |
-| V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
+| V14.2.2 | 2 | Done | T40 | The edge caches no response of `/api/*` and `/saml/*` and no error at all, so nothing of one tenant reaches another (`edge.tftest.hcl`). The application has no response cache |
 | V14.2.3 | 2 | Done | T31 | The pages load nothing from another origin: the CSP allows only `'self'` (`render-nginx.test.mjs`), and a whole login requests nothing from elsewhere and runs only the scripts of its own bundle (`login.spec.ts`) |
 | V14.2.4 | 2 | Done | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), and logs hold no personal data (`NoPiiInLogsTest`) |
 | V14.3.1 | 1 | Done | T32, T33 | Logout answers with `Clear-Site-Data: "cache", "storage"` and clears the session and CSRF cookies, also without a live session (`AccountApiTest`). The console leaves the pages of the account, then drops the TanStack Query cache and resets every Pinia store, also when the server cannot be reached (`console.test.ts`, `account.spec.ts`) |

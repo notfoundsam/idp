@@ -9,7 +9,7 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB |
 | `modules/registry` | ECR repositories with immutable tags |
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
-| `modules/edge` | CloudFront: the function of `infra/web/spa-rewrite.js` for the routes of the apps and their `Cache-Control`, the headers of `infra/web/security-headers.json`, the cache policies of chunks and pages, and the origin access control of the bucket |
+| `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. The certificates of both and the HTTPS listener of the ALB |
 | `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
 | `modules/pki` | The internal CA and the server certificates it issues, their keys in Secrets Manager |
 | `modules/data` | RDS, the role passwords, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
@@ -29,6 +29,27 @@ The region and the domain are variables, and only the `*.example` files hold pla
 3. Write `environments/<env>/backend.hcl` from `backend.hcl.example` with the outputs of the bootstrap, and `terraform.tfvars` from its example. Then `terraform -chdir=environments/<env> init -backend-config=backend.hcl`.
 4. Build `infra/pgbouncer` and `infra/db-bootstrap`, push both to ECR under `infra_image_tag`, and apply the environment.
 5. Bootstrap the database, below.
+
+## Edge
+
+Every tenant domain is a subdomain of `domain` and reaches one CloudFront distribution:
+
+| Path | Origin | Cache | Plain HTTP |
+|---|---|---|---|
+| `/login/assets/*`, `/console/assets/*` | S3 | A year | Redirect |
+| `/api/*`, `/saml/*` | The ALB, with every header, cookie and the query string of the viewer | None | Refused |
+| Everything else | S3 behind the function: `/` leads to `/console/`, pages get their `index.html`, other paths a `404` | None | Redirect |
+
+`app` selects the tenant by the `Host`, so CloudFront passes it on, and the certificate of the ALB matches it. The edge caches no error either: the cache key holds no `Host`, and an error of one tenant would reach the others. A missing file in S3 is therefore a `403`, as CloudFront may not list the bucket, and the error pages of a distribution cannot turn it into a `404` without replacing the errors of the API too.
+
+The listener answers `404` until a rule forwards to a service. CloudFront takes certificates only from `us-east-1`, so the environment has a second provider `aws.us_east_1`.
+
+DNS hosting is not decided, so Terraform creates no records. On the first apply:
+
+1. Create the certificates alone: `terraform apply -target=module.edge.aws_acm_certificate.cloudfront -target=module.edge.aws_acm_certificate.alb`.
+2. Create the records of the output `certificate_validation_records` at the DNS host and keep them, ACM renews through them.
+3. Apply everything. The apply waits until ACM issues both certificates.
+4. Point `*.<domain>` at the output `distribution_domain_name`.
 
 ## Database bootstrap
 

@@ -3,6 +3,46 @@ variable "name" {
   type        = string
 }
 
+variable "domain" {
+  description = "Domain of the product. Every tenant domain is a subdomain of it, served by the distribution."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.domain))
+    error_message = "A lowercase DNS name such as idp.example.com."
+  }
+}
+
+variable "alb_arn" {
+  description = "The public ALB that gets the HTTPS listener."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:loadbalancer/app/", var.alb_arn))
+    error_message = "The ARN of an application load balancer."
+  }
+}
+
+variable "alb_dns_name" {
+  description = "DNS name of the public ALB, the origin of /api/* and /saml/*."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.alb_dns_name))
+    error_message = "A DNS name without a scheme, port or path."
+  }
+}
+
+variable "static_origin_domain" {
+  description = "Regional domain name of the bucket of the frontend files, the origin of everything else."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9.-]*\\.s3\\.([a-z0-9-]+\\.)?amazonaws\\.com$", var.static_origin_domain))
+    error_message = "The regional domain name of an S3 bucket."
+  }
+}
+
 variable "security_headers" {
   description = "Headers of the static files by name, the contents of infra/web/security-headers.json, which nginx serves locally."
   type        = map(string)
