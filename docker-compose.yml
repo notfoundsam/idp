@@ -174,18 +174,19 @@ services:
 
   role-passwords:
     image: postgres:18.6-alpine3.24
-    entrypoint: ["sh", "/set-role-passwords.sh"]
+    entrypoint: ["sh", "/set-role-passwords.sh", "app_runtime", "worker_runtime", "ops_runtime", "provisioner"]
     environment:
       PGHOST: postgres
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: idp
+      PGSSLMODE: disable
       APP_RUNTIME_PASSWORD: app_runtime
       WORKER_RUNTIME_PASSWORD: worker_runtime
       OPS_RUNTIME_PASSWORD: ops_runtime
       PROVISIONER_PASSWORD: provisioner
     volumes:
-      - ./dev-tools/set-role-passwords.sh:/set-role-passwords.sh:ro
+      - ./infra/db-bootstrap/set-role-passwords.sh:/set-role-passwords.sh:ro
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -346,6 +347,25 @@ services:
       - ./dev-tools/k6:/scripts:ro
       - ./dev-tools/certs:/certs:ro
 
+  # `make lint-infra` formats, validates and lints infra/terraform with them. Neither talks to AWS.
+  terraform:
+    image: hashicorp/terraform:1.16.7
+    profiles: [infra]
+    working_dir: /repo/infra/terraform
+    volumes:
+      - .:/repo
+
+  tflint:
+    image: ghcr.io/terraform-linters/tflint:v0.65.0
+    profiles: [infra]
+    working_dir: /repo/infra/terraform
+    environment:
+      # Downloads the AWS ruleset from GitHub, which limits anonymous calls.
+      GITHUB_TOKEN:
+    volumes:
+      - .:/repo
+      - idp-tflint-plugins:/root/.tflint.d
+
   # Builds the apps into idp-web on every change. `make` runs its other commands in one-off containers of the same service.
   frontend:
     image: node:24.22.2-alpine
@@ -432,3 +452,4 @@ volumes:
   idp-corepack-cache:
   idp-web:
   idp-nginx-config:
+  idp-tflint-plugins:

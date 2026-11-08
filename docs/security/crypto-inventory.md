@@ -26,6 +26,11 @@ Every key, algorithm and certificate the IdP uses, what each may protect, and ho
 | Blind index key | HMAC-SHA-256, derived from the tenant key | Lookup of a user by email | Memory only | On use | Not in the first version: the index is computed again from the decrypted addresses | With the tenant key |
 | Throttle key | HMAC-SHA-256 | Client IPs in Valkey counter names | `THROTTLE_IP_HMAC_KEY`, a secret of `app` | With the environment | By replacing the secret. Counters start over, nothing else depends on it | With the secret |
 | SAML signing key wrapping key | AES-256-GCM, derived from the tenant key | SAML signing keys, with the key ID in the associated data | Memory only | On use | With the tenant key | With the tenant key |
+| Database storage key | AWS KMS `SYMMETRIC_DEFAULT` | RDS storage, its snapshots and backups, Performance Insights | KMS, `alias/<env>-database` | By Terraform with the instance, which cannot be encrypted later | By the KMS every 365 days | Never while the platform runs |
+| Terraform state key | AWS KMS `SYMMETRIC_DEFAULT` | The state of the environment, the internal CA key included | KMS, `alias/<env>-terraform-state` | By `infra/terraform/bootstrap` | By the KMS every 365 days | Never while the environment exists |
+| Internal CA key | ECDSA P-384 | Signs the server certificates of internal hosts | The Terraform state only | By `modules/pki` | With the CA after ten years | With the environment |
+| PgBouncer TLS key | ECDSA P-256, PKCS#8 | TLS of PgBouncer towards the services | Secrets Manager `<env>/tls/pgbouncer` | By `modules/pki` | With its certificate, by the first apply in its last 60 days | With the next key |
+| Database role passwords | 40 random letters and digits, SCRAM-SHA-256 in Postgres | `idp_owner`, `provisioner` and the runtime roles | Secrets Manager `<env>/db/<role>`, write-only for Terraform | By Terraform | By raising `db_password_versions`, see `infra/terraform/README.md` | With the next version |
 | SAML signing keys | RSA-3072, PKCS#8 | Responses of a tenant. Signatures use RSA-PSS with SHA-256, or `rsa-sha256` where an SP is set to it, never SHA-1 | `saml_signing_keys`, wrapped by the key above | By `worker` while provisioning | By the tenant admin: a new key is published in metadata first and signs once the rotation completes, the old one is deleted then | With the tenant KEK, a rotated key when the rotation completes |
 
 ## Other algorithms
@@ -40,13 +45,16 @@ Every key, algorithm and certificate the IdP uses, what each may protect, and ho
 | Passkey signatures | Verification of ES256, EdDSA and RS256 | `PasskeyVerifier` |
 | SAML signatures | RSA-PSS with SHA-256 by default, `rsa-sha256` per SP, SHA-256 digests, exclusive C14N, through OpenSAML and Apache Santuario | `SignatureAlgorithm` |
 | Field encryption | AES-256-GCM through Tink, the field and the row in the associated data | `FieldCipher` |
-| Transport | TLS | Every connection, see [data-protection.md](data-protection.md) |
+| Transport | TLS 1.2 or 1.3. A client of an internal service checks the name and trusts one CA alone | Every connection, see [data-protection.md](data-protection.md) and `infra/terraform/README.md` |
 
 ## Certificates
 
 | Certificate | Issuer | Where | Renewal |
 |---|---|---|---|
 | Public TLS of the product domain | ACM | CloudFront and ALB (task 40) | Automatic in ACM |
+| Internal CA | Self-signed, valid ten years | `modules/pki`. The services trust it alone for PgBouncer, through `DB_TLS_CA` | A new CA before the old one expires: issue, roll out the new trust, then the new certificates |
+| PgBouncer server certificate | The internal CA, for `pgbouncer.idp.internal`, valid one year | PgBouncer | By the first apply in its last 60 days, then a redeploy of PgBouncer |
+| RDS server certificate | The RDS CA of `ca_cert_identifier` | RDS. `migrator`, the provisioner and the bootstrap trust only that root of the region, PgBouncer the roots of the region | By RDS. A change of CA changes the pinned root with it |
 | SAML signing certificate of a tenant | Self-signed with `SHA256withRSA` for the tenant host, valid 5 years. SPs pin it from metadata, so its own signature and dates carry no trust | `saml_signing_keys.certificate`, published at `/saml/metadata` | With its key by a rotation |
 | SAML certificates of Service Providers | The SP | `service_providers.signing_certificates`, from uploaded metadata | The tenant admin uploads new metadata |
 | SAML signing certificate of the service tenant, as `ops` trusts it | The service tenant | The metadata file at `IDP_METADATA_FILE`, never fetched by `ops`. Only RSA-PSS with SHA-256 is accepted | An operator replaces the file during a rotation of the service tenant |

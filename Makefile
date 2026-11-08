@@ -1,7 +1,10 @@
 FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
+TERRAFORM := docker compose run --rm terraform
+TERRAFORM_ROOTS := bootstrap environments/staging environments/production
+TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-e2e load lint lint-backend lint-frontend frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-e2e load lint lint-backend lint-frontend lint-infra frontend-install
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -66,7 +69,7 @@ load:
 	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
 	docker compose run --rm -e DURATION -e RATE k6 run -o opentelemetry --tag testid=$(SCENARIO) $(SCENARIO).js
 
-lint: lint-backend lint-frontend
+lint: lint-backend lint-frontend lint-infra
 
 lint-backend:
 	$(GRADLE) ktlintCheck
@@ -74,6 +77,16 @@ lint-backend:
 lint-frontend: frontend-install
 	$(FRONTEND) lint
 	$(FRONTEND) -r --if-present typecheck
+
+# Offline checks only: the roots initialise without their S3 backend, so nothing here reads state or talks to AWS.
+lint-infra:
+	$(TERRAFORM) fmt -check -recursive
+	for root in $(TERRAFORM_ROOTS); do \
+	  $(TERRAFORM) -chdir=$$root init -backend=false -input=false -lockfile=readonly >/dev/null && \
+	  $(TERRAFORM) -chdir=$$root validate || exit 1; \
+	done
+	$(TFLINT) --init
+	$(TFLINT) --recursive
 
 frontend-install:
 	$(FRONTEND) install --frozen-lockfile

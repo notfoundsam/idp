@@ -40,6 +40,14 @@ jobs:
       - run: make lint-frontend
       - run: make test-frontend
 
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make lint-infra
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
   # The local environment of dev-tools/README.md, set up on the runner as on a laptop: tenants in /etc/hosts, the mkcert CA trusted.
   e2e:
     runs-on: ubuntu-latest

@@ -30,6 +30,8 @@ How the project tests its code and with which tools. A change that adds a tool o
 | Services and journal | Chromium through the console of an invited admin: services it connects and removes, settings saved from two pages for a real `412`, users assigned at once, a new user who signs in to SimpleSAMLphp only while assigned, a rotation of the signing key with the metadata handed to SimpleSAMLphp, and the journal page by page | `frontend/e2e/admin-sp.spec.ts` |
 | Releases | A page open during a deploy: the bundle of the previous release from `frontend/e2e/fixtures/previous-release`, versions and failures of the API set by Playwright routes | `frontend/e2e/release.spec.ts` |
 | Static files | The nginx config rendered from `infra/web/security-headers.json`, and the policy in that file | `infra/web/render-nginx.test.mjs` |
+| Database in AWS | The images of `infra/db-bootstrap` and `infra/pgbouncer` with a read-only root against a Postgres that behaves like RDS: a master user without superuser, TLS only, certificates of test CAs. The boot jar of `migrator` connects with the JDBC URL of `infra/terraform` | `migrator/src/test/.../ProductionDatabaseTest.kt` |
+| Infrastructure | `terraform fmt`, `terraform validate` of every root without its backend, and TFLint with the AWS ruleset | `make lint-infra` |
 
 ## Tools
 
@@ -48,6 +50,8 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **Virtual authenticator** of Chromium through the WebAuthn domain of CDP, in `e2e/support/passkey.ts`: a platform authenticator with user verification that answers without a prompt. It belongs to the page, so a test that signs in again clears the cookies and keeps the page.
 - **`node:test`** for the scripts in `infra/web`, so they need no dependencies. `make test-frontend` runs them in the `frontend` container.
 - **oasdiff** in CI for breaking changes in the API contracts.
+- **Terraform** and **TFLint** in their images, as the compose services `terraform` and `tflint` under the profile `infra`. `make lint-infra` runs them, and the CI job `infra` runs the same target. Each root initialises with `-backend=false` and `-lockfile=readonly`, so the check reads no state, calls no AWS API and fails when `.terraform.lock.hcl` is behind `required_providers`.
+- **BouncyCastle** in `ProductionDatabaseTest` for the test CAs and server certificates.
 
 Not used: MockMvc, the Spring test context, Mockito and MockK.
 
@@ -87,6 +91,7 @@ cd backend && ./gradlew :app:test --tests 'idp.app.login.FlowApiTest'
 cd backend && ./gradlew :shared-kernel:localStackTest
 make test-frontend                         # runs in Docker, also the tests of infra/web and the lint rules
 make lint-frontend                         # ESLint and the type check of every package
+make lint-infra                            # terraform fmt and validate, TFLint, without AWS
 make test-e2e                              # Playwright against a running `make up`
 make load SCENARIO=saml DURATION=1m        # k6 against a running `make up-observability`: login, saml or throttle
 docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate   # after a contract change

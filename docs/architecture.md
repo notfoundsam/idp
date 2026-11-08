@@ -15,6 +15,8 @@ A map of the code: where things live and how a request moves through them. Decis
 | `contracts/openapi` | `auth.yaml`, `account.yaml` and `admin.yaml` for `app`, `ops.yaml` for `ops` |
 | `frontend` | Apps `login` and `console`, packages `api-client` with types generated from `contracts/openapi` and `ui`, end-to-end tests in `e2e` |
 | `infra/web` | Security headers of the static files in `security-headers.json`, and the local nginx config rendered from them |
+| `infra/terraform` | AWS environments, see `infra/terraform/README.md` |
+| `infra/pgbouncer`, `infra/db-bootstrap` | Images of PgBouncer and of the database bootstrap in AWS. The role step also sets the passwords locally |
 | `dev-tools`, `docker-compose.yml` | Local environment, see `dev-tools/README.md` |
 
 ## Deployables
@@ -59,6 +61,6 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 
 ## Other documents
 
-- `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP
+- `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP, 009 AWS infrastructure
 - `docs/security/`: ASVS map, authorization, authentication, sessions, limits, input validation, data protection, crypto inventory and runbooks
 - `docs/testing.md`: test layers, tools and fixtures

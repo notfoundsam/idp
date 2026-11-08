@@ -14,6 +14,9 @@ dependencies {
     runtimeOnly(libs.postgresql)
 
     testImplementation(testFixtures(project(":shared-kernel")))
+    testImplementation(libs.testcontainers)
+    testImplementation(libs.bouncycastle)
+    testImplementation(libs.bouncycastle.pkix)
 }
 
 tasks.bootJar {
@@ -24,4 +27,9 @@ tasks.test {
     val jar = tasks.bootJar.flatMap { it.archiveFile }
     inputs.file(jar).withPathSensitivity(PathSensitivity.NONE)
     jvmArgumentProviders.add { listOf("-Didp.migrator.jar=${jar.get().asFile}") }
+    // ProductionDatabaseTest builds the images of the database in AWS from these folders.
+    val infra = rootDir.resolve("../infra").canonicalFile
+    inputs.dir(infra.resolve("db-bootstrap")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(infra.resolve("pgbouncer")).withPathSensitivity(PathSensitivity.RELATIVE)
+    systemProperty("idp.infra.dir", infra.path)
 }
