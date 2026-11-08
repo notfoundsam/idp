@@ -69,13 +69,20 @@ output "erasure_journal_bucket_arn" {
 
 output "database" {
   description = "Connection settings the services get. The CA certificates are public, the passwords stay in the secrets."
-  value = {
-    pooled_jdbc_url        = module.data.pooled_jdbc_url
-    pooled_tls_ca_pem      = module.data.pooled_tls_ca_pem
-    direct_jdbc_url        = module.data.direct_jdbc_url
-    provisioner_jdbc_url   = module.data.provisioner_jdbc_url
-    direct_tls_ca_pem      = module.data.direct_tls_ca_pem
-    role_secret_arns       = module.data.role_secret_arns
-    master_user_secret_arn = module.data.master_user_secret_arn
-  }
+  value       = merge(local.database, { master_user_secret_arn = module.data.master_user_secret_arn })
+}
+
+output "one_off_tasks" {
+  description = "Task definition and awsvpcConfiguration of migrator and of the operator CLI, see infra/terraform/README.md."
+  value       = module.app.one_off_tasks
+}
+
+output "ops_alb_dns_name" {
+  description = "Target of the record ops.<domain>: the internal ALB of ops, which only the VPN reaches."
+  value       = module.network.ops_alb_dns_name
+}
+
+output "idp_metadata_secret_arn" {
+  description = "Secret that the operator fills with the SAML metadata of ops-sso before ops starts."
+  value       = module.app.idp_metadata_secret_arn
 }

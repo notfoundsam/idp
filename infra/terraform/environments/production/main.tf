@@ -1,6 +1,8 @@
 locals {
   environment = "production"
   name        = "idp-${local.environment}"
+  # staging is prod, except that a load test may switch the limits of app off.
+  profile = "prod"
 }
 
 module "network" {
@@ -154,6 +156,40 @@ locals {
       secrets = {}
     }
   }
+
+  database = {
+    pooled_jdbc_url      = module.data.pooled_jdbc_url
+    pooled_tls_ca_pem    = module.data.pooled_tls_ca_pem
+    direct_jdbc_url      = module.data.direct_jdbc_url
+    provisioner_jdbc_url = module.data.provisioner_jdbc_url
+    direct_tls_ca_pem    = module.data.direct_tls_ca_pem
+    role_secret_arns     = module.data.role_secret_arns
+  }
+}
+
+module "app" {
+  source = "../../modules/app"
+
+  name                       = local.name
+  profile                    = local.profile
+  domain                     = var.domain
+  release                    = var.release
+  min_client_version         = var.min_client_version
+  repository_urls            = module.registry.repository_urls
+  cluster_arn                = module.cluster.cluster_arn
+  vpc_id                     = module.network.vpc_id
+  private_subnet_ids         = module.network.private_subnet_ids
+  security_group_ids         = module.network.security_group_ids
+  endpoint_security_group_id = module.network.endpoint_security_group_id
+  services                   = local.services
+  database                   = local.database
+  https_listener_arn         = module.edge.https_listener_arn
+  origin_header              = module.edge.origin_header
+  origin_header_value        = module.keys.origin_header_value
+  ops_alb_arn                = module.network.ops_alb_arn
+  ops_certificate_arn        = module.edge.alb_certificate_arn
+  ops_client_cidrs           = var.ops_client_cidrs
+  desired_counts             = var.desired_counts
 }
 
 # infra/terraform/bootstrap creates the role, this configuration grants what a release touches.

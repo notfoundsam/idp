@@ -57,6 +57,7 @@ private const val VIEWER_HEADER = "CloudFront-Viewer-Address"
 private const val DEAD_VALKEY = "redis://127.0.0.1:1"
 private const val TLS_VALKEY = "rediss://127.0.0.1:1"
 private const val PROD = "--spring.profiles.active=prod"
+private const val STAGING = "--spring.profiles.active=staging"
 private const val PASSWORD = "--VALKEY_PASSWORD=valkey-secret"
 private const val EDGE = "--CLIENT_IP_HEADER=$VIEWER_HEADER"
 private val READ = Permission("read")
@@ -286,6 +287,47 @@ class ThrottleApplicationTest :
                 }
 
             NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_IP_HMAC_KEY shorter"
+        }
+
+        test("the staging profile starts with the limits off for a load test") {
+            val settings = arrayOf(STAGING, PASSWORD, EDGE, "--VALKEY_TLS_CA=$valkeyCa", "--THROTTLE_ENABLED=false")
+            start(*settings, valkey = TLS_VALKEY).use { application ->
+                application.getBeansOfType(ThrottleDecorator::class.java).shouldBeEmpty()
+
+                repeat(LIMIT + 1) { application.get("/probe/ping").statusCode() shouldBe 200 }
+            }
+        }
+
+        test("the staging profile starts with limits on like the prod one") {
+            start(STAGING, PASSWORD, EDGE, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY).use { application ->
+                application.getBean(ThrottleDecorator::class.java).shouldNotBeNull()
+            }
+        }
+
+        test("the staging profile refuses THROTTLE_MULTIPLIER") {
+            val failure = shouldThrow<Exception> { start(STAGING, "--THROTTLE_MULTIPLIER=100") }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain
+                "THROTTLE_MULTIPLIER=100 is refused in the staging profile"
+        }
+
+        test("the staging profile keeps the checks of the deployment with the limits off") {
+            val settings = arrayOf(STAGING, "--THROTTLE_ENABLED=false", "--VALKEY_TLS_CA=$valkeyCa")
+            val failures =
+                listOf(
+                    shouldThrow<Exception> { start(*settings, PASSWORD, EDGE) } to "VALKEY_URL without TLS",
+                    shouldThrow<Exception> { start(*settings, EDGE, valkey = TLS_VALKEY) } to "empty VALKEY_PASSWORD",
+                    shouldThrow<Exception> { start(*settings, PASSWORD, valkey = TLS_VALKEY) } to "empty CLIENT_IP_HEADER",
+                    shouldThrow<Exception> {
+                        start(*settings, PASSWORD, EDGE, valkey = TLS_VALKEY, ipHmacKey = "local-throttle-key")
+                    } to "THROTTLE_IP_HMAC_KEY shorter",
+                )
+
+            failures.forEach { (failure, refusal) ->
+                val message = NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull()
+                message shouldContain refusal
+                message shouldContain "staging profile"
+            }
         }
 
         test("a rediss:// VALKEY_URL without VALKEY_TLS_CA does not start") {

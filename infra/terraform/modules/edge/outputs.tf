@@ -13,6 +13,11 @@ output "https_listener_arn" {
   value       = aws_lb_listener.https.arn
 }
 
+output "alb_certificate_arn" {
+  description = "Issued certificate of *.<domain> in the region of the ALB, which also names ops.<domain>."
+  value       = aws_acm_certificate_validation.alb.certificate_arn
+}
+
 output "origin_header" {
   description = "Name of the header with origin_header_value, which every rule that forwards to a service requires."
   value       = local.origin_header

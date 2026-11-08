@@ -17,7 +17,7 @@ locals {
   private_subnets  = { for index, zone in local.zones : zone => cidrsubnet(var.cidr_block, 4, 4 + index) }
   database_subnets = { for index, zone in local.zones : zone => cidrsubnet(var.cidr_block, 4, 8 + index) }
 
-  security_groups = concat(["alb", "database", "valkey"], var.services)
+  security_groups = concat(["alb", "ops-alb", "database", "valkey"], var.services)
 }
 
 resource "aws_vpc" "this" {
@@ -222,6 +222,18 @@ resource "aws_lb" "public" {
   internal                   = false
   security_groups            = [aws_security_group.this["alb"].id]
   subnets                    = [for subnet in aws_subnet.public : subnet.id]
+  drop_invalid_header_fields = true
+  desync_mitigation_mode     = "strictest"
+  enable_deletion_protection = var.deletion_protection
+}
+
+# ops answers only inside the VPC, and the module of the services admits the VPN to it.
+resource "aws_lb" "ops" {
+  name                       = "${var.name}-ops"
+  load_balancer_type         = "application"
+  internal                   = true
+  security_groups            = [aws_security_group.this["ops-alb"].id]
+  subnets                    = [for subnet in aws_subnet.private : subnet.id]
   drop_invalid_header_fields = true
   desync_mitigation_mode     = "strictest"
   enable_deletion_protection = var.deletion_protection

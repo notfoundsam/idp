@@ -5,8 +5,9 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | Path | Holds |
 |---|---|
 | `bootstrap/` | The state bucket with its KMS key, the GitHub OIDC provider and the roles GitHub Actions assume. Applied once per account by hand |
-| `environments/<env>/` | The root of an environment: network, ECR, static bucket, ECS cluster, internal CA, database and PgBouncer, Valkey, keys, erasure journal and mail. The output `services` holds what each service gets beside the database |
-| `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB |
+| `environments/<env>/` | The root of an environment: network, ECR, static bucket, ECS cluster, internal CA, database and PgBouncer, Valkey, keys, erasure journal, mail and the services. The output `services` holds what each service gets beside the database |
+| `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB and the internal one of `ops` |
+| `modules/app` | The services `app`, `worker` and `ops`, the one-off tasks `migrator` and `cli`, their execution roles, the rules of `app` on the public listener and the listener of `ops` on the internal ALB |
 | `modules/registry` | ECR repositories with immutable tags |
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
 | `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. Its WAF, the certificates of both, the HTTPS listener of the ALB and the ingress of the ALB from CloudFront alone |
@@ -59,6 +60,39 @@ DNS hosting is not decided, so Terraform creates no records. On the first apply:
 2. Create the records of the output `certificate_validation_records` at the DNS host and keep them, ACM renews through them.
 3. Apply everything. The apply waits until ACM issues both certificates.
 4. Point `*.<domain>` at the output `distribution_domain_name`.
+
+## Services
+
+Every task runs the image `<repository>:<release>` with a read-only root. The JVM keeps its temporary files in a volume at `/run/idp`, which ECS fills from the image.
+
+| Task | Runs as | Reached by | Database |
+|---|---|---|---|
+| `app` | ECS service | The public ALB: `/api/*` and `/saml/*` with the origin header, on 8080 | `app_runtime` through PgBouncer |
+| `worker` | ECS service | Nobody. It sends mail to SES on 587 through the interface endpoint | `worker_runtime` through PgBouncer, `provisioner` directly |
+| `ops` | ECS service | The internal ALB at `ops.<domain>`, on 8080 | `ops_runtime` through PgBouncer |
+| `migrator` | One-off task, output `one_off_tasks` | Nobody | `idp_owner` directly |
+| `cli` | One-off task of the `ops` image, output `one_off_tasks` | Nobody | `ops_runtime` through PgBouncer |
+
+The ALBs check the health of `app` and `ops` on the management port 8081, which only they reach. `worker` checks its own readiness. Staging runs the Spring profile `staging`, production `prod`: both refuse what the local environment allows, and only `staging` lets a load test set `THROTTLE_ENABLED=false` on `app`. `modules/app` refuses the profile `local`, a profile set through the output `services` and any JDWP option.
+
+`ops` answers only on the internal ALB, whose security group admits HTTPS from `ops_client_cidrs`, the private ranges of the VPN, and nothing while the list is empty. Create the record `ops.<domain>` towards the output `ops_alb_dns_name`, beside the wildcard of the edge: it resolves to private addresses. The service tenant `ops-sso` stays a tenant domain behind CloudFront. The ALB keeps a browser on one task of `ops` for 30 minutes, as `ops` keeps its sessions in memory, and `ops` has no `CLIENT_IP_HEADER`: no header of the ALB carries an address that a client cannot forge, so it records the address of the ALB.
+
+`ops` trusts the SAML metadata of `ops-sso` in the secret of the output `idp_metadata_secret_arn`, and a first container of its task writes it to the file of `IDP_METADATA_FILE`. Terraform creates the secret empty, so `ops` starts only once the operator has stored the metadata:
+
+1. Run the CLI `bootstrap`, below, and wait until the service tenant is active.
+2. Store its metadata: `aws secretsmanager put-secret-value --secret-id <idp_metadata_secret_arn> --secret-string file://metadata.xml`, with the file from `https://ops-sso.<domain>/saml/metadata`.
+3. Start `ops` again: `aws ecs update-service --cluster <cluster_name> --service ops --force-new-deployment`.
+
+After a key rotation at the service tenant, store the new metadata and redeploy `ops` between starting and completing the rotation.
+
+A one-off task runs with its network from the output `one_off_tasks` and its arguments in `overrides`:
+
+```bash
+aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
+  --task-definition <one_off_tasks.cli.task_definition> \
+  --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...],assignPublicIp=DISABLED}" \
+  --overrides '{"containerOverrides":[{"name":"cli","command":["cli","suspend","<tenant-id>"]}]}'
+```
 
 ## Database bootstrap
 

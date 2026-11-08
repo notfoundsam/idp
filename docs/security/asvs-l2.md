@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 150 |
-| Partial | Part of the control is merged, the listed tasks finish it | 24 |
-| Planned | The listed tasks build the control | 8 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 158 |
+| Partial | Part of the control is merged, the listed tasks finish it | 19 |
+| Planned | The listed tasks build the control | 5 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -76,7 +76,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
 | V2.3.4 | 2 | Done | T23, T24 | Invitation, reset and email change tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `AccountRecoveryTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
-| V2.4.1 | 2 | Done | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`). Switching them off with `THROTTLE_ENABLED=false` or raising them with `THROTTLE_MULTIPLIER`, which only the local environment and e2e do, is refused in the `prod` profile (`ThrottleApplicationTest`). In front of them the WAF of CloudFront limits each client address, all requests and those of `app` apart, with a `429` (`edge.tftest.hcl`, `docs/security/limits.md`), and the ALB takes only requests that passed it |
+| V2.4.1 | 2 | Done | T40, T41 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`). Switching them off with `THROTTLE_ENABLED=false` or raising them with `THROTTLE_MULTIPLIER`, which only the local environment and e2e do, is refused in the `prod` profile, and the multiplier in the `staging` one, where a load test may switch them off (`ThrottleApplicationTest`). Production runs `prod` (`app.tftest.hcl`). In front of them the WAF of CloudFront limits each client address, all requests and those of `app` apart, with a `429` (`edge.tftest.hcl`, `docs/security/limits.md`), and the ALB takes only requests that passed it |
 
 ## V3 Web Frontend Security
 
@@ -299,15 +299,15 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V13.2.1 | 2 | Partial | T39, T41 | Each service has its own database role (`DatabaseRolesTest`), IAM roles remain |
 | V13.2.2 | 2 | Partial | T39, T41 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`), IAM remains |
 | V13.2.3 | 2 | Done | T39 | Terraform generates every credential of the services into Secrets Manager: database passwords, the Valkey token and the HMAC key of Throttle as write-only values, the SMTP credentials of SES from an IAM key of their own (`modules/data`, `modules/valkey`, `modules/keys`, `modules/mail`), and RDS manages the master password itself. The origin header of CloudFront is written the same way and reaches the state only through CloudFront and the ALB, which keep it in their configuration. Default ones stay in the local environment, and the prod profile of `app` refuses its Valkey and HMAC key (`ThrottleApplicationTest`) |
-| V13.2.4 | 2 | Planned | T41 | Security groups allow only listed destinations |
-| V13.2.5 | 2 | Planned | T41 | The same egress allowlist |
-| V13.3.1 | 2 | Partial | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The secrets of the services are there too, listed by variable in the output `services` of `infra/terraform`. Their task definitions remain |
+| V13.2.4 | 2 | Done | T39, T41 | The private subnets have no route out of the VPC, and every egress rule of a security group names another group or the prefix list of the S3 endpoint, never an address range: AWS through the interface endpoints on 443, SES on 587 from `worker` alone, PgBouncer, Postgres for `migrator` and `worker`, Valkey for `app`, the services from their load balancers (`network.tftest.hcl`, `app.tftest.hcl`, `modules/data`, `modules/valkey`) |
+| V13.2.5 | 2 | Done | T39, T41 | The same allowlist: a new destination is a new rule or a new interface endpoint in `interface_endpoints`, and there is no default egress (`network.tftest.hcl`, `app.tftest.hcl`) |
+| V13.3.1 | 2 | Done | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The secrets of the services are there too, listed by variable in the output `services` of `infra/terraform`. The task definitions take each of them through `secrets`, and the execution role of each task reads only its own (`app.tftest.hcl`) |
 | V13.3.2 | 2 | Planned | T41 | One IAM role per service, `ops` has no `Decrypt` |
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
-| V13.4.2 | 2 | Partial | T41 | JDWP exists only in local compose, production task definitions must prove it |
+| V13.4.2 | 2 | Done | T41 | JDWP exists only in local compose. `modules/app` refuses JDWP, `-Xdebug` and `-Xrunjdwp` in any variable of a service and checks the final environment of each task definition, which sets no JVM options (`app.tftest.hcl`) |
 | V13.4.3 | 2 | Done | T40 | nginx runs with `autoindex off` and answers a directory under `assets/` with `404` (`render-nginx.test.mjs`, `make smoke`). In AWS the CloudFront Function, on the request of every behavior of S3, asks S3 only for an `index.html` or a key under `assets/`, never for the root of the bucket, on the same cases as nginx (`spa-rewrite.test.mjs`, `check-nginx.mjs` in `make smoke`, `edge.tftest.hcl`). The bucket is read only through CloudFront with origin access control, and its policy denies CloudFront every listing, so a missing key is a `403` that the distribution passes on uncached (`static.tftest.hcl`, `edge.tftest.hcl`) |
 | V13.4.4 | 2 | Done | T23 | `TRACE` is refused (`ResponseHeadersTest`, `OpsApiTest`) |
-| V13.4.5 | 2 | Partial | T41 | Management port exposes only health (`AppApplicationTest`), it must stay private |
+| V13.4.5 | 2 | Done | T41 | Management port exposes only health (`AppApplicationTest`). In AWS only the security group of its ALB reaches 8081 of `app` and `ops`, for the health check, the target groups forward requests to 8080 alone, and `worker` takes no traffic (`app.tftest.hcl`) |
 
 ## V14 Data Protection
 
@@ -332,7 +332,7 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V15.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists expensive operations |
 | V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
 | V15.2.2 | 2 | Done | | Throttling, the hash semaphore and the limits on flows, open SAML requests and request size are merged (`HashLimitTest`, `LoginLimitsTest`, `SamlRequestsTest`). An inflated request is cut at 32 KiB before parsing (`AuthnRequestValidatorTest`) |
-| V15.2.3 | 2 | Partial | T41 | Seed runs only in `local` (`LocalSeedTest`), production must never set that profile |
+| V15.2.3 | 2 | Done | T41 | Seed runs only in `local` (`LocalSeedTest`). `modules/app` gives every task `prod` or `staging` and refuses `local` and a profile from the settings of the root (`app.tftest.hcl`), and `ops` refuses `local` beside either (`OpsApiTest`) |
 | V15.3.1 | 1 | Done | T32, T34, T36 | Audiences own their responses and build them field by field (`ArchitectureRulesTest`), and every contract test checks that a response carries exactly the fields of its schema (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
 | V15.3.3 | 2 | Done | T23 | Requests list their fields, unknown fields are refused (`FlowApiTest`, `OpsApiTest`) |

@@ -271,13 +271,16 @@ class OpsApiTest :
                 }
             }
 
-            test("the prod profile refuses to start beside the local one") {
-                val failure =
-                    shouldThrow<Exception> {
-                        runApplication<OpsApplication>(*environment.arguments, "--spring.profiles.active=local,prod")
-                    }
+            listOf("prod", "staging").forEach { profile ->
+                test("the $profile profile refuses to start beside the local one") {
+                    val failure =
+                        shouldThrow<Exception> {
+                            runApplication<OpsApplication>(*environment.arguments, "--spring.profiles.active=local,$profile")
+                        }
 
-                generateSequence(failure as Throwable) { it.cause }.last().message.orEmpty() shouldContain "prod"
+                    generateSequence(failure as Throwable) { it.cause }.last().message.orEmpty() shouldContain
+                        "refused beside the $profile one"
+                }
             }
         }
     })

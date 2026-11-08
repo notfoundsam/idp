@@ -52,6 +52,33 @@ variable "db_password_versions" {
   default     = {}
 }
 
+variable "release" {
+  description = "Tag of the images of app, worker, ops and migrator, which a release builds from backend/ and pushes to ECR."
+  type        = string
+}
+
+variable "min_client_version" {
+  description = "Oldest frontend that app accepts, MIN_CLIENT_VERSION. Empty accepts every one."
+  type        = string
+  default     = ""
+}
+
+variable "ops_client_cidrs" {
+  description = "Address ranges of the VPN clients, the only ones that reach ops. Empty until the VPN exists."
+  type        = list(string)
+  default     = []
+}
+
+variable "desired_counts" {
+  description = "Tasks of app, worker and ops. Each one left out keeps the default of modules/app."
+  type = object({
+    app    = optional(number)
+    worker = optional(number)
+    ops    = optional(number)
+  })
+  default = {}
+}
+
 variable "valkey_node_type" {
   description = "Node type of ElastiCache."
   type        = string

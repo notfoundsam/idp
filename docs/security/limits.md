@@ -31,7 +31,7 @@ Valkey counts these in `app`, one bucket per message, and every key holds the te
 
 SAML does not pass the bus, so `SamlThrottleFilter` counts its requests on the same port, after the tenant and the session are known.
 
-`THROTTLE_ENABLED=false` removes these for load tests, and `THROTTLE_MULTIPLIER` multiplies every capacity in this table and keeps its period. The local environment sets the multiplier to 100, because every local request comes from one address. `app` refuses to start in the `prod` profile with either setting changed, and a multiplier below 1 is refused everywhere. `ops` and the operator CLI have no such limits: VPN and IAM stand in front of them.
+`THROTTLE_ENABLED=false` removes these for load tests, and `THROTTLE_MULTIPLIER` multiplies every capacity in this table and keeps its period. The local environment sets the multiplier to 100, because every local request comes from one address. `app` refuses to start in the `prod` profile with either setting changed, and a multiplier below 1 is refused everywhere. Staging runs the `staging` profile, which checks everything that `prod` does and lets a load test set `THROTTLE_ENABLED=false`, never the multiplier. `ops` and the operator CLI have no such limits: VPN and IAM stand in front of them.
 
 A mail is limited by the caller and not by the mailbox, because a limit per login would tell that the login exists. So many addresses can still send one person many reset mails, up to the tenant bucket, and each new mail cancels the link of the previous one. Nobody gets into the account this way.
 
