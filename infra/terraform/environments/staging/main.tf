@@ -57,6 +57,84 @@ module "data" {
   password_versions   = var.db_password_versions
 }
 
+module "valkey" {
+  source = "../../modules/valkey"
+
+  name               = local.name
+  subnet_ids         = module.network.database_subnet_ids
+  security_group_ids = module.network.security_group_ids
+  node_type          = var.valkey_node_type
+  auth_token_version = lookup(var.credential_versions, "valkey_auth_token", 1)
+}
+
+module "keys" {
+  source = "../../modules/keys"
+
+  name                         = local.name
+  throttle_ip_hmac_key_version = lookup(var.credential_versions, "throttle_ip_hmac_key", 1)
+}
+
+module "erasure_journal" {
+  source = "../../modules/erasure-journal"
+
+  bucket                = "${local.name}-erasures-${var.account_id}"
+  backup_retention_days = module.data.backup_retention_days
+}
+
+module "mail" {
+  source = "../../modules/mail"
+
+  name                = local.name
+  domain              = var.domain
+  from                = "no-reply@${var.domain}"
+  credentials_version = lookup(var.credential_versions, "smtp", 1)
+}
+
+# What the services get beside the database, by variable: values in environment, ARNs of secrets that ECS fills in secrets.
+locals {
+  erasure_journal = {
+    ERASURE_JOURNAL_BUCKET = module.erasure_journal.bucket
+    ERASURE_JOURNAL_REGION = module.erasure_journal.region
+  }
+
+  services = {
+    app = {
+      environment = {
+        VALKEY_URL    = module.valkey.url
+        VALKEY_TLS_CA = module.valkey.tls_ca_pem
+      }
+      secrets = {
+        VALKEY_PASSWORD      = module.valkey.auth_token_secret_arn
+        THROTTLE_IP_HMAC_KEY = module.keys.throttle_ip_hmac_key_secret_arn
+      }
+    }
+    worker = {
+      environment = merge(local.erasure_journal, {
+        PLATFORM_KEK_URI = module.keys.platform_kek_uri
+        MAIL_HOST        = module.mail.host
+        MAIL_PORT        = tostring(module.mail.port)
+        MAIL_FROM        = module.mail.from
+      })
+      secrets = {
+        MAIL_USERNAME = "${module.mail.credentials_secret_arn}:username::"
+        MAIL_PASSWORD = "${module.mail.credentials_secret_arn}:password::"
+      }
+    }
+    ops = {
+      environment = {
+        PLATFORM_KEK_URI = module.keys.platform_kek_uri
+      }
+      secrets = {}
+    }
+    migrator = {
+      environment = merge(local.erasure_journal, {
+        PLATFORM_KEK_URI = module.keys.platform_kek_uri
+      })
+      secrets = {}
+    }
+  }
+}
+
 # infra/terraform/bootstrap creates the role, this configuration grants what a release touches.
 data "aws_iam_role" "deploy" {
   name = "${local.name}-github-deploy"

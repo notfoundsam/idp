@@ -37,6 +37,21 @@ output "bootstrap_network" {
   }
 }
 
+output "services" {
+  description = "Settings of app, worker, ops and migrator beside the database: environment by value, secrets by ARN."
+  value       = local.services
+}
+
+output "platform_kek_arn" {
+  description = "The platform KEK, for the task roles."
+  value       = module.keys.platform_kek_arn
+}
+
+output "erasure_journal_bucket_arn" {
+  description = "Bucket of the erasure journal, for the task roles."
+  value       = module.erasure_journal.bucket_arn
+}
+
 output "database" {
   description = "Connection settings the services get. The CA certificates are public, the passwords stay in the secrets."
   value = {

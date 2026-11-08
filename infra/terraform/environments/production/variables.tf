@@ -51,3 +51,20 @@ variable "db_password_versions" {
   type        = map(number)
   default     = {}
 }
+
+variable "valkey_node_type" {
+  description = "Node type of ElastiCache."
+  type        = string
+  default     = "cache.m7g.large"
+}
+
+variable "credential_versions" {
+  description = "Version of each other generated credential: valkey_auth_token, throttle_ip_hmac_key and smtp. Raising one replaces it."
+  type        = map(number)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for name in keys(var.credential_versions) : contains(["valkey_auth_token", "throttle_ip_hmac_key", "smtp"], name)])
+    error_message = "Only valkey_auth_token, throttle_ip_hmac_key and smtp have versions."
+  }
+}

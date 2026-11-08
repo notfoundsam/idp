@@ -281,15 +281,15 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V12.1.1 | 1 | Partial | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`). So do RDS through `ssl_min_protocol_version` and PgBouncer on both sides (`modules/data`, `infra/pgbouncer`). Valkey, the edge and the other connections remain |
+| V12.1.1 | 1 | Partial | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`). So do RDS through `ssl_min_protocol_version` and PgBouncer on both sides (`modules/data`, `infra/pgbouncer`), and `app` towards Valkey (`ValkeyRateLimiter`). The edge and the other connections remain |
 | V12.1.2 | 2 | Planned | T40, T41 | Edge and load balancer security policies with recommended suites |
 | V12.1.3 | 2 | N/A | | No mTLS |
 | V12.2.1 | 1 | Planned | T40 | HTTPS only at the edge |
 | V12.2.2 | 1 | Planned | T40 | Public certificates from ACM |
-| V12.3.1 | 2 | Partial | T39, T41 | SMTP requires STARTTLS. Every connection to Postgres is TLS: RDS refuses others with `rds.force_ssl`, PgBouncer with `client_tls_sslmode = require` (`ProductionDatabaseTest`). Valkey, telemetry and targets remain |
-| V12.3.2 | 2 | Partial | T39, T41 | SMTP verifies the server name (`WorkerApplicationTest`). Every client of Postgres uses `verify-full`: the services and `migrator` through the JDBC URLs of `modules/data`, PgBouncer towards RDS, the bootstrap tasks through libpq (`ProductionDatabaseTest`). Valkey and the other clients remain |
+| V12.3.1 | 2 | Partial | T39, T41 | SMTP requires STARTTLS. Every connection to Postgres is TLS: RDS refuses others with `rds.force_ssl`, PgBouncer with `client_tls_sslmode = require` (`ProductionDatabaseTest`). ElastiCache takes only TLS with `transit_encryption_mode = "required"` (`modules/valkey`), and the prod profile of `app` refuses a `VALKEY_URL` without it (`ThrottleApplicationTest`). Telemetry and targets remain |
+| V12.3.2 | 2 | Partial | T39, T41 | SMTP verifies the server name (`WorkerApplicationTest`). Every client of Postgres uses `verify-full`: the services and `migrator` through the JDBC URLs of `modules/data`, PgBouncer towards RDS, the bootstrap tasks through libpq (`ProductionDatabaseTest`). `app` verifies the certificate and name of Valkey, which `verifyPeer` in the URL cannot turn off (`ValkeyTlsTest`). The other clients remain |
 | V12.3.3 | 2 | Planned | T41 | TLS between the load balancer and services |
-| V12.3.4 | 2 | Partial | T39, T41 | A client of Postgres trusts one CA alone: PgBouncer is certified by the internal CA of `modules/pki`, RDS by its root of `ca_cert_identifier`, and a certificate of another CA or for another name is refused (`ProductionDatabaseTest`). Valkey, the ALB targets and telemetry remain |
+| V12.3.4 | 2 | Partial | T39, T41 | A client of Postgres trusts one CA alone: PgBouncer is certified by the internal CA of `modules/pki`, RDS by its root of `ca_cert_identifier`, and a certificate of another CA or for another name is refused (`ProductionDatabaseTest`). `app` trusts for Valkey only the roots of Amazon Trust Services in `VALKEY_TLS_CA`, never the JVM trust store, and refuses `rediss://` without them (`ValkeyTlsTest`, `modules/valkey`). The ALB targets and telemetry remain |
 
 ## V13 Configuration
 
@@ -298,10 +298,10 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | V13.1.1 | 2 | Planned | T41 | `docs/security/communications.md` lists every connection |
 | V13.2.1 | 2 | Partial | T39, T41 | Each service has its own database role (`DatabaseRolesTest`), IAM roles remain |
 | V13.2.2 | 2 | Partial | T39, T41 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`), IAM remains |
-| V13.2.3 | 2 | Partial | T39 | Terraform generates every database password into Secrets Manager as a write-only value, and RDS manages the master password itself (`modules/data`). The other credentials of the services remain. Default ones stay in the local environment |
+| V13.2.3 | 2 | Done | T39 | Terraform generates every credential of the services into Secrets Manager: database passwords, the Valkey token and the HMAC key of Throttle as write-only values, the SMTP credentials of SES from an IAM key of their own (`modules/data`, `modules/valkey`, `modules/keys`, `modules/mail`), and RDS manages the master password itself. Default ones stay in the local environment, and the prod profile of `app` refuses its Valkey and HMAC key (`ThrottleApplicationTest`) |
 | V13.2.4 | 2 | Planned | T41 | Security groups allow only listed destinations |
 | V13.2.5 | 2 | Planned | T41 | The same egress allowlist |
-| V13.3.1 | 2 | Partial | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The secrets of the services remain |
+| V13.3.1 | 2 | Partial | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The secrets of the services are there too, listed by variable in the output `services` of `infra/terraform`. Their task definitions remain |
 | V13.3.2 | 2 | Planned | T41 | One IAM role per service, `ops` has no `Decrypt` |
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
 | V13.4.2 | 2 | Partial | T41 | JDWP exists only in local compose, production task definitions must prove it |

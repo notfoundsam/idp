@@ -8,6 +8,11 @@ output "database_kms_key_arn" {
   value       = aws_kms_key.database.arn
 }
 
+output "backup_retention_days" {
+  description = "Days RDS keeps automated backups. The erasure journal keeps its entries longer."
+  value       = aws_db_instance.this.backup_retention_period
+}
+
 output "master_user_secret_arn" {
   description = "Secret that RDS keeps the master password in. Only the owner bootstrap reads it."
   value       = aws_db_instance.this.master_user_secret[0].secret_arn

@@ -17,7 +17,7 @@ locals {
   private_subnets  = { for index, zone in local.zones : zone => cidrsubnet(var.cidr_block, 4, 4 + index) }
   database_subnets = { for index, zone in local.zones : zone => cidrsubnet(var.cidr_block, 4, 8 + index) }
 
-  security_groups = concat(["alb", "database"], var.services)
+  security_groups = concat(["alb", "database", "valkey"], var.services)
 }
 
 resource "aws_vpc" "this" {

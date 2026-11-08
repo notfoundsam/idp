@@ -18,6 +18,7 @@ import org.springframework.core.env.Profiles
 import java.time.Duration
 
 private const val PROD = "prod"
+private const val MIN_PROD_KEY_LENGTH = 32
 
 @Configuration(proxyBeanMethods = false)
 class ThrottleGuard(
@@ -29,6 +30,17 @@ class ThrottleGuard(
         val prod = environment.acceptsProfiles(Profiles.of(PROD))
         check(enabled || !prod) { "THROTTLE_ENABLED=false is refused in the $PROD profile" }
         check(multiplier == 1L || !prod) { "THROTTLE_MULTIPLIER=$multiplier is refused in the $PROD profile" }
+        if (prod) {
+            check(environment.getRequiredProperty("idp.throttle.valkey.url").startsWith("rediss://")) {
+                "A VALKEY_URL without TLS is refused in the $PROD profile"
+            }
+            check(environment.getRequiredProperty("idp.throttle.valkey.password").isNotEmpty()) {
+                "An empty VALKEY_PASSWORD is refused in the $PROD profile"
+            }
+            check(environment.getRequiredProperty("idp.throttle.ip-hmac-key").length >= MIN_PROD_KEY_LENGTH) {
+                "A THROTTLE_IP_HMAC_KEY shorter than $MIN_PROD_KEY_LENGTH characters is refused in the $PROD profile"
+            }
+        }
     }
 }
 
@@ -41,10 +53,12 @@ class ThrottleConfiguration {
         @Value("\${idp.throttle.valkey.timeout}") timeout: Duration,
         @Value("\${idp.throttle.valkey.connect-timeout}") connectTimeout: Duration,
         @Value("\${idp.throttle.valkey.cooldown}") cooldown: Duration,
+        @Value("\${idp.throttle.valkey.password}") password: String,
+        @Value("\${idp.throttle.valkey.tls-ca}") tlsCa: String,
         @Value("\${idp.throttle.multiplier}") multiplier: Long,
         registry: MeterRegistry,
     ): RateLimiter {
-        val limiter = ValkeyRateLimiter(url, timeout, connectTimeout, cooldown, registry)
+        val limiter = ValkeyRateLimiter(url, timeout, connectTimeout, cooldown, registry, password = password, tlsCa = tlsCa)
         return if (multiplier == 1L) limiter else ScaledRateLimiter(limiter, multiplier)
     }
 

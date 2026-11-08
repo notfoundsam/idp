@@ -1,21 +1,11 @@
 package idp.migrator
 
+import idp.sharedkernel.testing.TestCa
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import org.bouncycastle.asn1.x500.X500Name
-import org.bouncycastle.asn1.x509.BasicConstraints
-import org.bouncycastle.asn1.x509.ExtendedKeyUsage
-import org.bouncycastle.asn1.x509.Extension
-import org.bouncycastle.asn1.x509.GeneralName
-import org.bouncycastle.asn1.x509.GeneralNames
-import org.bouncycastle.asn1.x509.KeyPurposeId
-import org.bouncycastle.asn1.x509.KeyUsage
-import org.bouncycastle.cert.X509v3CertificateBuilder
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.postgresql.util.PSQLException
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.Network
@@ -23,82 +13,16 @@ import org.testcontainers.containers.startupcheck.OneShotStartupCheckStrategy
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.images.builder.ImageFromDockerfile
 import org.testcontainers.images.builder.Transferable
-import java.math.BigInteger
 import java.nio.file.Path
-import java.security.KeyPair
-import java.security.KeyPairGenerator
 import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Duration
-import java.time.Instant
-import java.util.Base64
-import java.util.Date
 import java.util.Properties
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.listDirectoryEntries
 
 private const val PORT = 5432
 private const val OWNER_PASSWORD = "owner-secret"
 private val RUNTIME_ROLES = listOf("app_runtime", "worker_runtime", "ops_runtime")
-
-private val serials = AtomicLong()
-
-private fun pem(
-    type: String,
-    der: ByteArray,
-) = "-----BEGIN $type-----\n" + Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(der) + "\n-----END $type-----\n"
-
-private fun ecKeys(): KeyPair = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
-
-private class TestCa(
-    name: String,
-) {
-    private val keys = ecKeys()
-    private val subject = X500Name("CN=$name")
-
-    val pem: String =
-        pem(
-            "CERTIFICATE",
-            sign(subject, keys, BasicConstraints(true)) {
-                it.addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.keyCertSign or KeyUsage.cRLSign))
-            },
-        )
-
-    /** A server certificate for the names and its PKCS #8 key. */
-    fun issue(vararg names: String): Pair<String, String> {
-        val leaf = ecKeys()
-        val der =
-            sign(X500Name("CN=${names.first()}"), leaf, BasicConstraints(false)) {
-                it.addExtension(
-                    Extension.subjectAlternativeName,
-                    false,
-                    GeneralNames(names.map { name -> GeneralName(GeneralName.dNSName, name) }.toTypedArray()),
-                )
-                it.addExtension(Extension.extendedKeyUsage, false, ExtendedKeyUsage(KeyPurposeId.id_kp_serverAuth))
-            }
-        return pem("CERTIFICATE", der) to pem("PRIVATE KEY", leaf.private.encoded)
-    }
-
-    private fun sign(
-        name: X500Name,
-        owner: KeyPair,
-        constraints: BasicConstraints,
-        extend: (X509v3CertificateBuilder) -> Unit,
-    ): ByteArray {
-        val now = Instant.now()
-        val builder =
-            JcaX509v3CertificateBuilder(
-                subject,
-                BigInteger.valueOf(serials.incrementAndGet()),
-                Date.from(now - Duration.ofHours(1)),
-                Date.from(now + Duration.ofDays(1)),
-                name,
-                owner.public,
-            ).addExtension(Extension.basicConstraints, true, constraints)
-        extend(builder)
-        return builder.build(JcaContentSignerBuilder("SHA256withECDSA").build(keys.private)).encoded
-    }
-}
 
 // What RDS hands over: a master user with CREATEROLE and CREATEDB that owns the database and is no superuser.
 private const val MASTER_USER =

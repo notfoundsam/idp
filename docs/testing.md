@@ -31,6 +31,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | Releases | A page open during a deploy: the bundle of the previous release from `frontend/e2e/fixtures/previous-release`, versions and failures of the API set by Playwright routes | `frontend/e2e/release.spec.ts` |
 | Static files | The nginx config rendered from `infra/web/security-headers.json`, and the policy in that file | `infra/web/render-nginx.test.mjs` |
 | Database in AWS | The images of `infra/db-bootstrap` and `infra/pgbouncer` with a read-only root against a Postgres that behaves like RDS: a master user without superuser, TLS only, certificates of test CAs. The boot jar of `migrator` connects with the JDBC URL of `infra/terraform` | `migrator/src/test/.../ProductionDatabaseTest.kt` |
+| Valkey in AWS | The limiter of `app` against a Valkey that serves TLS alone with a password, as ElastiCache does, certified by a test CA: the right CA and name, and the failure cases of another CA, another name, `verifyPeer=NONE` in the URL and a wrong password | `shared-kernel/src/test/.../throttle/ValkeyTlsTest.kt` |
 | Infrastructure | `terraform fmt`, `terraform validate` of every root without its backend, and TFLint with the AWS ruleset | `make lint-infra` |
 
 ## Tools
@@ -51,7 +52,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **`node:test`** for the scripts in `infra/web`, so they need no dependencies. `make test-frontend` runs them in the `frontend` container.
 - **oasdiff** in CI for breaking changes in the API contracts.
 - **Terraform** and **TFLint** in their images, as the compose services `terraform` and `tflint` under the profile `infra`. `make lint-infra` runs them, and the CI job `infra` runs the same target. Each root initialises with `-backend=false` and `-lockfile=readonly`, so the check reads no state, calls no AWS API and fails when `.terraform.lock.hcl` is behind `required_providers`.
-- **BouncyCastle** in `ProductionDatabaseTest` for the test CAs and server certificates.
+- **`TestCa`** in the `shared-kernel` test fixtures, on BouncyCastle: test CAs and the server certificates they issue, for `ProductionDatabaseTest`, `ValkeyTlsTest` and the prod profile in `ThrottleApplicationTest`.
 
 Not used: MockMvc, the Spring test context, Mockito and MockK.
 

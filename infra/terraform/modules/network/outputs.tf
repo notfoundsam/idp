@@ -19,7 +19,7 @@ output "database_subnet_ids" {
 }
 
 output "security_group_ids" {
-  description = "Security group of each workload, by name: alb, database and every service."
+  description = "Security group of each workload, by name: alb, database, valkey and every service."
   value       = { for name, group in aws_security_group.this : name => group.id }
 }
 

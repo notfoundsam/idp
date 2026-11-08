@@ -26,6 +26,7 @@ dependencies {
     compileOnly(libs.jakarta.servlet.api)
 
     testImplementation(libs.logback.classic)
+    testImplementation(libs.testcontainers)
 
     testFixturesApi(platform(libs.spring.boot.bom))
     testFixturesApi(libs.postgresql)
@@ -33,6 +34,8 @@ dependencies {
     testFixturesImplementation(libs.jackson.databind)
     testFixturesImplementation(libs.kotest.assertions)
     testFixturesImplementation(libs.snakeyaml)
+    testFixturesImplementation(libs.bouncycastle)
+    testFixturesImplementation(libs.bouncycastle.pkix)
     // Compile only: on the runtime classpath of `worker` tests it would turn their application into a web one.
     testFixturesCompileOnly(libs.spring.webmvc)
     testFixturesCompileOnly(libs.spring.web)

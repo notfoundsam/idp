@@ -15,8 +15,6 @@ dependencies {
 
     testImplementation(testFixtures(project(":shared-kernel")))
     testImplementation(libs.testcontainers)
-    testImplementation(libs.bouncycastle)
-    testImplementation(libs.bouncycastle.pkix)
 }
 
 tasks.bootJar {

@@ -50,6 +50,9 @@ idp:
       period: 1m
     valkey:
       url: ${VALKEY_URL}
+      password: ${VALKEY_PASSWORD:}
+      # PEM certificates of the CAs a rediss:// server is trusted through, the JVM trust store never.
+      tls-ca: ${VALKEY_TLS_CA:}
       timeout: 100ms
       connect-timeout: 1s
       cooldown: 30s

@@ -43,7 +43,7 @@ Start `worker`, `app` and `ops`, then check the dashboards and the dead events i
 
 An erasure from the last moments before the incident can miss the journal if `worker` had not handled its event yet. The restored database then holds that user with no trace of the request. Ask support for erasure requests from that window and repeat them.
 
-Entries hold IDs alone, for example `users/<tenant-id>/<user-id>`. The journal must keep an entry for as long as a backup taken before it exists: 30 days of backups plus a margin. An older entry is not needed, because every remaining backup was taken after it.
+Entries hold IDs alone, for example `users/<tenant-id>/<user-id>`. The journal must keep an entry for as long as a backup taken before it exists: 30 days of backups plus a margin. In AWS Object Lock keeps every entry for 45 days, then the lifecycle of the bucket removes it, see `infra/terraform/README.md`. An older entry is not needed, because every remaining backup was taken after it.
 
 A deleted tenant needs no journal to stay unreadable: its data in every backup is encrypted under a destroyed KEK. AWS KMS waits 7 days before it deletes the key material. Never cancel a pending deletion of a tenant KEK, the journal will not destroy it again after a restore.
 
