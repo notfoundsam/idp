@@ -7,7 +7,7 @@ Every key, algorithm and certificate the IdP uses, what each may protect, and ho
 - **One purpose per key.** A key protects one kind of data. Where one secret serves several purposes, each purpose takes its own HKDF-SHA-256 output with the purpose and the tenant in the info, so the secret itself encrypts nothing.
 - **Generation.** Keys of the application come from `SecureRandom`, KEKs from the KMS. No key is derived from a password or a UUID.
 - **Storage.** A KEK never leaves the KMS: AWS KMS keys live in its HSMs, OpenBao transit keys are created without `exportable`. Every other key is stored only wrapped by the key above it, and unwrapped only in memory for at most the cache TTL of `KeyHierarchy`, 5 minutes.
-- **Access.** `app`, `worker` and `migrator` restoring a backup may call `Decrypt` on tenant KEKs. `ops` may only `Encrypt` with the platform KEK. Each service has an IAM role or OpenBao token of its own.
+- **Access.** `app`, `worker` and the recovery run of `migrator` after a restore may call `Decrypt` on tenant KEKs, and only `worker` and the recovery run may delete one. `ops` and the CLI may only `Encrypt` with the platform KEK, which only `worker` decrypts. Each service has an IAM role or OpenBao token of its own. In AWS the key policies deny everybody else these calls, see `infra/terraform/README.md`, section Rights in AWS.
 - **Cryptoperiod.** A KEK gets a new version every year. The application keys below the KEK live as long as their owner: rotating the tenant key is outside the first version, see [key-compromise-runbook.md](key-compromise-runbook.md).
 - **Destruction.** Destroying a key is how data is erased: a user key goes with the user, the tenant KEKs with the tenant. AWS KMS waits 7 days before it deletes key material.
 - **Compromise.** See [key-compromise-runbook.md](key-compromise-runbook.md).
@@ -16,8 +16,8 @@ Every key, algorithm and certificate the IdP uses, what each may protect, and ho
 
 | Key | Algorithm | Protects | Lives in | Created | Rotated | Destroyed |
 |---|---|---|---|---|---|---|
-| Tenant KEK | AES-256-GCM (AWS `SYMMETRIC_DEFAULT`, OpenBao `aes256-gcm96`) | The tenant key | KMS, URI in `platform.tenants.kek_uri` | By `worker` while provisioning | By the KMS every 365 days, old versions keep decrypting. Moved to another KMS by `KekMoveJob` | With the tenant at offboarding. A KEK left by a move goes 35 days later |
-| Platform KEK | Same | Contacts of applications and admin reinvites | KMS, `alias/<env>-platform`, `PLATFORM_KEK_URI` | By `modules/keys`, locally by `dev-tools/openbao/init.sh` | By the KMS every 365 days, `rotation_period_in_days` as for tenant KEKs | Never while the platform runs |
+| Tenant KEK | AES-256-GCM (AWS `SYMMETRIC_DEFAULT`, OpenBao `aes256-gcm96`) | The tenant key | KMS, URI in `platform.tenants.kek_uri` | By `worker` while provisioning, in AWS with the key policy `KMS_AWS_KEY_POLICY` | By the KMS every 365 days, old versions keep decrypting. Moved to another KMS by `KekMoveJob` | With the tenant at offboarding. A KEK left by a move goes after `KMS_PREVIOUS_KEK_RETENTION`, 45 days in AWS |
+| Platform KEK | Same | Contacts of applications and admin reinvites | KMS, `alias/<env>-platform`, `PLATFORM_KEK_URI` | By `modules/keys` with the key policy of `modules/iam`, locally by `dev-tools/openbao/init.sh` | By the KMS every 365 days, `rotation_period_in_days` as for tenant KEKs | Never while the platform runs |
 | Tenant key | 256 random bits | Nothing directly. HKDF-SHA-256 derives the keys below from it | `tenant_keys`, wrapped by the tenant KEK | At provisioning | Not in the first version. `tenant_keys.version` and the Tink key ID leave room for a second version | With the tenant KEK |
 | User keys wrapping key | AES-256-GCM, derived from the tenant key | User keys, with the tenant and user in the associated data | Memory only | On use | With the tenant key | With the tenant key |
 | User key | Tink AES-256-GCM keyset | Personal data of the user, their TOTP secret, IP and User-Agent of their sessions, IP and details of audit records they made | `user_keys`, wrapped by the key above | When the user is created | Not in the first version | With the user at erasure |
@@ -68,10 +68,10 @@ The KMS rotates a KEK by itself: AWS KMS through `EnableKeyRotation` with 365 da
 
 ## Moving tenants to another KMS
 
-1. Configure the new adapter beside the old one in `app`, `worker` and `migrator`, and point `KMS_NEW_KEYS` of `worker` at it. Both adapters must stay configured until the last previous KEK is destroyed.
+1. Configure the new adapter beside the old one in `app`, `worker` and the recovery run of `migrator`, and point `KMS_NEW_KEYS` of `worker` at it. Both adapters must stay configured until the last previous KEK is destroyed.
 2. `KekMoveJob` runs every hour. For every active or suspended tenant whose KEK is in another KMS it creates a KEK in the new one, stores it as `kek_uri` with the old one as `previous_kek_uri`, wraps the tenant key with the new KEK and records `tenant.kek_replaced` in the tenant's journal. Nothing under the tenant key changes.
 3. A context made before the move carries the old URI. When that URI fails, `KeyHierarchy` reads both KEKs from `platform.tenants` once and tries the other one.
-4. The previous KEK still opens backups taken before the move. `PreviousKekJob` destroys it after `idp.kms.previous-kek-retention`, 35 days: backups live 30. It records `tenant.previous_kek_destroyed`.
+4. The previous KEK still opens backups taken before the move. `PreviousKekJob` destroys it after `idp.kms.previous-kek-retention` from `KMS_PREVIOUS_KEK_RETENTION`: 35 days by default, as backups live 30, and in AWS 45, as long as the erasure journal keeps an entry. It records `tenant.previous_kek_destroyed`.
 5. Offboarding and a restore destroy both KEKs of a tenant.
 
 ## Replacing an algorithm

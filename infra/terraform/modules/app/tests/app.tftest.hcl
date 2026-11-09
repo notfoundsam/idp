@@ -116,12 +116,22 @@ variables {
       provisioner    = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/db/provisioner-Ee55Ee"
     }
   }
-  https_listener_arn  = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:listener/app/idp-test-public/50dc6c495c0c9188/f2f7dc8efc522ab2"
-  origin_header       = "X-Origin-Verify"
-  origin_header_value = "Origin0Header0Of0The0Test0Distribution0Only0Letters0And0Digits0"
-  ops_alb_arn         = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:loadbalancer/app/idp-test-ops/60dc6c495c0c9188"
-  ops_certificate_arn = "arn:aws:acm:eu-central-1:111111111111:certificate/0b4f3c1e-7a52-4d9e-9a3c-5f0e2d8b6a41"
-  ops_client_cidrs    = ["10.100.0.0/22"]
+  task_role_arns = {
+    app      = "arn:aws:iam::111111111111:role/idp-test-app-task"
+    worker   = "arn:aws:iam::111111111111:role/idp-test-worker-task"
+    ops      = "arn:aws:iam::111111111111:role/idp-test-ops-task"
+    cli      = "arn:aws:iam::111111111111:role/idp-test-cli-task"
+    migrator = "arn:aws:iam::111111111111:role/idp-test-migrator-task"
+    recovery = "arn:aws:iam::111111111111:role/idp-test-recovery-task"
+  }
+  tenant_kek_policy           = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"Account\",\"Effect\":\"Allow\",\"Action\":\"kms:*\",\"Resource\":\"*\",\"Principal\":{\"AWS\":\"arn:aws:iam::111111111111:root\"}}]}"
+  previous_kek_retention_days = 45
+  https_listener_arn          = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:listener/app/idp-test-public/50dc6c495c0c9188/f2f7dc8efc522ab2"
+  origin_header               = "X-Origin-Verify"
+  origin_header_value         = "Origin0Header0Of0The0Test0Distribution0Only0Letters0And0Digits0"
+  ops_alb_arn                 = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:loadbalancer/app/idp-test-ops/60dc6c495c0c9188"
+  ops_certificate_arn         = "arn:aws:acm:eu-central-1:111111111111:certificate/0b4f3c1e-7a52-4d9e-9a3c-5f0e2d8b6a41"
+  ops_client_cidrs            = ["10.100.0.0/22"]
 }
 
 run "every_rule_to_app_requires_the_header_of_the_distribution" {
@@ -303,7 +313,7 @@ run "task_definitions_run_the_profile_without_a_debugger" {
   command = plan
 
   assert {
-    condition     = toset(keys(aws_ecs_task_definition.this)) == toset(["app", "worker", "ops", "migrator", "cli"])
+    condition     = toset(keys(aws_ecs_task_definition.this)) == toset(["app", "worker", "ops", "migrator", "recovery", "cli"])
     error_message = "A task definition is missing."
   }
 
@@ -464,7 +474,7 @@ run "each_execution_role_reads_its_own_secrets" {
 
   assert {
     condition = alltrue([
-      for name in ["cli", "migrator"] :
+      for name in ["cli", "migrator", "recovery"] :
       length(one(data.aws_iam_policy_document.execution_secrets[name].statement).resources) == 1
     ])
     error_message = "A one-off task reads more than the password of its role."
@@ -501,6 +511,132 @@ run "services_run_in_the_private_subnets_without_exec" {
     condition     = output.one_off_tasks.cli.network.securityGroups == [var.security_group_ids["ops"]] && output.one_off_tasks.migrator.network.securityGroups == [var.security_group_ids["migrator"]]
     error_message = "A one-off task runs with the security group of another."
   }
+}
+
+run "each_task_runs_as_its_own_task_role" {
+  command = plan
+
+  assert {
+    condition     = alltrue([for name, definition in aws_ecs_task_definition.this : definition.task_role_arn == var.task_role_arns[name]])
+    error_message = "A task runs as the role of another, or without one."
+  }
+
+  assert {
+    condition     = aws_ecs_task_definition.this["cli"].task_role_arn != aws_ecs_task_definition.this["ops"].task_role_arn
+    error_message = "The CLI runs as the role of ops, so the operator audit could not tell it from the service."
+  }
+}
+
+run "only_worker_creates_tenant_keks_with_their_policy" {
+  command = plan
+
+  assert {
+    condition     = local.tasks.worker.environment.KMS_AWS_KEY_POLICY == var.tenant_kek_policy
+    error_message = "worker creates tenant KEKs without their key policy, and AWS would refuse them."
+  }
+
+  assert {
+    condition     = [for name, task in local.tasks : name if contains(keys(task.environment), "KMS_AWS_KEY_POLICY")] == ["worker"]
+    error_message = "Another task than worker gets the policy of tenant KEKs, though it creates none."
+  }
+
+  assert {
+    condition     = local.tasks.worker.environment.KMS_PREVIOUS_KEK_RETENTION == "45d"
+    error_message = "worker keeps a KEK replaced by a move for another time than the module says."
+  }
+}
+
+run "the_recovery_run_is_migrator_applying_the_journal_again" {
+  command = plan
+
+  assert {
+    condition = (
+      local.tasks.recovery.image == "migrator" &&
+      local.tasks.recovery.environment.REAPPLY_ERASURES == "true" &&
+      local.tasks.recovery.environment.DB_USERNAME == "idp_owner" &&
+      local.tasks.recovery.environment.DB_URL == var.database.direct_jdbc_url &&
+      local.tasks.recovery.secrets.DB_PASSWORD == var.database.role_secret_arns["idp_owner"]
+    )
+    error_message = "The recovery run is not migrator applying the erasure journal again as idp_owner."
+  }
+
+  assert {
+    condition     = [for name, task in local.tasks : name if lookup(task.environment, "REAPPLY_ERASURES", "false") != "false"] == ["recovery"]
+    error_message = "A release of migrator applies the journal again, or with the rights it needs to."
+  }
+
+  assert {
+    condition     = output.one_off_tasks.recovery.network.securityGroups == [var.security_group_ids["migrator"]] && !contains(keys(aws_ecs_service.this), "recovery")
+    error_message = "The recovery run runs as a service or with another security group than migrator."
+  }
+}
+
+run "a_release_of_migrator_refused_with_the_journal_switch" {
+  command = plan
+
+  variables {
+    services = {
+      app      = { environment = {}, secrets = {} }
+      worker   = { environment = {}, secrets = {} }
+      ops      = { environment = {}, secrets = {} }
+      migrator = { environment = { REAPPLY_ERASURES = "true" }, secrets = {} }
+    }
+  }
+
+  expect_failures = [aws_ecs_task_definition.this["migrator"]]
+}
+
+run "a_missing_task_role_refused" {
+  command = plan
+
+  variables {
+    task_role_arns = {
+      app      = "arn:aws:iam::111111111111:role/idp-test-app-task"
+      worker   = "arn:aws:iam::111111111111:role/idp-test-worker-task"
+      ops      = "arn:aws:iam::111111111111:role/idp-test-ops-task"
+      cli      = "arn:aws:iam::111111111111:role/idp-test-cli-task"
+      migrator = "arn:aws:iam::111111111111:role/idp-test-migrator-task"
+    }
+  }
+
+  expect_failures = [var.task_role_arns]
+}
+
+run "a_shared_task_role_refused" {
+  command = plan
+
+  variables {
+    task_role_arns = {
+      app      = "arn:aws:iam::111111111111:role/idp-test-app-task"
+      worker   = "arn:aws:iam::111111111111:role/idp-test-worker-task"
+      ops      = "arn:aws:iam::111111111111:role/idp-test-ops-task"
+      cli      = "arn:aws:iam::111111111111:role/idp-test-ops-task"
+      migrator = "arn:aws:iam::111111111111:role/idp-test-migrator-task"
+      recovery = "arn:aws:iam::111111111111:role/idp-test-recovery-task"
+    }
+  }
+
+  expect_failures = [var.task_role_arns]
+}
+
+run "a_key_policy_that_is_no_policy_refused" {
+  command = plan
+
+  variables {
+    tenant_kek_policy = "alias/tenant-policy"
+  }
+
+  expect_failures = [var.tenant_kek_policy]
+}
+
+run "a_fraction_of_a_day_refused_as_kek_retention" {
+  command = plan
+
+  variables {
+    previous_kek_retention_days = 0.5
+  }
+
+  expect_failures = [var.previous_kek_retention_days]
 }
 
 run "the_local_profile_refused" {

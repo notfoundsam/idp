@@ -10,16 +10,16 @@ Scale `app`, `worker` and `ops` to zero before the restore and keep them there u
 
 ## 2. Restore the database
 
-Restore as usual. Do not touch the journal bucket: Object Lock keeps its entries for the retention period, and neither the task roles nor an operator can delete them.
+Restore as usual. Do not touch the journal bucket: Object Lock keeps its entries for the retention period, and neither the task roles nor an operator can delete them. Only `worker` writes it and only the task `recovery` lists it.
 
 ## 3. Apply the erasures again
 
-Run the `migrator` task once with `REAPPLY_ERASURES=true`. In this mode it needs, beside its usual settings:
+Run `migrator` once with `REAPPLY_ERASURES=true`. In AWS that is the one-off task `recovery` from the output `one_off_tasks` of `infra/terraform`, which runs the image of `migrator` with these settings and a task role of its own: only that role may list the journal and destroy KEKs, and a release of `migrator` cannot. Elsewhere it needs, beside its usual settings:
 
 | Setting | Value |
 |---|---|
 | `ERASURE_JOURNAL_BUCKET`, `ERASURE_JOURNAL_REGION` | The journal bucket, as `worker` has it |
-| `KMS_NEW_KEYS`, `KMS_AWS_REGION`, `KMS_AWS_KEY_POLICY` | As `worker` has them |
+| `KMS_NEW_KEYS`, `KMS_AWS_REGION` | As `worker` has them |
 | `PLATFORM_KEK_URI`, `TENANTS_BASE_DOMAIN` | As `worker` has them |
 
 While tenants move to another KMS, `worker` has the settings of both, and so does this task: a backup may name KEKs of either.

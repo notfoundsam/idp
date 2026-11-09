@@ -92,8 +92,17 @@ module "keys" {
   source = "../../modules/keys"
 
   name                         = local.name
+  platform_kek_policy          = module.iam.platform_kek_policy
   throttle_ip_hmac_key_version = lookup(var.credential_versions, "throttle_ip_hmac_key", 1)
   origin_header_version        = lookup(var.credential_versions, "origin_header", 1)
+}
+
+module "iam" {
+  source = "../../modules/iam"
+
+  name                       = local.name
+  platform_kek_arn           = module.keys.platform_kek_arn
+  erasure_journal_bucket_arn = module.erasure_journal.bucket_arn
 }
 
 module "erasure_journal" {
@@ -183,13 +192,17 @@ module "app" {
   endpoint_security_group_id = module.network.endpoint_security_group_id
   services                   = local.services
   database                   = local.database
-  https_listener_arn         = module.edge.https_listener_arn
-  origin_header              = module.edge.origin_header
-  origin_header_value        = module.keys.origin_header_value
-  ops_alb_arn                = module.network.ops_alb_arn
-  ops_certificate_arn        = module.edge.alb_certificate_arn
-  ops_client_cidrs           = var.ops_client_cidrs
-  desired_counts             = var.desired_counts
+  task_role_arns             = module.iam.task_role_arns
+  tenant_kek_policy          = module.iam.tenant_kek_policy
+  # Both answer how long a restore may need what existed before it: the journal for erasures, the KEK for the backup itself.
+  previous_kek_retention_days = module.erasure_journal.retention_days
+  https_listener_arn          = module.edge.https_listener_arn
+  origin_header               = module.edge.origin_header
+  origin_header_value         = module.keys.origin_header_value
+  ops_alb_arn                 = module.network.ops_alb_arn
+  ops_certificate_arn         = module.edge.alb_certificate_arn
+  ops_client_cidrs            = var.ops_client_cidrs
+  desired_counts              = var.desired_counts
 }
 
 # infra/terraform/bootstrap creates the role, this configuration grants what a release touches.

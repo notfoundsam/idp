@@ -1,5 +1,5 @@
 output "platform_kek_arn" {
-  description = "The platform KEK, for the task roles: ops only encrypts with it, worker decrypts."
+  description = "The platform KEK, for the task roles of modules/iam: ops and the CLI only encrypt with it, worker decrypts."
   value       = aws_kms_key.platform.arn
 }
 

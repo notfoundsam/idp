@@ -141,6 +141,41 @@ variable "database" {
   }
 }
 
+variable "task_role_arns" {
+  description = "Task role of each task, the output task_role_arns of modules/iam."
+  type        = map(string)
+
+  validation {
+    condition     = toset(keys(var.task_role_arns)) == toset(["app", "worker", "ops", "cli", "migrator", "recovery"])
+    error_message = "Roles for app, worker, ops, cli, migrator and recovery, and for nothing else."
+  }
+
+  validation {
+    condition     = length(distinct(values(var.task_role_arns))) == length(var.task_role_arns)
+    error_message = "Each task has a role of its own."
+  }
+}
+
+variable "tenant_kek_policy" {
+  description = "Key policy that worker attaches to every tenant KEK it creates, the output tenant_kek_policy of modules/keys."
+  type        = string
+
+  validation {
+    condition     = try(jsondecode(var.tenant_kek_policy).Version == "2012-10-17" && length(jsondecode(var.tenant_kek_policy).Statement) > 0, false)
+    error_message = "A JSON policy of version 2012-10-17 with statements."
+  }
+}
+
+variable "previous_kek_retention_days" {
+  description = "Days worker keeps a KEK replaced by a move to another KMS: at least as long as a backup taken before the move."
+  type        = number
+
+  validation {
+    condition     = var.previous_kek_retention_days >= 1 && floor(var.previous_kek_retention_days) == var.previous_kek_retention_days
+    error_message = "A whole number of days."
+  }
+}
+
 variable "https_listener_arn" {
   description = "HTTPS listener of the public ALB, from modules/edge."
   type        = string

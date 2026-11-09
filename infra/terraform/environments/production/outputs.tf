@@ -58,13 +58,18 @@ output "services" {
 }
 
 output "platform_kek_arn" {
-  description = "The platform KEK, for the task roles."
+  description = "The platform KEK."
   value       = module.keys.platform_kek_arn
 }
 
 output "erasure_journal_bucket_arn" {
-  description = "Bucket of the erasure journal, for the task roles."
+  description = "Bucket of the erasure journal."
   value       = module.erasure_journal.bucket_arn
+}
+
+output "task_role_arns" {
+  description = "Task role of each task, the principals that CloudTrail names for the calls of the services."
+  value       = module.iam.task_role_arns
 }
 
 output "database" {

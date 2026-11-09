@@ -23,7 +23,7 @@ Find how the key left and close that path before anything else. Do not wait for 
 
 | Path | Action |
 |---|---|
-| `Decrypt` calls on the tenant KEK from a principal other than the task roles of `app`, `worker` and `migrator` | Remove the grant from the key policy or the IAM policy. On OpenBao revoke the token. The KEK stays: its material never left the KMS |
+| `Decrypt` calls on the tenant KEK from a principal other than the task roles of `app`, `worker` and `recovery` | The key policy denies them to everybody else, so somebody changed it: put back the output `tenant_kek_policy` of `infra/terraform` with `PutKeyPolicy` and find who changed it in CloudTrail. On OpenBao revoke the token. The KEK stays: its material never left the KMS |
 | Memory of a running task, for example a heap dump or remote code execution | Replace every task of the affected service from a known image. A new task holds no unwrapped key until it reads one again |
 | A leaked database credential, snapshot or backup | Rotate the credential, stop the snapshot sharing or export, and treat the data as copied in step 2 |
 
@@ -31,7 +31,7 @@ Find how the key left and close that path before anything else. Do not wait for 
 
 The key matters only together with data. Check, for the window of the incident:
 
-1. CloudTrail: `Decrypt` on the tenant KEK by unexpected principals, and RDS `CopyDBSnapshot`, `ModifyDBSnapshotAttribute`, `StartExportTask`.
+1. CloudTrail: `Decrypt` on the tenant KEK by unexpected principals, `PutKeyPolicy` on it, and RDS `CopyDBSnapshot`, `ModifyDBSnapshotAttribute`, `StartExportTask`.
 2. Postgres logs: logins of unknown roles or from unknown addresses, and reads of the tenant schema outside `app`, `worker` and `migrator`.
 3. Which tenants are affected. A tenant key opens one tenant only.
 

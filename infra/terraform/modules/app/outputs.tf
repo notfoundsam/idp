@@ -1,7 +1,7 @@
 output "one_off_tasks" {
-  description = "Task definition and awsvpcConfiguration of each one-off run: migrator and the operator CLI."
+  description = "Task definition and awsvpcConfiguration of each one-off run: migrator, its recovery run after a restore and the operator CLI."
   value = {
-    for name in ["migrator", "cli"] : name => {
+    for name in ["migrator", "recovery", "cli"] : name => {
       task_definition = aws_ecs_task_definition.this[name].arn
       network = {
         subnets        = var.private_subnet_ids

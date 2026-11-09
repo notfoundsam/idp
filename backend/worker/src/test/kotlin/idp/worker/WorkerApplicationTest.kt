@@ -37,6 +37,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 class WorkerApplicationTest :
@@ -112,6 +113,16 @@ class WorkerApplicationTest :
 
         "new keys need a configured adapter" {
             shouldThrowAny { runApplication<WorkerApplication>(*arguments, "--KMS_NEW_KEYS=aws-kms") }
+        }
+
+        "Terraform sets how long a KEK replaced by a move is kept" {
+            runApplication<WorkerApplication>(*arguments, "--KMS_PREVIOUS_KEK_RETENTION=45d").use { context ->
+                context.environment.getProperty("idp.kms.previous-kek-retention", Duration::class.java) shouldBe Duration.ofDays(45)
+            }
+        }
+
+        "worker does not start with a retention that is no duration" {
+            shouldThrowAny { runApplication<WorkerApplication>(*arguments, "--KMS_PREVIOUS_KEK_RETENTION=forever") }
         }
 
         "worker does not start without an erasure journal" {

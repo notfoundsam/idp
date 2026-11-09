@@ -4,6 +4,7 @@ resource "aws_kms_key" "platform" {
   enable_key_rotation     = true
   rotation_period_in_days = 365
   deletion_window_in_days = 30
+  policy                  = var.platform_kek_policy
 }
 
 resource "aws_kms_alias" "platform" {

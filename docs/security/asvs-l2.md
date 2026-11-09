@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 158 |
-| Partial | Part of the control is merged, the listed tasks finish it | 19 |
-| Planned | The listed tasks build the control | 5 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 160 |
+| Partial | Part of the control is merged, the listed tasks finish it | 18 |
+| Planned | The listed tasks build the control | 4 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
 
@@ -296,13 +296,13 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V13.1.1 | 2 | Planned | T41 | `docs/security/communications.md` lists every connection |
-| V13.2.1 | 2 | Partial | T39, T41 | Each service has its own database role (`DatabaseRolesTest`), IAM roles remain |
-| V13.2.2 | 2 | Partial | T39, T41 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`), IAM remains |
+| V13.2.1 | 2 | Done | T39, T41 | Each service has its own database role (`DatabaseRolesTest`). In AWS each task, the CLI and the recovery run of `migrator` included, runs as a task role of its own that only ECS tasks of the account assume, apart from the execution role that reads its secrets (`iam.tftest.hcl`, `app.tftest.hcl`) |
+| V13.2.2 | 2 | Done | T39, T41 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`). IAM grants each task role only the calls it makes, on the platform KEK, the aliases of tenant KEKs and the erasure journal by name, without wildcards in actions and without deletes in the journal, and a release of `migrator` gets none. The key policy that `worker` attaches to each tenant KEK grants `app` only `Decrypt` and `worker` what provisioning, moves and offboarding call. Every task role denies `ecs:ExecuteCommand`, `ops` and the CLI every call of Secrets Manager (`iam.tftest.hcl`) |
 | V13.2.3 | 2 | Done | T39 | Terraform generates every credential of the services into Secrets Manager: database passwords, the Valkey token and the HMAC key of Throttle as write-only values, the SMTP credentials of SES from an IAM key of their own (`modules/data`, `modules/valkey`, `modules/keys`, `modules/mail`), and RDS manages the master password itself. The origin header of CloudFront is written the same way and reaches the state only through CloudFront and the ALB, which keep it in their configuration. Default ones stay in the local environment, and the prod profile of `app` refuses its Valkey and HMAC key (`ThrottleApplicationTest`) |
 | V13.2.4 | 2 | Done | T39, T41 | The private subnets have no route out of the VPC, and every egress rule of a security group names another group or the prefix list of the S3 endpoint, never an address range: AWS through the interface endpoints on 443, SES on 587 from `worker` alone, PgBouncer, Postgres for `migrator` and `worker`, Valkey for `app`, the services from their load balancers (`network.tftest.hcl`, `app.tftest.hcl`, `modules/data`, `modules/valkey`) |
 | V13.2.5 | 2 | Done | T39, T41 | The same allowlist: a new destination is a new rule or a new interface endpoint in `interface_endpoints`, and there is no default egress (`network.tftest.hcl`, `app.tftest.hcl`) |
 | V13.3.1 | 2 | Done | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The secrets of the services are there too, listed by variable in the output `services` of `infra/terraform`. The task definitions take each of them through `secrets`, and the execution role of each task reads only its own (`app.tftest.hcl`) |
-| V13.3.2 | 2 | Planned | T41 | One IAM role per service, `ops` has no `Decrypt` |
+| V13.3.2 | 2 | Partial | T41 | One IAM role per task. The key policies deny by `aws:PrincipalArn`, for the root user too: `ops` and the CLI everything on a tenant KEK and everything but `Encrypt` on the platform KEK, `Decrypt` of a tenant KEK to all but `app`, `worker` and the recovery run, of the platform KEK to all but `worker`, `ScheduleKeyDeletion` of a tenant KEK to all but `worker` and the recovery run, `ReEncrypt*` and `CreateGrant` to everybody (`iam.tftest.hcl`). Only `worker` gets the tenant policy as `KMS_AWS_KEY_POLICY` (`app.tftest.hcl`). Left: proving on staging that AWS refuses `ops` the `Decrypt` of a tenant KEK and accepts `CreateKey` of `worker` with that policy |
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
 | V13.4.2 | 2 | Done | T41 | JDWP exists only in local compose. `modules/app` refuses JDWP, `-Xdebug` and `-Xrunjdwp` in any variable of a service and checks the final environment of each task definition, which sets no JVM options (`app.tftest.hcl`) |
 | V13.4.3 | 2 | Done | T40 | nginx runs with `autoindex off` and answers a directory under `assets/` with `404` (`render-nginx.test.mjs`, `make smoke`). In AWS the CloudFront Function, on the request of every behavior of S3, asks S3 only for an `index.html` or a key under `assets/`, never for the root of the bucket, on the same cases as nginx (`spa-rewrite.test.mjs`, `check-nginx.mjs` in `make smoke`, `edge.tftest.hcl`). The bucket is read only through CloudFront with origin access control, and its policy denies CloudFront every listing, so a missing key is a `403` that the distribution passes on uncached (`static.tftest.hcl`, `edge.tftest.hcl`) |

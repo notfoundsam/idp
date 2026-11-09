@@ -63,6 +63,7 @@ resource "aws_ecs_task_definition" "this" {
   cpu                      = each.value.cpu
   memory                   = each.value.memory
   execution_role_arn       = aws_iam_role.execution[each.key].arn
+  task_role_arn            = var.task_role_arns[each.key]
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -88,6 +89,11 @@ resource "aws_ecs_task_definition" "this" {
     precondition {
       condition     = alltrue([for value in values(each.value.environment) : !can(regex("(?i)jdwp|-Xdebug|-Xrunjdwp", value))])
       error_message = "${each.key} starts a debugger."
+    }
+
+    precondition {
+      condition     = (each.key == "recovery") == (lookup(each.value.environment, "REAPPLY_ERASURES", "false") == "true")
+      error_message = "Only the recovery task applies the erasure journal again."
     }
   }
 }

@@ -7,7 +7,8 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `bootstrap/` | The state bucket with its KMS key, the GitHub OIDC provider and the roles GitHub Actions assume. Applied once per account by hand |
 | `environments/<env>/` | The root of an environment: network, ECR, static bucket, ECS cluster, internal CA, database and PgBouncer, Valkey, keys, erasure journal, mail and the services. The output `services` holds what each service gets beside the database |
 | `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB and the internal one of `ops` |
-| `modules/app` | The services `app`, `worker` and `ops`, the one-off tasks `migrator` and `cli`, their execution roles, the rules of `app` on the public listener and the listener of `ops` on the internal ALB |
+| `modules/app` | The services `app`, `worker` and `ops`, the one-off tasks `migrator`, `recovery` and `cli`, their execution roles, the rules of `app` on the public listener and the listener of `ops` on the internal ALB |
+| `modules/iam` | The task role of each task and the key policies of the platform KEK and of tenant KEKs |
 | `modules/registry` | ECR repositories with immutable tags |
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
 | `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. Its WAF, the certificates of both, the HTTPS listener of the ALB and the ingress of the ALB from CloudFront alone |
@@ -71,6 +72,7 @@ Every task runs the image `<repository>:<release>` with a read-only root. The JV
 | `worker` | ECS service | Nobody. It sends mail to SES on 587 through the interface endpoint | `worker_runtime` through PgBouncer, `provisioner` directly |
 | `ops` | ECS service | The internal ALB at `ops.<domain>`, on 8080 | `ops_runtime` through PgBouncer |
 | `migrator` | One-off task, output `one_off_tasks` | Nobody | `idp_owner` directly |
+| `recovery` | One-off task of the `migrator` image with `REAPPLY_ERASURES=true`, only after a restore, see `docs/security/restore-runbook.md` | Nobody | `idp_owner` directly |
 | `cli` | One-off task of the `ops` image, output `one_off_tasks` | Nobody | `ops_runtime` through PgBouncer |
 
 The ALBs check the health of `app` and `ops` on the management port 8081, which only they reach. `worker` checks its own readiness. Staging runs the Spring profile `staging`, production `prod`: both refuse what the local environment allows, and only `staging` lets a load test set `THROTTLE_ENABLED=false` on `app`. `modules/app` refuses the profile `local`, a profile set through the output `services` and any JDWP option.
@@ -93,6 +95,32 @@ aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...],assignPublicIp=DISABLED}" \
   --overrides '{"containerOverrides":[{"name":"cli","command":["cli","suspend","<tenant-id>"]}]}'
 ```
+
+## Rights in AWS
+
+Each task runs as a task role of its own from `modules/iam`, apart from the execution role with which ECS pulls the image and reads the secrets of that task alone. The output `task_role_arns` names them, and so does CloudTrail for every call of a service.
+
+| Task | Platform KEK | Tenant KEKs | Erasure journal | Else |
+|---|---|---|---|---|
+| `app` | | `Decrypt` | | |
+| `worker` | `Decrypt` | `CreateKey` and `EnableKeyRotation` while provisioning or moving, `Encrypt`, `Decrypt`, aliases, `ScheduleKeyDeletion` at offboarding | `PutObject` | |
+| `ops` | `Encrypt` | | | |
+| `cli` | `Encrypt` | | | `GetCallerIdentity`, which AWS answers to anybody |
+| `migrator` | | | | |
+| `recovery` | | `Decrypt`, `DeleteAlias`, `ScheduleKeyDeletion` | `ListBucket` | |
+
+A tenant KEK appears at runtime, so no IAM policy can name it. `worker` attaches the policy of the output `tenant_kek_policy` of `modules/iam` to every key it creates, as `KMS_AWS_KEY_POLICY`, and that policy grants the rights in the table. IAM holds only the calls that name no key and those on the aliases `alias/tenant-*`. A change to the policy reaches only keys created afterwards, so older keys need `PutKeyPolicy` one by one. The platform KEK exists before the services, so IAM grants its rights by its ARN.
+
+The key policies let the account grant the rest through IAM, as the default policy does, and deny for everybody, the root user included:
+
+- `ops` and `cli` everything on a tenant KEK and everything but `Encrypt` on the platform KEK, so they store a contact and never read one.
+- `Decrypt` of a tenant KEK beside `app`, `worker` and `recovery`, of the platform KEK beside `worker`.
+- `ScheduleKeyDeletion` of a tenant KEK beside `worker` and `recovery`, of the platform KEK to every task.
+- `ReEncrypt*` and `CreateGrant` on both.
+
+They match principals by `aws:PrincipalArn`, which still matches a role created again under the same name, where a principal in the policy would stop matching. Changing a key policy stays possible for the account and lands in CloudTrail.
+
+Every task role denies `ecs:ExecuteCommand`, and `ops` and `cli` deny every call of Secrets Manager, so neither opens a shell in `app` or reads the password of `app_runtime`, whatever is granted later. `migrator` runs every release with no rights in AWS: only `recovery` may destroy KEKs and read the journal, and `modules/app` refuses `REAPPLY_ERASURES` on any other task.
 
 ## Database bootstrap
 
@@ -136,9 +164,11 @@ To replace another credential, raise its version, apply and redeploy the service
 
 ## Platform KEK and erasure journal
 
-The platform KEK lives in KMS as `alias/<env>-platform` and rotates every 365 days, as `AwsKeyManagementService` rotates the KEKs of tenants. `worker`, `ops` and `migrator` get its URI as `PLATFORM_KEK_URI`.
+The platform KEK lives in KMS as `alias/<env>-platform` and rotates every 365 days, as `AwsKeyManagementService` rotates the KEKs of tenants. `worker`, `ops` and `migrator` get its URI as `PLATFORM_KEK_URI`, and its key policy comes from `modules/iam`.
 
-The erasure journal is the bucket `<env>-erasures-<account>` with versioning and Object Lock in COMPLIANCE mode, which `worker` and `migrator` get as `ERASURE_JOURNAL_BUCKET` and `ERASURE_JOURNAL_REGION`. Every version is locked for the backup retention of RDS plus 15 days, 45 in all, and the lifecycle removes it after that. The bucket policy refuses deletes to everybody, so no role can hide an entry behind a delete marker.
+The erasure journal is the bucket `<env>-erasures-<account>` with versioning and Object Lock in COMPLIANCE mode, which `worker`, `migrator` and `recovery` get as `ERASURE_JOURNAL_BUCKET` and `ERASURE_JOURNAL_REGION`. Every version is locked for the backup retention of RDS plus 15 days, 45 in all, and the lifecycle removes it after that. The bucket policy refuses deletes to everybody, so no role can hide an entry behind a delete marker.
+
+A KEK that a move to another KMS replaced opens the backups taken before the move, so `worker` keeps it for as long as the journal keeps an entry, `KMS_PREVIOUS_KEK_RETENTION`, 45 days. Both answer how long a restore may need what existed before it, and the tenant key under both KEKs is the same, so the longer wait discloses nothing new.
 
 ## TLS to Postgres
 

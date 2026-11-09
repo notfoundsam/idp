@@ -24,6 +24,13 @@ locals {
     TENANTS_BASE_DOMAIN = var.domain
   })
 
+  migrator_environment = merge(var.services.migrator.environment, local.shared_environment, {
+    DB_URL              = var.database.direct_jdbc_url
+    DB_TLS_CA           = var.database.direct_tls_ca_pem
+    DB_USERNAME         = "idp_owner"
+    TENANTS_BASE_DOMAIN = var.domain
+  })
+
   # The CLI is a one-off run of the ops image, so it shares the settings of ops but serves nothing.
   tasks = {
     app = {
@@ -49,6 +56,9 @@ locals {
         PROVISIONER_DB_TLS_CA   = var.database.direct_tls_ca_pem
         PROVISIONER_DB_USERNAME = "provisioner"
         TENANTS_BASE_DOMAIN     = var.domain
+        KMS_AWS_KEY_POLICY      = var.tenant_kek_policy
+        # A KEK replaced by a move still opens the backups taken before it.
+        KMS_PREVIOUS_KEK_RETENTION = "${var.previous_kek_retention_days}d"
       })
       secrets = merge(var.services.worker.secrets, {
         DB_PASSWORD             = var.database.role_secret_arns["worker_runtime"]
@@ -73,23 +83,28 @@ locals {
       command     = ["cli"]
     }
     migrator = {
-      image  = "migrator"
-      cpu    = 1024
-      memory = 2048
-      environment = merge(var.services.migrator.environment, local.shared_environment, {
-        DB_URL              = var.database.direct_jdbc_url
-        DB_TLS_CA           = var.database.direct_tls_ca_pem
-        DB_USERNAME         = "idp_owner"
-        TENANTS_BASE_DOMAIN = var.domain
-      })
-      secrets = merge(var.services.migrator.secrets, { DB_PASSWORD = var.database.role_secret_arns["idp_owner"] })
-      command = null
+      image       = "migrator"
+      cpu         = 1024
+      memory      = 2048
+      environment = local.migrator_environment
+      secrets     = merge(var.services.migrator.secrets, { DB_PASSWORD = var.database.role_secret_arns["idp_owner"] })
+      command     = null
+    }
+    # migrator after a restore, see docs/security/restore-runbook.md. Only its task role may destroy KEKs and list the
+    # erasure journal, so a release never holds those rights.
+    recovery = {
+      image       = "migrator"
+      cpu         = 1024
+      memory      = 2048
+      environment = merge(local.migrator_environment, { REAPPLY_ERASURES = "true" })
+      secrets     = merge(var.services.migrator.secrets, { DB_PASSWORD = var.database.role_secret_arns["idp_owner"] })
+      command     = null
     }
   }
 
   services       = toset(["app", "worker", "ops"])
   balanced       = toset(["app", "ops"])
-  security_group = { app = "app", worker = "worker", ops = "ops", cli = "ops", migrator = "migrator" }
+  security_group = { app = "app", worker = "worker", ops = "ops", cli = "ops", migrator = "migrator", recovery = "migrator" }
 
   # A secret with a JSON key is read through the ARN of the whole secret.
   execution_secrets = {

@@ -46,8 +46,8 @@ idp:
     new-keys: ${KMS_NEW_KEYS}
     platform-kek-uri: ${PLATFORM_KEK_URI}
     key-cache-ttl: 5m
-    # Backups are kept 30 days, and a KEK replaced by a move still opens the ones taken before it.
-    previous-kek-retention: 35d
+    # A KEK replaced by a move still opens the backups taken before it. In AWS it lives as long as an entry of the erasure journal.
+    previous-kek-retention: ${KMS_PREVIOUS_KEK_RETENTION:35d}
     openbao:
       address: ${OPENBAO_ADDRESS:}
       token: ${OPENBAO_TOKEN:}
