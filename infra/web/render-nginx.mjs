@@ -1,10 +1,14 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { CONTENT_TYPES } from './content-types.mjs'
 
-const PLACEHOLDER = '{{security_headers}}'
+const HEADERS = '{{security_headers}}'
+const TYPES = '{{content_types}}'
 const NAME = /^[A-Za-z][A-Za-z0-9-]*$/
 // nginx would read a quote or a backslash as syntax and a dollar sign as a variable.
 const VALUE = /^[\x20-\x7e]+$/
 const UNSAFE = /["\\$]/
+const EXTENSION = /^[a-z0-9]+$/
+const CONTENT_TYPE = /^([a-z]+\/[a-z0-9.+-]+)(; charset=utf-8)?$/
 
 function headerLines(headers) {
   const entries = Object.entries(headers)
@@ -16,25 +20,58 @@ function headerLines(headers) {
   })
 }
 
-export function render(template, headers) {
-  const lines = headerLines(headers)
-  if (!template.includes(PLACEHOLDER)) throw new Error(`The template has no ${PLACEHOLDER}`)
+// The block replaces mime.types, so nginx knows no type that S3 would not get.
+function typeLines(contentTypes) {
+  const entries = Object.entries(contentTypes)
+  if (entries.length === 0) throw new Error('No content types')
+  const extensions = new Map()
+  const charset = new Map()
+  for (const [extension, value] of entries) {
+    if (!EXTENSION.test(extension)) throw new Error(`Unusable extension: ${extension}`)
+    const match = typeof value === 'string' ? CONTENT_TYPE.exec(value) : null
+    if (match === null) throw new Error(`Unusable content type of ${extension}`)
+    const [, type, withCharset] = match
+    const has = withCharset !== undefined
+    if (charset.has(type) && charset.get(type) !== has) throw new Error(`${type} has a charset only for some extensions`)
+    charset.set(type, has)
+    extensions.set(type, [...(extensions.get(type) ?? []), extension])
+  }
+  // nginx names the charset of text/html anyway and warns about it in charset_types.
+  const charsetTypes = [...charset].filter(([type, has]) => has && type !== 'text/html').map(([type]) => type)
+  return [
+    'types {',
+    ...[...extensions].map(([type, names]) => `    ${type} ${names.join(' ')};`),
+    '}',
+    ...(charsetTypes.length > 0 ? [`charset_types ${charsetTypes.join(' ')};`] : []),
+  ]
+}
+
+function expand(template, placeholder, lines) {
+  if (!template.includes(placeholder)) throw new Error(`The template has no ${placeholder}`)
   const rendered = template
     .split('\n')
     .flatMap((line) => {
-      if (line.trim() !== PLACEHOLDER) return [line]
-      const indent = line.slice(0, line.indexOf(PLACEHOLDER))
-      return lines.map((header) => indent + header)
+      if (line.trim() !== placeholder) return [line]
+      const indent = line.slice(0, line.indexOf(placeholder))
+      return lines.map((it) => indent + it)
     })
     .join('\n')
-  if (rendered.includes(PLACEHOLDER)) throw new Error(`${PLACEHOLDER} must stand on a line of its own`)
+  if (rendered.includes(placeholder)) throw new Error(`${placeholder} must stand on a line of its own`)
   return rendered
+}
+
+export function render(template, headers) {
+  return expand(template, HEADERS, headerLines(headers))
+}
+
+export function renderTypes(template, contentTypes) {
+  return expand(template, TYPES, typeLines(contentTypes))
 }
 
 export async function renderFiles() {
   const template = await readFile(new URL('nginx.conf.template', import.meta.url), 'utf8')
   const headers = JSON.parse(await readFile(new URL('security-headers.json', import.meta.url), 'utf8'))
-  return render(template, headers)
+  return renderTypes(render(template, headers), CONTENT_TYPES)
 }
 
 if (import.meta.main) {

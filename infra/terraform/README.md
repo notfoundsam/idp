@@ -46,6 +46,8 @@ Every tenant domain is a subdomain of `domain` and reaches one CloudFront distri
 
 `app` selects the tenant by the `Host`, so CloudFront passes it on, and the certificate of the ALB matches it. The edge caches no error either: the cache key holds no `Host`, and an error of one tenant would reach the others. A missing file in S3 is therefore a `403`, as CloudFront may not list the bucket, and the error pages of a distribution cannot turn it into a `404` without replacing the errors of the API too.
 
+The bucket holds the files of each app under `<app>/`, the live pages at `<app>/index.html`, and per release `releases/<version>/manifest.json` with the list of its files and the pages at `releases/<version>/<app>/index.html`, which the function never routes to. `infra/deploy/release-assets.mjs stage` uploads a build with the `Content-Type` that nginx serves locally, `activate` marks the release live in its manifest and copies its pages into place, also for a rollback, and `prune-assets.mjs` deletes what no manifest of a release live in the last 30 days or of the previous release lists. The scripts call the AWS CLI with the role `deploy`, and no lifecycle rule expires a current object by age.
+
 CloudFront takes certificates and web ACLs only from `us-east-1`, so the environment has a second provider `aws.us_east_1`.
 
 Nothing reaches the ALB past CloudFront and its WAF:

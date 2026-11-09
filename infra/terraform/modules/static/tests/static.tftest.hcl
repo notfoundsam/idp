@@ -36,6 +36,31 @@ run "cloudfront_reads_objects_of_its_distribution_and_lists_nothing" {
   }
 }
 
+run "no_rule_takes_away_a_current_object_by_age" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for rule in aws_s3_bucket_lifecycle_configuration.this.rule :
+      length(rule.expiration) == 0 && length(rule.transition) == 0
+    ])
+    error_message = "A lifecycle rule expires or moves current objects, which would take the files of a release that is still open in a browser."
+  }
+
+  assert {
+    condition = anytrue([
+      for rule in aws_s3_bucket_lifecycle_configuration.this.rule :
+      rule.status == "Enabled" && one(rule.noncurrent_version_expiration).noncurrent_days == 30
+    ])
+    error_message = "Overwritten and deleted files are kept forever."
+  }
+
+  assert {
+    condition     = aws_s3_bucket_versioning.this.versioning_configuration[0].status == "Enabled"
+    error_message = "A deleted or overwritten file cannot be restored."
+  }
+}
+
 run "without_a_distribution_nothing_reads_the_bucket" {
   command = plan
 

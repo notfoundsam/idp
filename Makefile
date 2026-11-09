@@ -5,7 +5,7 @@ TERRAFORM_ROOTS := bootstrap environments/staging environments/production
 TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/edge modules/iam modules/network modules/static modules/telemetry
 TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -45,7 +45,7 @@ build: frontend-install
 	$(GRADLE) assemble
 	$(FRONTEND) -r --if-present build
 
-test: test-backend test-frontend
+test: test-backend test-frontend test-deploy
 
 test-backend:
 	$(GRADLE) check
@@ -54,6 +54,10 @@ test-frontend: frontend-install
 	$(FRONTEND) test
 	$(FRONTEND) -r --filter '!e2e' test
 	docker compose run --rm frontend node --test '/app/infra/web/*.test.mjs'
+
+# The release scripts against a fake of S3, in the image of the frontend and without its packages.
+test-deploy:
+	docker compose run --rm --no-deps frontend node --test '/app/infra/deploy/*.test.mjs'
 
 # terraform test against a mocked AWS provider: plans only, reads no state and calls no AWS API.
 test-infra:

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
-import { render, renderFiles } from './render-nginx.mjs'
+import { CONTENT_TYPES } from './content-types.mjs'
+import { render, renderFiles, renderTypes } from './render-nginx.mjs'
 
 const headers = JSON.parse(await readFile(new URL('security-headers.json', import.meta.url), 'utf8'))
 
@@ -46,6 +47,51 @@ test('the static files are served without listings and with their charset', asyn
   assert.match(config, /^\s*autoindex off;$/m)
   assert.match(config, /^\s*charset utf-8;$/m)
   assert.match(config, /^\s*server_tokens off;$/m)
+})
+
+function servedTypes(config) {
+  const block = config.slice(config.indexOf('types {') + 'types {'.length)
+  const body = block.slice(0, block.indexOf('}'))
+  const served = {}
+  for (const line of body.split('\n').map((it) => it.trim()).filter((it) => it !== '')) {
+    const [type, ...extensions] = line.replace(/;$/, '').split(/\s+/)
+    for (const extension of extensions) served[extension] = type
+  }
+  const charsetTypes = /^\s*charset_types ([^;]+);$/m.exec(config)[1].split(' ')
+  return Object.fromEntries(
+    Object.entries(served).map(([extension, type]) => [extension, charsetTypes.includes(type) || type === 'text/html' ? `${type}; charset=utf-8` : type]),
+  )
+}
+
+test('nginx serves each file with the Content-Type that the upload to S3 sets', async () => {
+  const config = await renderFiles()
+  assert.equal(config.match(/^\s*types \{$/gm).length, 1)
+  assert.deepEqual(servedTypes(config), CONTENT_TYPES)
+})
+
+test('HTML, scripts and styles name their charset', () => {
+  for (const extension of ['html', 'js', 'css', 'json', 'svg']) assert.match(CONTENT_TYPES[extension], /; charset=utf-8$/, extension)
+  for (const extension of ['png', 'ico', 'woff2']) assert.doesNotMatch(CONTENT_TYPES[extension], /charset/, extension)
+})
+
+test('the types are grouped by type and indented below their placeholder', () => {
+  const types = { html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', htm: 'text/html; charset=utf-8', png: 'image/png' }
+  const rendered = renderTypes('a {\n  {{content_types}}\n}', types)
+  assert.equal(rendered, 'a {\n  types {\n      text/html html htm;\n      text/css css;\n      image/png png;\n  }\n  charset_types text/css;\n}')
+  assert.equal(renderTypes('{{content_types}}', { html: 'text/html; charset=utf-8', png: 'image/png' }), 'types {\n    text/html html;\n    image/png png;\n}')
+})
+
+test('a content type nginx or S3 would read differently is refused', () => {
+  for (const value of ['text/html; charset=latin1', 'text/html;charset=utf-8', 'text/html "x"', 'text/$html', 'html', '', 1]) {
+    assert.throws(() => renderTypes('{{content_types}}', { html: value }), /Unusable content type of html/, JSON.stringify(value))
+  }
+  for (const extension of ['HTML', 'j s', '.js', 'js;']) {
+    assert.throws(() => renderTypes('{{content_types}}', { [extension]: 'text/plain' }), /Unusable extension/, extension)
+  }
+  assert.throws(() => renderTypes('{{content_types}}', { htm: 'text/html', html: 'text/html; charset=utf-8' }), /charset only for some/)
+  assert.throws(() => renderTypes('{{content_types}}', {}), /No content types/)
+  assert.throws(() => renderTypes('server {}', { png: 'image/png' }), /has no \{\{content_types\}\}/)
+  assert.throws(() => renderTypes('x {{content_types}}', { png: 'image/png' }), /line of its own/)
 })
 
 test('only found files are cached, so a missing chunk is asked for again', async () => {

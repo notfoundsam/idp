@@ -8,8 +8,8 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 166 |
-| Partial | Part of the control is merged, the listed tasks finish it | 13 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 167 |
+| Partial | Part of the control is merged, the listed tasks finish it | 12 |
 | Planned | The listed tasks build the control | 2 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 5 |
@@ -107,7 +107,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Partial | T42 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), and so does nginx for the static files (`render-nginx.test.mjs`, `make smoke`). The upload to S3 remains |
+| V4.1.1 | 1 | Done | T31, T42 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`). The static files get their `Content-Type` from one table in `infra/web/content-types.mjs`, with `charset=utf-8` for HTML, JS, CSS, JSON, SVG and text: nginx serves only its types (`render-nginx.test.mjs`, `make smoke`), and the release sets them on every object in S3 and refuses a file without one (`release-assets.test.mjs`, `s3.test.mjs`) |
 | V4.1.2 | 2 | Done | T40 | Only the pages of S3 redirect to HTTPS: `/login/*`, `/console/*`, `/` and the links of the mails. `/api/*` and `/saml/*` refuse plain HTTP, and the ALB has no listener for it (`edge.tftest.hcl`) |
 | V4.1.3 | 2 | Partial | T40 | `app` trusts one configured header, `CloudFront-Viewer-Address`, and ignores `X-Forwarded-For` and a malformed or missing value (`ClientIpTest`, `ThrottleApplicationTest`). The `prod` profile refuses an empty `CLIENT_IP_HEADER` and the headers a proxy appends to. CloudFront generates it through the origin request policy of `app`, overwrites the origin header `X-Origin-Verify`, and the ALB takes only CloudFront with that header (`edge.tftest.hcl`). Proving on staging that a value sent by the client does not reach `app` remains |
 | V4.2.1 | 2 | Done | T39, T40 | The public ALB drops invalid header fields and uses the `strictest` desync mitigation (`network.tftest.hcl`) |

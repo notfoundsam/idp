@@ -29,7 +29,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   }
 }
 
-# Releases keep their files by manifest, see task 42, so no rule expires current objects by age.
+# A release keeps its files while a manifest under releases/ lists them, see infra/deploy/prune-assets.mjs, so no rule expires
+# or moves current objects by age.
 resource "aws_s3_bucket_versioning" "this" {
   bucket = aws_s3_bucket.this.id
 

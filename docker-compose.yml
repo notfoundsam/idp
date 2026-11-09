@@ -389,6 +389,7 @@ services:
       - ./frontend:/app/frontend
       - ./contracts:/app/contracts:ro
       - ./infra/web:/app/infra/web:ro
+      - ./infra/deploy:/app/infra/deploy:ro
       - idp-frontend-node-modules:/app/frontend/node_modules
       - idp-corepack-cache:/root/.cache/node/corepack
       - idp-web:/srv/web

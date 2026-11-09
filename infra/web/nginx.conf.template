@@ -1,4 +1,4 @@
-# Rendered by render-nginx.mjs. nginx drops inherited add_header lines in a block that sets its own, so such a block repeats them.
+# Rendered by render-nginx.mjs with the types of content-types.mjs. nginx drops inherited add_header lines in a block that sets its own, so such a block repeats them.
 server {
     listen 80;
     server_name _;
@@ -8,7 +8,7 @@ server {
     autoindex off;
     absolute_redirect off;
     charset utf-8;
-    charset_types text/css application/javascript application/json image/svg+xml;
+    {{content_types}}
 
     {{security_headers}}
 
