@@ -97,6 +97,15 @@ output "telemetry" {
   }
 }
 
+output "alarms" {
+  description = "Topics of the alarms in both regions, the trail and its log group, see infra/terraform/README.md."
+  value = {
+    topic_arns      = module.alarms.topic_arns
+    trail_arn       = module.alarms.trail_arn
+    trail_log_group = module.alarms.trail_log_group
+  }
+}
+
 output "idp_metadata_secret_arn" {
   description = "Secret that the operator fills with the SAML metadata of ops-sso before ops starts."
   value       = module.app.idp_metadata_secret_arn

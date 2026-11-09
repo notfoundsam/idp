@@ -31,7 +31,7 @@ Find how the key left and close that path before anything else. Do not wait for 
 
 The key matters only together with data. Check, for the window of the incident:
 
-1. CloudTrail: `Decrypt` on the tenant KEK by unexpected principals, `PutKeyPolicy` on it, and RDS `CopyDBSnapshot`, `ModifyDBSnapshotAttribute`, `StartExportTask`.
+1. CloudTrail, in the log group `/<env>/cloudtrail` for the last year: `Decrypt` on the tenant KEK by unexpected principals, `PutKeyPolicy` on it, and RDS `CopyDBSnapshot`, `ModifyDBSnapshotAttribute`, `StartExportTask`.
 2. Postgres logs: logins of unknown roles or from unknown addresses, and reads of the tenant schema outside `app`, `worker` and `migrator`.
 3. Which tenants are affected. A tenant key opens one tenant only.
 
@@ -45,7 +45,9 @@ If no copy is likely and the path is closed, record the decision not to notify a
 
 ## 4. Watch
 
-Until step 5 is done, alert on every `Decrypt` of the tenant KEK outside the task roles, and on every export or sharing of a snapshot.
+Until step 5 is done, watch every `Decrypt` of the tenant KEK outside the task roles, and every export or sharing of a snapshot. The
+alarms `kms-decrypt`, `kms-key-policy` and `rds-snapshot-export` of `infra/terraform/modules/alarms` already fire on them in AWS,
+so check that they are in the state OK and that the on-call engineers hear from the topic `<env>-alarms`.
 
 ## 5. Replace the key when data was copied or the path cannot be proven closed
 

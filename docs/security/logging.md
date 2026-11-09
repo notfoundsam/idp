@@ -93,7 +93,17 @@ samples everything.
 | `idp.saml.certificate.expiry` | The earliest end of a published signing certificate, in seconds since the epoch, refreshed hourly by `worker` | Less than 30 days left |
 
 Metrics carry no tenant: hundreds of tenants would make a series each. `dev-tools/lgtm` provisions the dashboard and these alerts
-into the local Grafana. In AWS they become CloudWatch alarms on the namespace `<env>`, with the thresholds set from staging.
+into the local Grafana. In AWS `modules/alarms` turns them into CloudWatch alarms on the namespace `<env>` with the same thresholds,
+which a load test on staging replaces with measured ones, and notifies the on-call engineers through SNS. The refusals of Throttle
+are counted by a metric filter on `/<env>/otlp/security`.
+
+## Audit of AWS
+
+A CloudTrail trail records the management events of the account in every region into `/<env>/cloudtrail` and a bucket of its
+own, both kept a year. The log group has deletion protection, the trail only appends to it, and the bucket refuses deletes to
+everybody. Alarms on the trail fire on `Decrypt` by anybody but the task roles of `app`, `worker` and `recovery`, on key deletion
+outside `worker` and `recovery`, on a replaced key policy, on copying, sharing or exporting an RDS snapshot, on any call of the root
+user, on changes of IAM, and on changes of the trail, a log group, its retention or an alarm. `infra/terraform/README.md` lists them.
 
 ## Retention and access
 
@@ -103,6 +113,7 @@ into the local Grafana. In AWS they become CloudWatch alarms on the namespace `<
 | OTLP logs | In the `idp-lgtm` volume until `make clean` | 90 days, lines of `idp.security` 1 year | The same, read only |
 | Traces | As above | 14 days | The same |
 | Metrics | As above | 15 months, the fixed retention of CloudWatch, at least the 13 an investigation needs | The same |
+| CloudTrail events | None | 1 year | The same |
 
 Nobody changes or deletes a stored line before its time, the store only expires them, see [Production](#production). The on-call
 engineers read through the policy `<env>-telemetry-read` of `modules/telemetry`, which reads and changes nothing else, and no other

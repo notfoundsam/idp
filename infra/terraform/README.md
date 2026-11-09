@@ -5,7 +5,7 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | Path | Holds |
 |---|---|
 | `bootstrap/` | The state bucket with its KMS key, the GitHub OIDC provider and the roles GitHub Actions assume. Applied once per account by hand |
-| `environments/<env>/` | The root of an environment: network, ECR, static bucket, ECS cluster, internal CA, database and PgBouncer, Valkey, keys, erasure journal, mail and the services. The output `services` holds what each service gets beside the database |
+| `environments/<env>/` | The root of an environment: network, ECR, static bucket, ECS cluster, internal CA, telemetry, alarms, database and PgBouncer, Valkey, keys, erasure journal, mail and the services. The output `services` holds what each service gets beside the database |
 | `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB and the internal one of `ops` |
 | `modules/app` | The services `app`, `worker` and `ops`, the one-off tasks `migrator`, `recovery` and `cli`, their execution roles, the rules of `app` on the public listener and the listener of `ops` on the internal ALB |
 | `modules/iam` | The task role of each task and the key policies of the platform KEK and of tenant KEKs |
@@ -15,6 +15,7 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
 | `modules/pki` | The internal CA and the server certificates it issues to PgBouncer, `app`, `ops` and the collector, their keys in Secrets Manager |
 | `modules/telemetry` | The OpenTelemetry Collector of `infra/otel-collector`, the log groups of OTLP and of spans with their retention, Transaction Search of X-Ray and the read policy of the on-call engineers |
+| `modules/alarms` | The CloudTrail trail of the account with its bucket and log group, the alarms on the metrics of the services, on the trail and on the WAF, and the encrypted topics they notify |
 | `modules/data` | RDS, the role passwords, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
 | `modules/valkey` | ElastiCache Valkey with TLS and an AUTH token, reachable from `app` alone |
 | `modules/keys` | The platform KEK, the HMAC key of Throttle and the origin header of CloudFront |
@@ -207,6 +208,29 @@ The collector of `infra/otel-collector` runs as the ECS service `otel-collector`
 The services may only write. Their task roles deny CloudWatch Logs, X-Ray and CloudWatch, and their execution roles deny reading, shortening and deleting lines, with the list of the output `log_tampering_actions`. The task role of the collector appends to its three groups, sends spans with `AWSXrayWriteOnlyPolicy` and denies the same list. Every log group has deletion protection, so only its retention removes a line, unless somebody with rights on the account turns the protection off, which CloudTrail records.
 
 Only the on-call engineers read telemetry, through the policy of the output `telemetry.read_policy_arn`, which reads the groups of the environment, X-Ray and the metrics and writes nothing. Attach it to their permission set and to nothing else. Transaction Search is a setting of the account and region: a second environment in the same account would share `aws/spans`.
+
+## Alarms
+
+`modules/alarms` notifies the topic `<env>-alarms`, encrypted with a key of its own, which only CloudWatch alarms of the account and region use beside the account. The endpoints of `alarm_endpoints` subscribe to it, and each confirms its subscription once. Every alarm also notifies when it is back to OK.
+
+| Alarm | Reads | Fires on |
+|---|---|---|
+| `unexpected-failures`, `backend-tls-failures`, `valkey-failures`, `failed-logins`, `outbox-lag`, `outbox-dead`, `certificate-expiry` | The metrics `idp.*` of the namespace `<env>` | The alerts of `dev-tools/lgtm/alerts.yaml` with their thresholds, see `docs/security/logging.md` |
+| `throttle-refusals` | A metric filter on `event=throttle.rejected` in `/<env>/otlp/security` | More than 300 in 5 minutes |
+| `kms-decrypt` | The trail | `Decrypt` by any principal but the task roles of `app`, `worker` and `recovery` |
+| `kms-key-deletion` | The trail | `ScheduleKeyDeletion` by any principal but the task roles of `worker` and `recovery` |
+| `kms-key-policy` | The trail | `PutKeyPolicy` or `DisableKey` |
+| `rds-snapshot-export` | The trail | A snapshot copied, shared or exported |
+| `root-activity` | The trail | Any call of the root user |
+| `iam-changes` | The trail | A change of an IAM policy or trust policy, a new access key or console password |
+| `monitoring-changes` | The trail | A change of the trail, of a log group, its retention or deletion protection, or a deleted metric filter or alarm |
+| `<env>-requests-per-address-blocked`, `<env>-app-requests-per-address-blocked` | `BlockedRequests` of the WAF in `us-east-1` | More than 300 blocked requests of a rule in 5 minutes |
+
+The thresholds of the metrics are those of the local environment until a load test on staging measures normal traffic. CloudWatch keeps the metrics of a web ACL of CloudFront in `us-east-1` alone, so their alarms live there and notify a second topic of the same name in that region.
+
+The trail `<env>-management` records the management events of every region, the global ones of IAM and the reads of KMS included, into the bucket `<env>-trail-<account>` and the log group `/<env>/cloudtrail`, both for a year. CloudTrail delivers the first copy of management events for free, and the log group costs the ingestion of every event, most of them `Decrypt` of `app`. A call that an AWS service makes for a principal, such as Secrets Manager or S3 decrypting with their keys, carries `invokedBy` and stays out of `kms-decrypt`. The group has deletion protection, the role of the trail only appends to it and denies the list of `log_tampering_actions`, and the bucket refuses deletes to everybody, so only the retention removes an event. The trail checks its files with digests, `aws cloudtrail validate-logs` proves that none changed.
+
+CloudTrail names the role of a task as the issuer of its session, so the alarms tell the services apart by `task_role_arns`. A tenant KEK appears at runtime and CloudTrail names no alias, so `kms-decrypt` watches every key: only the services decrypt directly, and the key policies deny the others anyway, so an alarm means an attempt or a changed policy.
 
 ## TLS to Valkey
 

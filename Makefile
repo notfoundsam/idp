@@ -2,7 +2,7 @@ FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 TERRAFORM := docker compose run --rm terraform
 TERRAFORM_ROOTS := bootstrap environments/staging environments/production
-TERRAFORM_TESTED_MODULES := modules/app modules/edge modules/iam modules/network modules/static modules/telemetry
+TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/edge modules/iam modules/network modules/static modules/telemetry
 TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
 .PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install

@@ -95,3 +95,12 @@ variable "credential_versions" {
     error_message = "Only valkey_auth_token, throttle_ip_hmac_key, smtp and origin_header have versions."
   }
 }
+
+variable "alarm_endpoints" {
+  description = "Whom the alarms notify, as { protocol = \"email\" or \"https\", endpoint }. Each endpoint confirms its subscription."
+  type = list(object({
+    protocol = string
+    endpoint = string
+  }))
+  default = []
+}

@@ -23,6 +23,14 @@ output "origin_header" {
   value       = local.origin_header
 }
 
+output "waf_metrics" {
+  description = "Metric names of the web ACL and of its rate-based rules, under which CloudWatch counts their blocks in us-east-1."
+  value = {
+    web_acl = one(aws_wafv2_web_acl.edge.visibility_config).metric_name
+    rules   = sort([for rule in aws_wafv2_web_acl.edge.rule : one(rule.visibility_config).metric_name])
+  }
+}
+
 output "client_ip_header" {
   description = "CLIENT_IP_HEADER of app: the header with the address of the viewer, which CloudFront overwrites."
   value       = local.client_ip_header

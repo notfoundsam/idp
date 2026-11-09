@@ -466,6 +466,14 @@ run "the_waf_of_us_east_1_limits_each_client_address" {
   }
 
   assert {
+    condition = output.waf_metrics == {
+      web_acl = "idp-test-edge"
+      rules   = tolist(["idp-test-app-requests-per-address", "idp-test-requests-per-address"])
+    }
+    error_message = "The alarms of modules/alarms would count the blocks of another web ACL or rule."
+  }
+
+  assert {
     condition = alltrue([
       for rule in aws_wafv2_web_acl.edge.rule :
       length(one(one(rule.statement).rate_based_statement).scope_down_statement) == 0

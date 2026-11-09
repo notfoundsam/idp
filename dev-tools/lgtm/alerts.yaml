@@ -1,5 +1,6 @@
 # The alerts of docs/security/logging.md, on the queries of the IdP overview dashboard. Thresholds are local guesses: staging sets the
-# real ones. Locally they only fire in Grafana, nothing is sent anywhere.
+# real ones. Locally they only fire in Grafana, nothing is sent anywhere. infra/terraform/modules/alarms holds the same alerts for
+# AWS, so a change here goes there too.
 apiVersion: 1
 
 groups:

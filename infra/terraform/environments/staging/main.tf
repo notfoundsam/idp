@@ -77,6 +77,24 @@ module "telemetry" {
   collector_tls      = module.pki.certificates["otel-collector"]
 }
 
+module "alarms" {
+  source = "../../modules/alarms"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name                   = local.name
+  trail_bucket           = "${local.name}-trail-${var.account_id}"
+  metrics_namespace      = module.telemetry.metrics_namespace
+  security_log_group     = module.telemetry.log_groups["security"]
+  task_role_arns         = module.iam.task_role_arns
+  log_tampering_actions  = module.telemetry.log_tampering_actions
+  waf                    = module.edge.waf_metrics
+  notification_endpoints = var.alarm_endpoints
+}
+
 module "data" {
   source = "../../modules/data"
 
