@@ -359,6 +359,14 @@ services:
     volumes:
       - .:/repo
 
+  # `make lint-infra` checks the workflows with it, the shell of their steps through its shellcheck.
+  actionlint:
+    image: rhysd/actionlint:1.7.12
+    profiles: [infra]
+    working_dir: /repo
+    volumes:
+      - .:/repo:ro
+
   tflint:
     image: ghcr.io/terraform-linters/tflint:v0.65.0
     profiles: [infra]

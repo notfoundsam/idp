@@ -45,6 +45,12 @@ export async function readManifests(s3, keys) {
   return Promise.all(versions.map((version) => readManifest(s3, version)))
 }
 
+// The release whose pages are in place: activate marks it last, a rollback included.
+export async function liveRelease(s3) {
+  const released = (await readManifests(s3, await s3.list())).filter((it) => it.releasedAt !== undefined)
+  return released.sort((a, b) => Date.parse(b.releasedAt) - Date.parse(a.releasedAt))[0]
+}
+
 export function manifestBody(manifest) {
   return `${JSON.stringify(manifest, null, 2)}\n`
 }

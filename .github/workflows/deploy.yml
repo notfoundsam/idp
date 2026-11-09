@@ -1,0 +1,191 @@
+name: Deploy
+
+# The order of technical-details is the order of the steps: migrator, the new files, the services, migrator again, the pages,
+# the smoke test, then the cleanup. The logic lives in infra/deploy, see docs/testing.md.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to release to
+        type: choice
+        options: [staging, production]
+        required: true
+      full:
+        description: Release the frontend and the backend whatever changed, also to roll out what Terraform registered
+        type: boolean
+        default: false
+      skip-smoke:
+        description: Skip the smoke test, refused unless the environment has had no release yet
+        type: boolean
+        default: false
+      min-client-version:
+        description: Oldest frontend that app accepts, raised before a contract step. Empty keeps the one that runs
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# stage, activate and prune of one bucket must never interleave, and the rollback workflow shares the group.
+concurrency:
+  group: release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The tasks run on ARM64, so the images are built on it.
+    runs-on: ubuntu-24.04-arm
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: release-${{ github.run_number }}
+      - name: Settings
+        run: aws ssm get-parameter --name "/idp-${ENVIRONMENT}/release" --query Parameter.Value --output text > "$RUNNER_TEMP/release-config.json"
+      - name: Plan
+        id: plan
+        env:
+          FULL: ${{ inputs.full }}
+          SKIP_SMOKE: ${{ inputs.skip-smoke }}
+          MIN_CLIENT_VERSION: ${{ inputs.min-client-version }}
+        run: |
+          options=()
+          if [ "$FULL" = true ]; then options+=(--full); fi
+          if [ "$SKIP_SMOKE" = true ]; then options+=(--skip-smoke); fi
+          node infra/deploy/plan-release.mjs --config "$RUNNER_TEMP/release-config.json" --commit "$GITHUB_SHA" \
+            --run-number "$GITHUB_RUN_NUMBER" --out "$RUNNER_TEMP/release-plan.json" \
+            --min-client-version "$MIN_CLIENT_VERSION" "${options[@]}" | tee -a "$GITHUB_OUTPUT"
+          { echo '```json'; cat "$RUNNER_TEMP/release-plan.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Log in to ECR
+        run: |
+          registry=$(jq -r '.repositories.app | split("/")[0]' "$RUNNER_TEMP/release-config.json")
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+      - name: Images of infra
+        run: node infra/deploy/images.mjs --config "$RUNNER_TEMP/release-config.json" --set infra
+
+      - if: steps.plan.outputs.backend == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: corretto
+          java-version: "25"
+      - if: steps.plan.outputs.backend == 'true'
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Jars
+        if: steps.plan.outputs.backend == 'true'
+        run: ./gradlew bootJar
+        working-directory: backend
+      - name: Images of the backend
+        if: steps.plan.outputs.backend == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: node infra/deploy/images.mjs --config "$RUNNER_TEMP/release-config.json" --set backend --tag "$VERSION"
+      - name: Frontend
+        if: steps.plan.outputs.frontend == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: make web-release APP_VERSION="$VERSION"
+
+      # The build may have used most of the first session, and the rollout and a rollback need one of their own.
+      - if: steps.plan.outputs.rollout == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: release-${{ github.run_number }}-rollout
+      - name: Register the revisions
+        id: register
+        if: steps.plan.outputs.rollout == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs register --config "$RUNNER_TEMP/release-config.json"
+          --plan "$RUNNER_TEMP/release-plan.json" --state "$RUNNER_TEMP/release-state.json"
+      - name: KMS check
+        if: steps.plan.outputs.rollout == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs run --config "$RUNNER_TEMP/release-config.json" --task kms-check
+          --state "$RUNNER_TEMP/release-state.json"
+      - name: Migrator, expand
+        if: steps.plan.outputs.backend == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs run --config "$RUNNER_TEMP/release-config.json" --task migrator
+          --state "$RUNNER_TEMP/release-state.json"
+      - name: Role passwords
+        if: steps.plan.outputs.backend == 'true'
+        run: node infra/deploy/release-tasks.mjs run --config "$RUNNER_TEMP/release-config.json" --task role-passwords
+      - name: Stage the frontend
+        if: steps.plan.outputs.frontend == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: >-
+          node infra/deploy/release-assets.mjs stage --bucket "$(jq -r .bucket "$RUNNER_TEMP/release-config.json")"
+          --version "$VERSION" --dir frontend/release
+      - name: Roll out app
+        if: steps.plan.outputs.rollout == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs rollout --config "$RUNNER_TEMP/release-config.json"
+          --state "$RUNNER_TEMP/release-state.json" --service app
+      - name: Roll out worker
+        if: steps.plan.outputs.rollout == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs rollout --config "$RUNNER_TEMP/release-config.json"
+          --state "$RUNNER_TEMP/release-state.json" --service worker
+      - name: Roll out ops
+        if: steps.plan.outputs.rollout == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs rollout --config "$RUNNER_TEMP/release-config.json"
+          --state "$RUNNER_TEMP/release-state.json" --service ops
+      # A tenant that the old worker created during the rollout gets the schema of this release.
+      - name: Migrator, again after worker
+        if: steps.plan.outputs.backend == 'true'
+        run: >-
+          node infra/deploy/release-tasks.mjs run --config "$RUNNER_TEMP/release-config.json" --task migrator
+          --state "$RUNNER_TEMP/release-state.json"
+      - name: Activate the frontend
+        if: steps.plan.outputs.frontend == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: node infra/deploy/release-assets.mjs activate --bucket "$(jq -r .bucket "$RUNNER_TEMP/release-config.json")" --version "$VERSION"
+      # Filled by smoke-sso, task 42 part 3. Until then a release that may not skip the test fails here and rolls back.
+      - name: Smoke SSO
+        id: smoke
+        if: steps.plan.outputs.rollout == 'true' && steps.plan.outputs.smoke == 'true'
+        run: |
+          echo "::error title=Smoke SSO::infra/deploy/smoke-sso.mjs does not exist yet"
+          exit 1
+      - name: Verified
+        id: verified
+        if: steps.plan.outputs.rollout == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: echo "::notice title=Release::${VERSION} is live on ${ENVIRONMENT}"
+      - name: Roll back
+        if: failure() && steps.register.outcome == 'success' && steps.verified.outcome != 'success'
+        run: node infra/deploy/rollback.mjs --config "$RUNNER_TEMP/release-config.json" --state "$RUNNER_TEMP/release-state.json"
+
+      # The api-contract job of CI compares a contract with the last tag it reaches.
+      - name: Tag
+        if: steps.plan.outputs.rollout == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          git tag "release/${ENVIRONMENT}/${VERSION}" "$GITHUB_SHA"
+          git push origin "refs/tags/release/${ENVIRONMENT}/${VERSION}"
+      - name: Prune the frontend
+        if: steps.plan.outputs.frontend == 'true'
+        run: node infra/deploy/prune-assets.mjs --bucket "$(jq -r .bucket "$RUNNER_TEMP/release-config.json")"
+      - name: Nothing to release
+        if: steps.plan.outputs.rollout != 'true'
+        run: echo "::notice title=Release::Nothing changed that ${ENVIRONMENT} runs, so nothing was released"

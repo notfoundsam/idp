@@ -249,42 +249,33 @@ data "aws_iam_role" "deploy" {
   name = "${local.name}-github-deploy"
 }
 
-data "aws_iam_policy_document" "deploy" {
-  statement {
-    sid       = "EcrLogin"
-    actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]
-  }
+module "release" {
+  source = "../../modules/release"
 
-  statement {
-    sid = "PushImages"
-    actions = [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:BatchGetImage",
-      "ecr:CompleteLayerUpload",
-      "ecr:DescribeImages",
-      "ecr:InitiateLayerUpload",
-      "ecr:PutImage",
-      "ecr:UploadLayerPart",
-    ]
-    resources = values(module.registry.repository_arns)
-  }
-
-  statement {
-    sid       = "ListStaticFiles"
-    actions   = ["s3:ListBucket"]
-    resources = [module.static.bucket_arn]
-  }
-
-  statement {
-    sid       = "WriteStaticFiles"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-    resources = ["${module.static.bucket_arn}/*"]
+  name                         = local.name
+  deploy_role_name             = data.aws_iam_role.deploy.name
+  cluster_name                 = module.cluster.cluster_name
+  static_bucket                = module.static.bucket
+  repository_urls              = module.registry.repository_urls
+  repository_arns              = module.registry.repository_arns
+  infra_image_tag              = var.infra_image_tag
+  services                     = module.app.services
+  task_families                = module.app.task_families
+  one_off_tasks                = module.app.one_off_tasks
+  task_role_arns               = module.iam.task_role_arns
+  execution_role_arns          = module.app.execution_role_arns
+  bootstrap_execution_role_arn = module.data.bootstrap_execution_role_arn
+  role_passwords_task = {
+    task_definition = module.data.bootstrap_task_definitions["role-passwords"]
+    network = {
+      subnets        = module.network.private_subnet_ids
+      securityGroups = [module.network.security_group_ids["db-bootstrap"]]
+      assignPublicIp = "DISABLED"
+    }
   }
 }
 
-resource "aws_iam_role_policy" "deploy" {
-  name   = "release"
-  role   = data.aws_iam_role.deploy.name
-  policy = data.aws_iam_policy_document.deploy.json
+moved {
+  from = aws_iam_role_policy.deploy
+  to   = module.release.aws_iam_role_policy.deploy
 }

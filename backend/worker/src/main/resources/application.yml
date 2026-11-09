@@ -1,6 +1,9 @@
 spring:
   application:
     name: worker
+  # With the wait of the scheduler below, it stays under stopTimeout of infra/terraform/modules/app, after which ECS kills the task.
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -75,6 +78,7 @@ idp:
 # worker serves no API, so its only port is the management one.
 server:
   port: 8081
+  shutdown: graceful
 
 # One JSON object per line, in UTC, with the MDC fields as keys. See docs/security/logging.md.
 logging:

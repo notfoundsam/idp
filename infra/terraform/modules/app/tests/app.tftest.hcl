@@ -628,6 +628,39 @@ run "services_run_in_the_private_subnets_without_exec" {
   }
 }
 
+run "a_failed_rollout_rolls_back_and_a_stopping_service_gets_time_to_finish" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for service in aws_ecs_service.this :
+      one(service.deployment_circuit_breaker).enable && one(service.deployment_circuit_breaker).rollback && service.deployment_minimum_healthy_percent == 100
+    ])
+    error_message = "A failed rollout of a service stays in place, or the rollout stops old tasks before new ones are healthy."
+  }
+
+  assert {
+    condition = alltrue(flatten([
+      for name, definition in aws_ecs_task_definition.this : [
+        for container in jsondecode(definition.container_definitions) : (
+          contains(keys(aws_ecs_service.this), name) ? lookup(container, "stopTimeout", 0) == 60 : !contains(keys(container), "stopTimeout")
+        ) if container.name == name
+      ]
+    ]))
+    error_message = "ECS kills a service before the 60 seconds within which its graceful shutdown ends, or a one-off run has a stop timeout."
+  }
+
+  assert {
+    condition     = alltrue([for definition in aws_ecs_task_definition.this : definition.skip_destroy])
+    error_message = "An apply deregisters a revision, which a rollback may still need."
+  }
+
+  assert {
+    condition     = output.task_families == { for name in ["app", "worker", "ops", "cli", "migrator", "recovery"] : name => "idp-test-${name}" } && output.one_off_tasks.cli.task_definition == "idp-test-cli"
+    error_message = "A one-off run names a revision of Terraform instead of the family, whose latest revision a release registers."
+  }
+}
+
 run "each_task_runs_as_its_own_task_role" {
   command = plan
 

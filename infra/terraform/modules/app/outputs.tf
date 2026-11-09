@@ -1,8 +1,8 @@
 output "one_off_tasks" {
-  description = "Task definition and awsvpcConfiguration of each one-off run: migrator, its recovery run after a restore and the operator CLI."
+  description = "Task definition family and awsvpcConfiguration of each one-off run: migrator, its recovery run after a restore and the operator CLI. The latest revision of a family is that of the live release."
   value = {
     for name in ["migrator", "recovery", "cli"] : name => {
-      task_definition = aws_ecs_task_definition.this[name].arn
+      task_definition = aws_ecs_task_definition.this[name].family
       network = {
         subnets        = var.private_subnet_ids
         securityGroups = [var.security_group_ids[local.security_group[name]]]
@@ -10,6 +10,11 @@ output "one_off_tasks" {
       }
     }
   }
+}
+
+output "task_families" {
+  description = "Task definition family of each task. A release registers a revision of each, so a one-off run takes the family, whose latest revision is that of the live release."
+  value       = { for name, definition in aws_ecs_task_definition.this : name => definition.family }
 }
 
 output "services" {

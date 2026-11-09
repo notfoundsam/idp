@@ -78,8 +78,13 @@ output "database" {
 }
 
 output "one_off_tasks" {
-  description = "Task definition and awsvpcConfiguration of migrator and of the operator CLI, see infra/terraform/README.md."
+  description = "Task definition family and awsvpcConfiguration of migrator, its recovery run and the operator CLI, see infra/terraform/README.md."
   value       = module.app.one_off_tasks
+}
+
+output "release_parameter" {
+  description = "SSM parameter with the settings that the release workflow reads, see infra/terraform/README.md."
+  value       = module.release.parameter_name
 }
 
 output "ops_alb_dns_name" {

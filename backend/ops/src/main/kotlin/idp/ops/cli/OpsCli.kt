@@ -15,6 +15,7 @@ import idp.ops.OpsApplication
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
+import idp.sharedkernel.crypto.KeyManagementException
 import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.persistence.VersionConflictException
@@ -28,10 +29,12 @@ import java.io.PrintStream
 import java.util.UUID
 
 const val CLI_COMMAND = "cli"
+const val KMS_CHECK = "kms-check"
 
 private const val SUCCESS = 0
 private const val REFUSED = 1
 private const val USAGE = 2
+private const val KMS_UNAVAILABLE = 3
 
 private class Operation(
     val arguments: String,
@@ -50,6 +53,7 @@ class OpsCli(
     private val commands: CommandBus,
     private val queries: QueryBus,
     private val identity: CallerIdentity,
+    private val usePlatformKek: () -> Unit,
     private val out: PrintStream = System.out,
     private val err: PrintStream = System.err,
 ) {
@@ -107,6 +111,7 @@ class OpsCli(
         )
 
     fun run(args: List<String>): Int {
+        if (args == listOf(KMS_CHECK)) return checkKms()
         val operation = operations[args.firstOrNull()]
         if (operation == null || args.size - 1 != operation.arity) return usage()
         return try {
@@ -129,9 +134,21 @@ class OpsCli(
             throw BadId()
         }
 
+    /** A release runs it before new tasks start: a task that cannot reach KMS cannot open the keys of a tenant. */
+    private fun checkKms(): Int =
+        try {
+            usePlatformKek()
+            out.println("platform KEK usable")
+            SUCCESS
+        } catch (failure: KeyManagementException) {
+            err.println("kms unavailable: ${failure.javaClass.simpleName}")
+            KMS_UNAVAILABLE
+        }
+
     private fun usage(): Int {
         err.println("usage:")
         operations.forEach { (name, operation) -> err.println("  $CLI_COMMAND $name ${operation.arguments}") }
+        err.println("  $CLI_COMMAND $KMS_CHECK")
         return USAGE
     }
 

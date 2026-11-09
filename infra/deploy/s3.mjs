@@ -6,12 +6,12 @@ import { promisify } from 'node:util'
 
 const DELETE_BATCH = 1000
 
-async function aws(args) {
+export async function aws(args) {
   const { stdout } = await promisify(execFile)('aws', args, { maxBuffer: 256 * 1024 * 1024 })
   return stdout
 }
 
-async function withFile(use) {
+export async function withFile(use) {
   const dir = await mkdtemp(join(tmpdir(), 'idp-s3-'))
   try {
     return await use(join(dir, 'body'))

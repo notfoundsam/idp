@@ -1,0 +1,44 @@
+name: Rollback
+
+# Back to the release before the one that runs: its pages first, then its revisions, see infra/deploy/rollback.mjs. Each run
+# goes one release further back.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        type: choice
+        options: [staging, production]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-24.04-arm
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: rollback-${{ github.run_number }}
+      - name: Settings
+        run: aws ssm get-parameter --name "/idp-${ENVIRONMENT}/release" --query Parameter.Value --output text > "$RUNNER_TEMP/release-config.json"
+      - name: Roll back
+        run: node infra/deploy/rollback.mjs --config "$RUNNER_TEMP/release-config.json"

@@ -10,6 +10,7 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/app` | The services `app`, `worker` and `ops`, the one-off tasks `migrator`, `recovery` and `cli`, their execution roles, the rules of `app` on the public listener and the listener of `ops` on the internal ALB |
 | `modules/iam` | The task role of each task and the key policies of the platform KEK and of tenant KEKs |
 | `modules/registry` | ECR repositories with immutable tags |
+| `modules/release` | The rights of the role `deploy` and the SSM parameter `/<name>/release`, the settings that the release workflow reads first |
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
 | `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. Its WAF, the certificates of both, the HTTPS listener of the ALB and the ingress of the ALB from CloudFront alone |
 | `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
@@ -29,10 +30,11 @@ The region and the domain are variables, and only the `*.example` files hold pla
 ## Setting up an environment
 
 1. In the account of the environment, apply `bootstrap/` with a copy of `terraform.tfvars.example`. Its state stays local: it holds no secret, and every resource in it can be imported again.
-2. In GitHub, create the environments `<env>-infra` for the `terraform` role and `<env>` for the `deploy` role, both with required reviewers. A token of one environment cannot assume the role of the other.
+2. In GitHub, create the environments `<env>-infra` for the `terraform` role and `<env>` for the `deploy` role, both with required reviewers. A token of one environment cannot assume the role of the other. Give `<env>` the variables `AWS_REGION` and `AWS_DEPLOY_ROLE_ARN`, the ARN of the role named by the output `deploy_role_name`.
 3. Write `environments/<env>/backend.hcl` from `backend.hcl.example` with the outputs of the bootstrap, and `terraform.tfvars` from its example. Then `terraform -chdir=environments/<env> init -backend-config=backend.hcl`.
-4. Build `infra/pgbouncer`, `infra/db-bootstrap` and `infra/otel-collector`, push them to ECR under `infra_image_tag`, and apply the environment.
-5. Bootstrap the database, below.
+4. Apply `module.registry` alone with `-target`, build `infra/pgbouncer`, `infra/db-bootstrap` and `infra/otel-collector` for ARM64, push them to ECR under `infra_image_tag`, and apply the environment. Later releases push a new `infra_image_tag` themselves.
+5. Run the `owner` step of the database bootstrap, below.
+6. Run the workflow `Deploy` with `skip-smoke`, which only the first release of an environment may set. It runs `migrator` and `role-passwords`, the other two steps of the bootstrap, and replaces the revisions that the apply gave the services.
 
 ## Edge
 
@@ -91,7 +93,7 @@ The ALBs check the health of `app` and `ops` over HTTPS on the management port 8
 
 After a key rotation at the service tenant, store the new metadata and redeploy `ops` between starting and completing the rotation.
 
-A one-off task runs with its network from the output `one_off_tasks` and its arguments in `overrides`:
+The output `one_off_tasks` names the family of each one-off task, whose latest revision the last release or rollback registered with its images. `recovery` is the exception: no release registers it, so before a recovery run apply the environment with `release` set to the image tag that `app` runs. A one-off task runs with its network from the same output and its arguments in `overrides`:
 
 ```bash
 aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
@@ -99,6 +101,17 @@ aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...],assignPublicIp=DISABLED}" \
   --overrides '{"containerOverrides":[{"name":"cli","command":["cli","suspend","<tenant-id>"]}]}'
 ```
+
+## Releases
+
+The workflow `Deploy` of `.github/workflows/deploy.yml` releases to the GitHub environment of the same name with the role `deploy`, and `Rollback` returns to the release before. Both read the parameter `/<name>/release` of `modules/release` and leave the logic to `infra/deploy`. Terraform creates the services with the revisions of `release` and ignores their task definition afterwards:
+
+- **Revisions:** a release registers a revision of `app`, `worker`, `ops`, `migrator` and `cli` from the latest one of each family, with the images of the release, so a change that an apply registered goes out with the next release, or at once with the input `full`. Only the image tags, and in `app` `APP_VERSION` and `MIN_CLIENT_VERSION`, change. Terraform never deregisters a revision.
+- **What is live:** the revision of `app` tells it. Its images are the backend, `APP_VERSION` the frontend in place, and its tags the release, the commits of both sides and, as on every revision of a service, the revision the service ran before.
+- **Paths:** a side goes out when one of its paths changed since its live commit. The frontend alone keeps the images that run and still rolls the services out for `APP_VERSION`, the backend alone keeps the pages, whose version `app` goes on naming.
+- **Order:** the images of `infra/` under `infra_image_tag` when ECR lacks them, `cli kms-check` with the new image, which encrypts with the platform KEK and stops the release while KMS is unusable, `migrator`, `role-passwords`, the new files, `app`, `worker` and `ops` one after the other, `migrator` again, the pages, the smoke test, the git tag `release/<env>/<version>` and the pruning of old files. The deployment circuit breaker rolls a failed service back, and the workflow then rolls back what moved.
+- **Rollback:** first the pages of the previous release, then the revision each service ran before, then the one-off tasks with its images. Migrations stay, expand is compatible with the old code.
+- **Shutdown:** ECS drains a task from its target group for 30 seconds, then stops it and kills it 60 seconds later. `app` and `ops` finish their requests within 20 seconds, `worker` its requests and running jobs within 40.
 
 ## Rights in AWS
 
@@ -126,6 +139,8 @@ They match principals by `aws:PrincipalArn`, which still matches a role created 
 
 Every task role denies every call of CloudWatch Logs, X-Ray and CloudWatch, so no task reads, shortens or deletes what it logged, see Telemetry. Every task role denies `ecs:ExecuteCommand`, and `ops` and `cli` deny every call of Secrets Manager, so neither opens a shell in `app` or reads the password of `app_runtime`, whatever is granted later. `migrator` runs every release with no rights in AWS: only `recovery` may destroy KEKs and read the journal, and `modules/app` refuses `REAPPLY_ERASURES` on any other task.
 
+The role `deploy` of a release reads its parameter, pushes to the repositories of the environment, writes the static bucket, registers and tags revisions, updates `app`, `worker` and `ops`, runs `migrator`, `cli` and `role-passwords` in the cluster, and passes only the task and execution roles of those tasks, to ECS tasks alone (`release.tftest.hcl`). It passes neither the role of `recovery` nor its own, nor that of `terraform`, and it deregisters no revision.
+
 ## Database bootstrap
 
 RDS has no superuser, so `idp_owner` is created by the master user, whose password RDS keeps in a secret that only the bootstrap task may read. Run each step as a one-off task with the network from the output `bootstrap_network`:
@@ -137,8 +152,8 @@ aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
 ```
 
 1. `owner`, once on a new instance: creates `idp_owner` and `provisioner` with their passwords from Secrets Manager and hands the database to `idp_owner`, as `dev-tools/postgres/init.sql` does locally.
-2. `migrator`, which creates the runtime roles.
-3. `role-passwords`, as `idp_owner`: sets the passwords of `app_runtime`, `worker_runtime` and `ops_runtime` from Secrets Manager.
+2. `migrator`, which creates the runtime roles. Every release runs it.
+3. `role-passwords`, as `idp_owner`: sets the passwords of `app_runtime`, `worker_runtime` and `ops_runtime` from Secrets Manager. Every release of the backend runs it after `migrator`, so a new role gets its password.
 
 PgBouncer starts before that, and its connections fail until step 3 is done. Every step is safe to repeat.
 

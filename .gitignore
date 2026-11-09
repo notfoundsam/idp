@@ -9,6 +9,7 @@ build/
 # Frontend
 node_modules/
 dist/
+/frontend/release/
 /frontend/e2e/test-results/
 /frontend/e2e/playwright-report/
 

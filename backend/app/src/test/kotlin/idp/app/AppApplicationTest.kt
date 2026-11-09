@@ -9,10 +9,12 @@ import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.testing.OTLP_SSL_BUNDLES
 import idp.sharedkernel.testing.TestCa
 import idp.sharedkernel.testing.TestDatabase
+import idp.sharedkernel.testing.shutdownBudget
 import idp.sharedkernel.web.TlsGuard
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.maps.shouldNotBeEmpty
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -30,6 +32,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.security.cert.X509Certificate
+import java.time.Duration
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLHandshakeException
 
@@ -117,6 +120,14 @@ class AppApplicationTest :
                 health.body() shouldContain "\"status\":\"UP\""
 
                 get(main, "/actuator/health").statusCode() shouldBe 404
+            }
+        }
+
+        "a stopping task finishes its requests before ECS kills it" {
+            runApplication<AppApplication>(*arguments).use { context ->
+                context.environment.getProperty("server.shutdown") shouldBe "graceful"
+                context.environment.getProperty("spring.lifecycle.timeout-per-shutdown-phase", Duration::class.java)!! shouldBeLessThan
+                    shutdownBudget()
             }
         }
 

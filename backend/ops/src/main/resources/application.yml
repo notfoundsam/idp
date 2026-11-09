@@ -1,6 +1,9 @@
 spring:
   application:
     name: ops
+  # ECS stops a task once the ALB has drained it and kills it after stopTimeout of infra/terraform/modules/app.
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -45,6 +48,7 @@ idp:
 
 server:
   port: 8080
+  shutdown: graceful
   # Only the local environment and tests switch TLS off, the deployed profiles refuse it. See docs/security/communications.md.
   ssl: &server-tls
     enabled: ${SERVER_TLS_ENABLED:true}

@@ -2,10 +2,10 @@ FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 TERRAFORM := docker compose run --rm terraform
 TERRAFORM_ROOTS := bootstrap environments/staging environments/production
-TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/edge modules/iam modules/network modules/static modules/telemetry
+TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/edge modules/iam modules/network modules/release modules/static modules/telemetry
 TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install web-release
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -55,7 +55,13 @@ test-frontend: frontend-install
 	$(FRONTEND) -r --filter '!e2e' test
 	docker compose run --rm frontend node --test '/app/infra/web/*.test.mjs'
 
-# The release scripts against a fake of S3, in the image of the frontend and without its packages.
+# The frontend of a release, built with its version into frontend/release for `release-assets.mjs stage`, as .github/workflows/deploy.yml does.
+web-release: frontend-install
+	$(if $(APP_VERSION),,$(error APP_VERSION is required))
+	docker compose run --rm --no-deps -e APP_VERSION=$(APP_VERSION) -e WEB_OUT_DIR=/app/frontend/release frontend \
+	  corepack pnpm -r --filter '!e2e' --if-present build
+
+# The release scripts against fakes of S3 and ECS, in the image of the frontend and without its packages.
 test-deploy:
 	docker compose run --rm --no-deps frontend node --test '/app/infra/deploy/*.test.mjs'
 
@@ -99,6 +105,7 @@ lint-infra:
 	done
 	$(TFLINT) --init
 	$(TFLINT) --recursive
+	docker compose run --rm actionlint
 
 frontend-install:
 	$(FRONTEND) install --frozen-lockfile

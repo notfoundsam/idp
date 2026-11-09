@@ -12,6 +12,7 @@ import idp.sharedkernel.testing.OTLP_EXPORT
 import idp.sharedkernel.testing.OTLP_SSL_BUNDLES
 import idp.sharedkernel.testing.TestCa
 import idp.sharedkernel.testing.TestMailpit
+import idp.sharedkernel.testing.shutdownBudget
 import idp.sharedkernel.throttle.RateLimiter
 import idp.tenancy.application.NewApplication
 import idp.tenancy.application.TenancyEvents
@@ -24,6 +25,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.maps.shouldNotBeEmpty
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -84,6 +86,17 @@ class WorkerApplicationTest :
                         )
 
                 health.statusCode() shouldBe 200
+            }
+        }
+
+        "a stopping worker finishes its requests and its running jobs before ECS kills it" {
+            runApplication<WorkerApplication>(*arguments).use { context ->
+                val settings = context.environment
+                settings.getProperty("server.shutdown") shouldBe "graceful"
+                settings.getProperty("spring.task.scheduling.shutdown.await-termination") shouldBe "true"
+                val phase = settings.getProperty("spring.lifecycle.timeout-per-shutdown-phase", Duration::class.java)!!
+                val jobs = settings.getProperty("spring.task.scheduling.shutdown.await-termination-period", Duration::class.java)!!
+                phase.plus(jobs) shouldBeLessThan shutdownBudget()
             }
         }
 

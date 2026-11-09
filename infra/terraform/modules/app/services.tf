@@ -22,6 +22,8 @@ locals {
         startPeriod = 60
       } : null
       dependsOn = name == "ops" ? [{ containerName = "idp-metadata", condition = "SUCCESS" }] : null
+      # The graceful shutdown of the services stays below it, which their tests read from here.
+      stopTimeout = contains(local.services, name) ? 60 : null
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -64,6 +66,8 @@ resource "aws_ecs_task_definition" "this" {
   memory                   = each.value.memory
   execution_role_arn       = aws_iam_role.execution[each.key].arn
   task_role_arn            = var.task_role_arns[each.key]
+  # A release registers its own revisions, and a rollback returns to the earlier ones, so none is deregistered.
+  skip_destroy = true
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -137,6 +141,12 @@ resource "aws_ecs_service" "this" {
       container_name   = each.key
       container_port   = local.http_port
     }
+  }
+
+  # The release workflow rolls a service out to the revisions it registers, see infra/terraform/README.md. An apply never
+  # takes a service back to the revision of var.release.
+  lifecycle {
+    ignore_changes = [task_definition]
   }
 
   # ECS registers targets only in a group that a listener forwards to.

@@ -52,3 +52,8 @@ output "bootstrap_task_definitions" {
   description = "Task definitions of the owner bootstrap and of the role passwords, see infra/terraform/README.md."
   value       = { for name, definition in aws_ecs_task_definition.bootstrap : name => definition.arn }
 }
+
+output "bootstrap_execution_role_arn" {
+  description = "Execution role of the bootstrap tasks, which whoever runs one passes to ECS."
+  value       = aws_iam_role.execution["db-bootstrap"].arn
+}
