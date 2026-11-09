@@ -145,3 +145,8 @@ variable "log_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "log_tampering_actions" {
+  description = "Calls of CloudWatch Logs that the execution roles deny, the output log_tampering_actions of modules/telemetry."
+  type        = list(string)
+}

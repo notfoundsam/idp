@@ -87,6 +87,16 @@ output "ops_alb_dns_name" {
   value       = module.network.ops_alb_dns_name
 }
 
+output "telemetry" {
+  description = "Log groups, CloudWatch namespace and the read policy of the on-call engineers, see infra/terraform/README.md."
+  value = {
+    log_groups        = module.telemetry.log_groups
+    metrics_namespace = module.telemetry.metrics_namespace
+    read_policy_arn   = module.telemetry.read_policy_arn
+    collector_role    = module.telemetry.collector_task_role_arn
+  }
+}
+
 output "idp_metadata_secret_arn" {
   description = "Secret that the operator fills with the SAML metadata of ops-sso before ops starts."
   value       = module.app.idp_metadata_secret_arn

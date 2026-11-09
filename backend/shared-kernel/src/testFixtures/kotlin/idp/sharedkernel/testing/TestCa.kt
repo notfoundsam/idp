@@ -14,11 +14,15 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import java.math.BigInteger
 import java.security.KeyPair
 import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
 import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 
 private val serials = AtomicLong()
 
@@ -57,6 +61,17 @@ class TestCa(
                 it.addExtension(Extension.extendedKeyUsage, false, ExtendedKeyUsage(KeyPurposeId.id_kp_serverAuth))
             }
         return pem("CERTIFICATE", der) to pem("PRIVATE KEY", leaf.private.encoded)
+    }
+
+    /** A client context that trusts this CA alone. */
+    fun trust(): SSLContext {
+        val store =
+            KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+                load(null)
+                setCertificateEntry("ca", CertificateFactory.getInstance("X.509").generateCertificate(pem.byteInputStream()))
+            }
+        val managers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
+        return SSLContext.getInstance("TLS").apply { init(null, managers.trustManagers, null) }
     }
 
     private fun sign(

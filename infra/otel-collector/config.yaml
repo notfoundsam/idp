@@ -1,0 +1,87 @@
+# Takes OTLP over HTTPS from app, worker and ops and writes it to CloudWatch Logs, X-Ray and CloudWatch metrics through the
+# interface endpoints. Terraform sets every variable, see infra/terraform/modules/telemetry and docs/security/logging.md.
+extensions:
+  sigv4auth:
+    region: ${env:AWS_REGION}
+    service: xray
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        tls:
+          cert_pem: ${env:TLS_CERT}
+          key_pem: ${env:TLS_KEY}
+          min_version: "1.2"
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  batch: {}
+  # Lines of idp.security are kept a year, the rest 90 days, so each goes to a log group of its own.
+  filter/security:
+    log_conditions:
+      - scope.name != "idp.security"
+  filter/other:
+    log_conditions:
+      - scope.name == "idp.security"
+  # The alarms read the metrics of the product, and every other series would cost a custom metric.
+  filter/metrics:
+    metric_conditions:
+      - not IsMatch(metric.name, "^idp\\.")
+
+exporters:
+  awscloudwatchlogs/logs:
+    region: ${env:AWS_REGION}
+    endpoint: ${env:LOGS_ENDPOINT}
+    log_group_name: ${env:LOG_GROUP}
+    log_stream_name: "{ServiceName}"
+  awscloudwatchlogs/security:
+    region: ${env:AWS_REGION}
+    endpoint: ${env:LOGS_ENDPOINT}
+    log_group_name: ${env:SECURITY_LOG_GROUP}
+    log_stream_name: "{ServiceName}"
+  awsemf:
+    region: ${env:AWS_REGION}
+    endpoint: ${env:LOGS_ENDPOINT}
+    log_group_name: ${env:METRICS_LOG_GROUP}
+    log_stream_name: collector
+    namespace: ${env:METRICS_NAMESPACE}
+    dimension_rollup_option: NoDimensionRollup
+    resource_to_telemetry_conversion:
+      included: [service.name]
+    metric_declarations:
+      - dimensions: [[service.name], [service.name, factor], [service.name, source, tls]]
+        metric_name_selectors: ["^idp\\."]
+  # X-Ray with Transaction Search keeps the spans in the log group aws/spans, whose retention Terraform sets.
+  otlp_http/xray:
+    traces_endpoint: ${env:TRACES_ENDPOINT}
+    compression: gzip
+    auth:
+      authenticator: sigv4auth
+
+service:
+  extensions: [sigv4auth]
+  telemetry:
+    logs:
+      encoding: json
+  pipelines:
+    logs/security:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/security, batch]
+      exporters: [awscloudwatchlogs/security]
+    logs/other:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/other, batch]
+      exporters: [awscloudwatchlogs/logs]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/metrics, batch]
+      exporters: [awsemf]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/xray]

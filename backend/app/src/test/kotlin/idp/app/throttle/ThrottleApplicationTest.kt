@@ -115,6 +115,9 @@ class ThrottleApplicationTest :
         val database = TestDatabase.migrated()
         val owner = database.owner()
         val valkeyCa = TestCa("Test ElastiCache CA").pem
+        // The deployed profiles refuse a server without TLS.
+        val serverCa = TestCa("Test internal CA")
+        val (serverCertificate, serverKey) = serverCa.issue("localhost")
 
         // Not from the pool: limits are counted per tenant in a Valkey that outlives this spec.
         val tenant: UUID = UUID.randomUUID()
@@ -140,6 +143,8 @@ class ThrottleApplicationTest :
             SpringApplication(AppApplication::class.java, ProbeMessages::class.java, ProbeEndpoints::class.java).run(
                 "--server.port=0",
                 "--management.server.port=0",
+                "--SERVER_TLS_CERT=$serverCertificate",
+                "--SERVER_TLS_KEY=$serverKey",
                 "--spring.datasource.url=${database.url}",
                 "--spring.datasource.username=app_runtime",
                 "--spring.datasource.password=app_runtime",
@@ -159,9 +164,13 @@ class ThrottleApplicationTest :
             vararg headers: String,
             port: String? = environment.getProperty("local.server.port"),
         ): HttpResponse<String> {
-            val request = HttpRequest.newBuilder(URI("http://localhost:$port$path")).header("Host", HOST)
+            val request = HttpRequest.newBuilder(URI("https://localhost:$port$path")).header("Host", HOST)
             headers.toList().chunked(2).forEach { (name, value) -> request.header(name, value) }
-            return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString())
+            return HttpClient
+                .newBuilder()
+                .sslContext(serverCa.trust())
+                .build()
+                .send(request.build(), HttpResponse.BodyHandlers.ofString())
         }
 
         fun ConfigurableApplicationContext.management(path: String) = get(path, port = environment.getProperty("local.management.port"))

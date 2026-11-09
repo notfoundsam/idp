@@ -275,7 +275,7 @@ class OpsApiTest :
                 test("the $profile profile refuses to start beside the local one") {
                     val failure =
                         shouldThrow<Exception> {
-                            runApplication<OpsApplication>(*environment.arguments, "--spring.profiles.active=local,$profile")
+                            runApplication<OpsApplication>(*environment.tlsArguments, "--spring.profiles.active=local,$profile")
                         }
 
                     generateSequence(failure as Throwable) { it.cause }.last().message.orEmpty() shouldContain

@@ -113,8 +113,9 @@ resource "aws_db_instance" "this" {
 resource "aws_cloudwatch_log_group" "this" {
   for_each = toset(["pgbouncer", "db-bootstrap"])
 
-  name              = "/${var.name}/${each.key}"
-  retention_in_days = var.log_retention_days
+  name                        = "/${var.name}/${each.key}"
+  retention_in_days           = var.log_retention_days
+  deletion_protection_enabled = true
 }
 
 data "aws_iam_policy_document" "ecs_tasks" {
@@ -156,6 +157,14 @@ data "aws_iam_policy_document" "execution_secrets" {
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = each.value
+  }
+
+  # ECS appends the console lines with this role, and whatever is granted later reads, changes or deletes none of them.
+  statement {
+    sid       = "NoLogReadOrChange"
+    effect    = "Deny"
+    actions   = var.log_tampering_actions
+    resources = ["*"]
   }
 }
 

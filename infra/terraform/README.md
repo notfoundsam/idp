@@ -13,7 +13,8 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/static` | The bucket of the frontend files, read only by CloudFront |
 | `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. Its WAF, the certificates of both, the HTTPS listener of the ALB and the ingress of the ALB from CloudFront alone |
 | `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
-| `modules/pki` | The internal CA and the server certificates it issues, their keys in Secrets Manager |
+| `modules/pki` | The internal CA and the server certificates it issues to PgBouncer, `app`, `ops` and the collector, their keys in Secrets Manager |
+| `modules/telemetry` | The OpenTelemetry Collector of `infra/otel-collector`, the log groups of OTLP and of spans with their retention, Transaction Search of X-Ray and the read policy of the on-call engineers |
 | `modules/data` | RDS, the role passwords, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
 | `modules/valkey` | ElastiCache Valkey with TLS and an AUTH token, reachable from `app` alone |
 | `modules/keys` | The platform KEK, the HMAC key of Throttle and the origin header of CloudFront |
@@ -29,7 +30,7 @@ The region and the domain are variables, and only the `*.example` files hold pla
 1. In the account of the environment, apply `bootstrap/` with a copy of `terraform.tfvars.example`. Its state stays local: it holds no secret, and every resource in it can be imported again.
 2. In GitHub, create the environments `<env>-infra` for the `terraform` role and `<env>` for the `deploy` role, both with required reviewers. A token of one environment cannot assume the role of the other.
 3. Write `environments/<env>/backend.hcl` from `backend.hcl.example` with the outputs of the bootstrap, and `terraform.tfvars` from its example. Then `terraform -chdir=environments/<env> init -backend-config=backend.hcl`.
-4. Build `infra/pgbouncer` and `infra/db-bootstrap`, push both to ECR under `infra_image_tag`, and apply the environment.
+4. Build `infra/pgbouncer`, `infra/db-bootstrap` and `infra/otel-collector`, push them to ECR under `infra_image_tag`, and apply the environment.
 5. Bootstrap the database, below.
 
 ## Edge
@@ -68,14 +69,14 @@ Every task runs the image `<repository>:<release>` with a read-only root. The JV
 
 | Task | Runs as | Reached by | Database |
 |---|---|---|---|
-| `app` | ECS service | The public ALB: `/api/*` and `/saml/*` with the origin header, on 8080 | `app_runtime` through PgBouncer |
+| `app` | ECS service | The public ALB: `/api/*` and `/saml/*` with the origin header, on 8080 over HTTPS | `app_runtime` through PgBouncer |
 | `worker` | ECS service | Nobody. It sends mail to SES on 587 through the interface endpoint | `worker_runtime` through PgBouncer, `provisioner` directly |
-| `ops` | ECS service | The internal ALB at `ops.<domain>`, on 8080 | `ops_runtime` through PgBouncer |
+| `ops` | ECS service | The internal ALB at `ops.<domain>`, on 8080 over HTTPS | `ops_runtime` through PgBouncer |
 | `migrator` | One-off task, output `one_off_tasks` | Nobody | `idp_owner` directly |
 | `recovery` | One-off task of the `migrator` image with `REAPPLY_ERASURES=true`, only after a restore, see `docs/security/restore-runbook.md` | Nobody | `idp_owner` directly |
 | `cli` | One-off task of the `ops` image, output `one_off_tasks` | Nobody | `ops_runtime` through PgBouncer |
 
-The ALBs check the health of `app` and `ops` on the management port 8081, which only they reach. `worker` checks its own readiness. Staging runs the Spring profile `staging`, production `prod`: both refuse what the local environment allows, and only `staging` lets a load test set `THROTTLE_ENABLED=false` on `app`. `modules/app` refuses the profile `local`, a profile set through the output `services` and any JDWP option.
+The ALBs check the health of `app` and `ops` over HTTPS on the management port 8081, which only they reach. `worker` checks its own readiness. Staging runs the Spring profile `staging`, production `prod`: both refuse what the local environment allows, and only `staging` lets a load test set `THROTTLE_ENABLED=false` on `app`. `modules/app` refuses the profile `local`, a profile set through the output `services` and any JDWP option.
 
 `ops` answers only on the internal ALB, whose security group admits HTTPS from `ops_client_cidrs`, the private ranges of the VPN, and nothing while the list is empty. Create the record `ops.<domain>` towards the output `ops_alb_dns_name`, beside the wildcard of the edge: it resolves to private addresses. The service tenant `ops-sso` stays a tenant domain behind CloudFront. The ALB keeps a browser on one task of `ops` for 30 minutes, as `ops` keeps its sessions in memory, and `ops` has no `CLIENT_IP_HEADER`: no header of the ALB carries an address that a client cannot forge, so it records the address of the ALB.
 
@@ -120,7 +121,7 @@ The key policies let the account grant the rest through IAM, as the default poli
 
 They match principals by `aws:PrincipalArn`, which still matches a role created again under the same name, where a principal in the policy would stop matching. Changing a key policy stays possible for the account and lands in CloudTrail.
 
-Every task role denies `ecs:ExecuteCommand`, and `ops` and `cli` deny every call of Secrets Manager, so neither opens a shell in `app` or reads the password of `app_runtime`, whatever is granted later. `migrator` runs every release with no rights in AWS: only `recovery` may destroy KEKs and read the journal, and `modules/app` refuses `REAPPLY_ERASURES` on any other task.
+Every task role denies every call of CloudWatch Logs, X-Ray and CloudWatch, so no task reads, shortens or deletes what it logged, see Telemetry. Every task role denies `ecs:ExecuteCommand`, and `ops` and `cli` deny every call of Secrets Manager, so neither opens a shell in `app` or reads the password of `app_runtime`, whatever is granted later. `migrator` runs every release with no rights in AWS: only `recovery` may destroy KEKs and read the journal, and `modules/app` refuses `REAPPLY_ERASURES` on any other task.
 
 ## Database bootstrap
 
@@ -149,7 +150,7 @@ Terraform generates every credential of the services into Secrets Manager, and n
 | HMAC key of Throttle, `THROTTLE_IP_HMAC_KEY` | `<env>/app/throttle-ip-hmac-key` | `credential_versions.throttle_ip_hmac_key` |
 | SMTP credentials of SES, `MAIL_USERNAME` and `MAIL_PASSWORD` | `<env>/mail/smtp`, keys `username` and `password` | `credential_versions.smtp` |
 | Origin header of CloudFront, `X-Origin-Verify` | `<env>/edge/origin-header` | `credential_versions.origin_header` |
-| TLS key of PgBouncer | `<env>/tls/pgbouncer` | An apply in the last 60 days of its certificate |
+| TLS keys of PgBouncer, `app`, `ops` and the collector | `<env>/tls/<name>` | An apply in the last 60 days of its certificate, then a redeploy of the service |
 
 The passwords, the token and the HMAC key are write-only values, so they reach neither the plan, the state nor the repository. The origin header is written the same way, but CloudFront and the ALB keep it in their configuration, so Terraform reads it back and it lives in the encrypted state, marked sensitive in the plan. SES derives SMTP credentials only from the access key of an IAM user, which AWS cannot create write-only, so that key lives in the encrypted state like the keys of `modules/pki`. `ProductionDatabaseTest` runs the database images and connection settings against a Postgres that behaves like RDS, `ValkeyTlsTest` the client of `app` against a Valkey that serves TLS alone.
 
@@ -183,6 +184,29 @@ Every client verifies the server certificate and its name, `sslmode=verify-full`
 The JDBC URLs in the output `database` read the certificate from a variable: `DB_TLS_CA` for `DB_URL`, `PROVISIONER_DB_TLS_CA` for `PROVISIONER_DB_URL`. PgBouncer accepts only TLS clients, and RDS only TLS connections through `rds.force_ssl`.
 
 The internal CA is a key in the Terraform state, which its own KMS key encrypts and only the `terraform` role reads. An apply in the last 60 days of a server certificate issues a new one, and the CA itself lives ten years.
+
+## TLS to the services and the collector
+
+`app` and `ops` serve both ports over TLS 1.2 or 1.3 with a certificate of the internal CA, `SERVER_TLS_CERT` with its key from the secret in `SERVER_TLS_KEY`, and the target groups and health checks of the ALBs speak HTTPS. The ALB checks the certificate of no target, which AWS does not offer, so the security groups keep everybody else off the ports. `prod` and `staging` refuse `SERVER_TLS_ENABLED=false`, which only the local environment and tests set.
+
+The collector serves OTLP over HTTPS at `otel-collector.idp.internal:4318` with a certificate for that name. `app`, `worker`, `ops` and the CLI get it as `OTEL_EXPORTER_OTLP_ENDPOINT`, verify the name and trust only the internal CA in `OTLP_TLS_CA`, and their deployed profiles refuse an endpoint without either. A new certificate needs a redeploy of the service that serves it, the clients keep trusting the same CA. `docs/security/communications.md` lists every connection.
+
+## Telemetry
+
+The collector of `infra/otel-collector` runs as the ECS service `otel-collector` and writes through the interface endpoints `logs` and `xray`:
+
+| Data | Store | Retention |
+|---|---|---|
+| Console of each task | `/<env>/<task>`, written by ECS | 90 days |
+| OTLP lines | `/<env>/otlp` | 90 days |
+| OTLP lines of `idp.security` | `/<env>/otlp/security` | A year |
+| Metrics `idp.*` | CloudWatch metrics in the namespace `<env>`, from the EMF events in `/<env>/otlp/metrics` | 15 months, fixed by CloudWatch. The events 14 days |
+| Spans | `aws/spans` through Transaction Search of X-Ray | 14 days |
+| Console of the collector | `/<env>/otel-collector` | 90 days |
+
+The services may only write. Their task roles deny CloudWatch Logs, X-Ray and CloudWatch, and their execution roles deny reading, shortening and deleting lines, with the list of the output `log_tampering_actions`. The task role of the collector appends to its three groups, sends spans with `AWSXrayWriteOnlyPolicy` and denies the same list. Every log group has deletion protection, so only its retention removes a line, unless somebody with rights on the account turns the protection off, which CloudTrail records.
+
+Only the on-call engineers read telemetry, through the policy of the output `telemetry.read_policy_arn`, which reads the groups of the environment, X-Ray and the metrics and writes nothing. Attach it to their permission set and to nothing else. Transaction Search is a setting of the account and region: a second environment in the same account would share `aws/spans`.
 
 ## TLS to Valkey
 

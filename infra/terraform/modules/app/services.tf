@@ -95,6 +95,11 @@ resource "aws_ecs_task_definition" "this" {
       condition     = (each.key == "recovery") == (lookup(each.value.environment, "REAPPLY_ERASURES", "false") == "true")
       error_message = "Only the recovery task applies the erasure journal again."
     }
+
+    precondition {
+      condition     = lookup(each.value.environment, "SERVER_TLS_ENABLED", "true") == "true" && (!contains(local.balanced, each.key) || contains(keys(each.value.environment), "SERVER_TLS_CERT"))
+      error_message = "${each.key} answers its load balancer without TLS."
+    }
   }
 }
 

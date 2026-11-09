@@ -196,6 +196,8 @@ services:
     environment:
       <<: *otel-environment
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      # Traefik terminates TLS locally. In AWS both ports serve the certificate of the internal CA.
+      SERVER_TLS_ENABLED: "false"
       # Without server-side prepared statements, because PgBouncer shares connections between clients.
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: app_runtime
@@ -268,6 +270,8 @@ services:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
       # The CLI names its caller local-operator instead of asking IAM. The API needs a SAML login through ops-sso either way.
       SPRING_PROFILES_ACTIVE: local
+      # Traefik terminates TLS locally. In AWS both ports serve the certificate of the internal CA.
+      SERVER_TLS_ENABLED: "false"
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: ops_runtime
       DB_PASSWORD: ops_runtime

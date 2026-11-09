@@ -94,6 +94,7 @@ class LoginEnvironment {
         SpringApplication(AppApplication::class.java, *sources).run(
             "--server.port=0",
             "--management.server.port=0",
+            "--SERVER_TLS_ENABLED=false",
             "--spring.datasource.url=${database.pooledUrl()}",
             "--spring.datasource.username=app_runtime",
             "--spring.datasource.password=app_runtime",

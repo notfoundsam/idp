@@ -7,13 +7,35 @@ and not logs, see [data-protection.md](data-protection.md). A new kind of line, 
 
 Logs go to two places and nowhere else:
 
-- **Console.** Every service writes one JSON object per line to stdout. In production the container runtime ships it to the log store
-  of the platform, locally `docker compose logs` shows it.
+- **Console.** Every service writes one JSON object per line to stdout. In AWS, ECS ships it to the CloudWatch log group
+  `/<env>/<task>`, locally `docker compose logs` shows it.
 - **OTLP.** With `OTEL_EXPORTER_OTLP_ENDPOINT` set, `LogExport` adds an appender to Logback that sends each line through the logs API
   of OpenTelemetry to the collector, beside traces and metrics. Without the variable Spring Boot creates no exporter, and nothing
   leaves the process this way. Locally the collector is the one of `grafana/otel-lgtm` and stores logs in Loki.
 
-No service writes log files. The collector of production and its store are set up in task 41, and only they receive the OTLP lines.
+No service writes log files. `migrator` has no exporter, its lines reach the console alone.
+
+## Production
+
+`app`, `worker`, `ops` and the CLI export over HTTPS to the collector of `infra/otel-collector`, an ECS service at
+`otel-collector.idp.internal:4318`, which they trust through the internal CA in `OTLP_TLS_CA` alone. `prod` and `staging` refuse an
+endpoint without TLS or without that CA (`TlsGuard`). The collector writes through the interface endpoints of the VPC:
+
+| Signal | Store | Name |
+|---|---|---|
+| Lines of `idp.security` | CloudWatch Logs | `/<env>/otlp/security`, a stream per service |
+| Other OTLP lines | CloudWatch Logs | `/<env>/otlp`, a stream per service |
+| Metrics `idp.*` | CloudWatch metrics through the embedded metric format | Namespace `<env>`, dimension `service.name` and the tags of the metric. The EMF events stay in `/<env>/otlp/metrics` |
+| Spans | X-Ray with Transaction Search | The log group `aws/spans` |
+| Console of the collector | CloudWatch Logs | `/<env>/otel-collector` |
+
+The services send metrics as deltas (`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`), as EMF takes them. Other metrics of
+Micrometer stop at the collector, each would cost a custom metric.
+
+The store is apart from the services. Their task roles deny every call of CloudWatch Logs, X-Ray and CloudWatch, and their execution
+roles, which ECS writes the console with, deny reading, shortening and deleting lines. The collector only appends to its three groups
+and denies the same, and only X-Ray writes `aws/spans`. Every log group has deletion protection, so a line leaves only when its
+retention ends, or after somebody with rights on the account turned the protection off, which CloudTrail records.
 
 ## Inventory
 
@@ -71,7 +93,7 @@ samples everything.
 | `idp.saml.certificate.expiry` | The earliest end of a published signing certificate, in seconds since the epoch, refreshed hourly by `worker` | Less than 30 days left |
 
 Metrics carry no tenant: hundreds of tenants would make a series each. `dev-tools/lgtm` provisions the dashboard and these alerts
-into the local Grafana. Task 41 turns them into the alarms of production, where the thresholds are set from staging.
+into the local Grafana. In AWS they become CloudWatch alarms on the namespace `<env>`, with the thresholds set from staging.
 
 ## Retention and access
 
@@ -80,8 +102,10 @@ into the local Grafana. Task 41 turns them into the alarms of production, where 
 | Console lines | Until the container is recreated | 90 days | The on-call engineers of the platform, read only |
 | OTLP logs | In the `idp-lgtm` volume until `make clean` | 90 days, lines of `idp.security` 1 year | The same, read only |
 | Traces | As above | 14 days | The same |
-| Metrics | As above | 13 months | The same |
+| Metrics | As above | 15 months, the fixed retention of CloudWatch, at least the 13 an investigation needs | The same |
 
-Nobody changes or deletes a stored line before its time, the store only expires them. Admins of a tenant never see logs: their
-journal is the audit of their tenant. Logs hold IDs and no personal data, so the periods follow what an investigation needs and not
-an erasure.
+Nobody changes or deletes a stored line before its time, the store only expires them, see [Production](#production). The on-call
+engineers read through the policy `<env>-telemetry-read` of `modules/telemetry`, which reads and changes nothing else, and no other
+principal gets it. X-Ray also indexes 1% of the spans as trace summaries, which it keeps 30 days: they hold the same IDs and names as
+the spans. Admins of a tenant never see logs: their journal is the audit of their tenant. Logs hold IDs and no personal data, so the
+periods follow what an investigation needs and not an erasure.

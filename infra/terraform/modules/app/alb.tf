@@ -11,21 +11,22 @@ locals {
   }
 }
 
-# Requests reach the port of the application, and only the health check of the ALB reaches the management port.
+# Requests reach the port of the application, and only the health check of the ALB reaches the management port. Both serve
+# TLS with a certificate of the internal CA, which the ALB does not verify: it checks the certificate of no target.
 resource "aws_lb_target_group" "this" {
   for_each = local.balanced
 
   name                 = "${var.name}-${each.key}"
   vpc_id               = var.vpc_id
   target_type          = "ip"
-  protocol             = "HTTP"
+  protocol             = "HTTPS"
   protocol_version     = "HTTP1"
   port                 = local.http_port
   deregistration_delay = 30
 
   health_check {
     enabled             = true
-    protocol            = "HTTP"
+    protocol            = "HTTPS"
     port                = tostring(local.management_port)
     path                = local.health_paths[each.key]
     matcher             = "200"

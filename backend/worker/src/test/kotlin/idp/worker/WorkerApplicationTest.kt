@@ -9,6 +9,8 @@ import idp.sharedkernel.erasure.adapter.FileErasureJournal
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.testing.OTLP_EXPORT
+import idp.sharedkernel.testing.OTLP_SSL_BUNDLES
+import idp.sharedkernel.testing.TestCa
 import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.throttle.RateLimiter
 import idp.tenancy.application.NewApplication
@@ -31,12 +33,15 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import io.micrometer.registry.otlp.OtlpMeterRegistry
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import org.springframework.boot.runApplication
+import org.springframework.boot.ssl.SslBundles
+import org.springframework.core.NestedExceptionUtils
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.mail.javamail.JavaMailSenderImpl
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.security.cert.X509Certificate
 import java.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -103,6 +108,23 @@ class WorkerApplicationTest :
                 context.getBeansOfType(SpanExporter::class.java).shouldNotBeEmpty()
                 context.getBeansOfType(OtlpMeterRegistry::class.java).shouldNotBeEmpty()
             }
+        }
+
+        "every exporter trusts the CA in OTLP_TLS_CA alone" {
+            runApplication<WorkerApplication>(*arguments, *OTLP_EXPORT, "--OTLP_TLS_CA=${TestCa("Test collector CA").pem}").use { context ->
+                OTLP_SSL_BUNDLES.forEach { context.environment.getProperty(it) shouldBe "otlp" }
+                val bundle = context.getBean(SslBundles::class.java).getBundle("otlp")
+                val store = bundle.stores.trustStore.shouldNotBeNull()
+                store.aliases().toList().map { (store.getCertificate(it) as X509Certificate).subjectX500Principal.name } shouldBe
+                    listOf("CN=Test collector CA")
+            }
+        }
+
+        "the prod profile refuses to export over plain HTTP" {
+            val failure = shouldThrowAny { runApplication<WorkerApplication>(*arguments, *OTLP_EXPORT, "--spring.profiles.active=prod") }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain
+                "An OTLP endpoint without TLS is refused in the prod profile"
         }
 
         "the audit log of worker writes to the tenant journal" {

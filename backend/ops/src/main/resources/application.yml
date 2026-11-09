@@ -14,6 +14,13 @@ spring:
   autoconfigure:
     # Operators log in through SAML alone, so Spring Boot must not create a user with a generated password.
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  ssl:
+    bundle:
+      pem:
+        # The CA of the collector, and no other: without it the exporters would trust the JVM store.
+        otlp:
+          truststore:
+            certificate: ${OTLP_TLS_CA:}
 
 idp:
   tenants:
@@ -38,6 +45,12 @@ idp:
 
 server:
   port: 8080
+  # Only the local environment and tests switch TLS off, the deployed profiles refuse it. See docs/security/communications.md.
+  ssl: &server-tls
+    enabled: ${SERVER_TLS_ENABLED:true}
+    certificate: ${SERVER_TLS_CERT:}
+    certificate-private-key: ${SERVER_TLS_KEY:}
+    enabled-protocols: TLSv1.3,TLSv1.2
   servlet:
     session:
       # Idle. The absolute end is the SessionNotOnOrAfter of the assertion.
@@ -58,6 +71,7 @@ logging:
 management:
   server:
     port: 8081
+    ssl: *server-tls
   endpoints:
     web:
       exposure:
@@ -68,3 +82,16 @@ management:
     metrics:
       export:
         enabled: false
+        ssl:
+          bundle: otlp
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          ssl:
+            bundle: otlp
+    logging:
+      export:
+        otlp:
+          ssl:
+            bundle: otlp

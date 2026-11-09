@@ -41,10 +41,12 @@ locals {
     ]
   }
 
-  # A deny outlasts any allow added to the role later.
+  # A deny outlasts any allow added to the role later. The services send telemetry through the collector and their console through
+  # ECS, so none of them reads, changes or deletes a stored line.
   denied = {
     for task in local.tasks : task => concat(
       [{ sid = "NoShellInTasks", actions = ["ecs:ExecuteCommand"], resources = ["*"] }],
+      [{ sid = "NoTelemetryStores", actions = ["cloudwatch:*", "logs:*", "xray:*"], resources = ["*"] }],
       contains(["ops", "cli"], task) ? [{ sid = "NoSecrets", actions = ["secretsmanager:*"], resources = ["*"] }] : [],
     )
   }

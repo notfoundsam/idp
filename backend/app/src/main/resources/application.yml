@@ -16,6 +16,13 @@ spring:
       max-request-size: ${idp.admin.max-upload-size}
       # A file below it stays in memory, so an upload never lands on the disk.
       file-size-threshold: ${idp.admin.max-upload-size}
+  ssl:
+    bundle:
+      pem:
+        # The CA of the collector, and no other: without it the exporters would trust the JVM store.
+        otlp:
+          truststore:
+            certificate: ${OTLP_TLS_CA:}
 
 idp:
   tenants:
@@ -59,6 +66,12 @@ idp:
 
 server:
   port: 8080
+  # Only the local environment and tests switch TLS off, the deployed profiles refuse it. See docs/security/communications.md.
+  ssl: &server-tls
+    enabled: ${SERVER_TLS_ENABLED:true}
+    certificate: ${SERVER_TLS_CERT:}
+    certificate-private-key: ${SERVER_TLS_KEY:}
+    enabled-protocols: TLSv1.3,TLSv1.2
 
 # One JSON object per line, in UTC, with the MDC fields as keys. See docs/security/logging.md.
 logging:
@@ -73,6 +86,7 @@ management:
       consume: ""
   server:
     port: 8081
+    ssl: *server-tls
   endpoint:
     health:
       probes:
@@ -87,3 +101,16 @@ management:
     metrics:
       export:
         enabled: false
+        ssl:
+          bundle: otlp
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          ssl:
+            bundle: otlp
+    logging:
+      export:
+        otlp:
+          ssl:
+            bundle: otlp

@@ -55,27 +55,45 @@ module "pki" {
   source = "../../modules/pki"
 
   name = local.name
+  # The ALB reaches app and ops by address and checks no name, the services reach the collector by its name in the namespace.
   certificates = {
-    pgbouncer = ["pgbouncer.${module.cluster.namespace}"]
+    pgbouncer        = ["pgbouncer.${module.cluster.namespace}"]
+    app              = ["app.${module.cluster.namespace}"]
+    ops              = ["ops.${module.cluster.namespace}"]
+    "otel-collector" = ["otel-collector.${module.cluster.namespace}"]
   }
+}
+
+module "telemetry" {
+  source = "../../modules/telemetry"
+
+  name               = local.name
+  cluster_arn        = module.cluster.cluster_arn
+  namespace_id       = module.cluster.namespace_id
+  namespace          = module.cluster.namespace
+  private_subnet_ids = module.network.private_subnet_ids
+  security_group_ids = module.network.security_group_ids
+  collector_image    = "${module.registry.repository_urls["otel-collector"]}:${var.infra_image_tag}"
+  collector_tls      = module.pki.certificates["otel-collector"]
 }
 
 module "data" {
   source = "../../modules/data"
 
-  name                = local.name
-  database_subnet_ids = module.network.database_subnet_ids
-  private_subnet_ids  = module.network.private_subnet_ids
-  security_group_ids  = module.network.security_group_ids
-  cluster_arn         = module.cluster.cluster_arn
-  namespace_id        = module.cluster.namespace_id
-  namespace           = module.cluster.namespace
-  pgbouncer_image     = "${module.registry.repository_urls["pgbouncer"]}:${var.infra_image_tag}"
-  db_bootstrap_image  = "${module.registry.repository_urls["db-bootstrap"]}:${var.infra_image_tag}"
-  internal_ca_pem     = module.pki.ca_cert_pem
-  pgbouncer_tls       = module.pki.certificates["pgbouncer"]
-  instance_class      = var.db_instance_class
-  password_versions   = var.db_password_versions
+  name                  = local.name
+  database_subnet_ids   = module.network.database_subnet_ids
+  private_subnet_ids    = module.network.private_subnet_ids
+  security_group_ids    = module.network.security_group_ids
+  cluster_arn           = module.cluster.cluster_arn
+  namespace_id          = module.cluster.namespace_id
+  namespace             = module.cluster.namespace
+  pgbouncer_image       = "${module.registry.repository_urls["pgbouncer"]}:${var.infra_image_tag}"
+  db_bootstrap_image    = "${module.registry.repository_urls["db-bootstrap"]}:${var.infra_image_tag}"
+  internal_ca_pem       = module.pki.ca_cert_pem
+  pgbouncer_tls         = module.pki.certificates["pgbouncer"]
+  instance_class        = var.db_instance_class
+  password_versions     = var.db_password_versions
+  log_tampering_actions = module.telemetry.log_tampering_actions
 }
 
 module "valkey" {
@@ -203,6 +221,9 @@ module "app" {
   ops_certificate_arn         = module.edge.alb_certificate_arn
   ops_client_cidrs            = var.ops_client_cidrs
   desired_counts              = var.desired_counts
+  server_tls                  = { for name in ["app", "ops"] : name => module.pki.certificates[name] }
+  telemetry                   = { endpoint = module.telemetry.endpoint, ca_pem = module.pki.ca_cert_pem }
+  log_tampering_actions       = module.telemetry.log_tampering_actions
 }
 
 # infra/terraform/bootstrap creates the role, this configuration grants what a release touches.

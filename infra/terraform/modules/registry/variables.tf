@@ -4,9 +4,9 @@ variable "name" {
 }
 
 variable "repositories" {
-  description = "Images of the environment: the four deployables and the database images of infra/."
+  description = "Images of the environment: the four deployables and the images of infra/."
   type        = list(string)
-  default     = ["app", "worker", "ops", "migrator", "pgbouncer", "db-bootstrap"]
+  default     = ["app", "worker", "ops", "migrator", "pgbouncer", "db-bootstrap", "otel-collector"]
 }
 
 variable "kept_images" {

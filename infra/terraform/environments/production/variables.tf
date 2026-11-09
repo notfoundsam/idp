@@ -36,7 +36,7 @@ variable "availability_zones" {
 }
 
 variable "infra_image_tag" {
-  description = "Tag of the pgbouncer and db-bootstrap images, which a release builds from infra/ and pushes to ECR."
+  description = "Tag of the pgbouncer, db-bootstrap and otel-collector images, which a release builds from infra/ and pushes to ECR."
   type        = string
 }
 

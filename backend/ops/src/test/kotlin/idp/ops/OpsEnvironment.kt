@@ -1,6 +1,7 @@
 package idp.ops
 
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
+import idp.sharedkernel.testing.TestCa
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
 import org.springframework.jdbc.core.JdbcTemplate
@@ -64,7 +65,18 @@ class OpsEnvironment(
             "--OPENBAO_TOKEN=$encryptOnly",
         )
 
-    val arguments = settings + arrayOf("--server.port=0", "--management.server.port=0", "--IDP_METADATA_FILE=${idp.metadataFile}")
+    private val server = settings + arrayOf("--server.port=0", "--management.server.port=0", "--IDP_METADATA_FILE=${idp.metadataFile}")
+
+    val arguments = server + "--SERVER_TLS_ENABLED=false"
+
+    /** The CA of [tlsArguments], whose server certificate names `localhost`. */
+    val serverCa = TestCa("Test internal CA")
+
+    /** [arguments] with TLS on both ports, which the deployed profiles demand. */
+    val tlsArguments: Array<String> by lazy {
+        val (certificate, key) = serverCa.issue("localhost")
+        server + arrayOf("--SERVER_TLS_CERT=$certificate", "--SERVER_TLS_KEY=$key")
+    }
 
     fun audit(): List<Map<String, Any?>> = sql.queryForList("SELECT * FROM platform.operator_audit ORDER BY occurred_at, id")
 

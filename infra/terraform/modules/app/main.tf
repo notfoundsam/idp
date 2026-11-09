@@ -19,7 +19,16 @@ locals {
     DB_TLS_CA = var.database.pooled_tls_ca_pem
   }
 
-  ops_environment = merge(var.services.ops.environment, local.shared_environment, local.pooled_database, {
+  # migrator exports nothing, its lines reach the console alone.
+  telemetry = {
+    OTEL_EXPORTER_OTLP_ENDPOINT = var.telemetry.endpoint
+    OTEL_METRICS_EXPORTER       = "otlp"
+    # The collector turns metrics into EMF, which takes the change since the last export.
+    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta"
+    OTLP_TLS_CA                                       = var.telemetry.ca_pem
+  }
+
+  ops_environment = merge(var.services.ops.environment, local.shared_environment, local.pooled_database, local.telemetry, {
     DB_USERNAME         = "ops_runtime"
     TENANTS_BASE_DOMAIN = var.domain
   })
@@ -38,19 +47,23 @@ locals {
       cpu   = 1024
       # Argon2id takes its memory from the heap of every login running at once.
       memory = 2048
-      environment = merge(var.services.app.environment, local.shared_environment, local.pooled_database, {
+      environment = merge(var.services.app.environment, local.shared_environment, local.pooled_database, local.telemetry, {
         DB_USERNAME        = "app_runtime"
         APP_VERSION        = var.release
         MIN_CLIENT_VERSION = var.min_client_version
+        SERVER_TLS_CERT    = var.server_tls.app.cert_pem
       })
-      secrets = merge(var.services.app.secrets, { DB_PASSWORD = var.database.role_secret_arns["app_runtime"] })
+      secrets = merge(var.services.app.secrets, {
+        DB_PASSWORD    = var.database.role_secret_arns["app_runtime"]
+        SERVER_TLS_KEY = var.server_tls.app.key_secret_arn
+      })
       command = null
     }
     worker = {
       image  = "worker"
       cpu    = 512
       memory = 1024
-      environment = merge(var.services.worker.environment, local.shared_environment, local.pooled_database, {
+      environment = merge(var.services.worker.environment, local.shared_environment, local.pooled_database, local.telemetry, {
         DB_USERNAME             = "worker_runtime"
         PROVISIONER_DB_URL      = var.database.provisioner_jdbc_url
         PROVISIONER_DB_TLS_CA   = var.database.direct_tls_ca_pem
@@ -70,9 +83,12 @@ locals {
       image       = "ops"
       cpu         = 512
       memory      = 1024
-      environment = merge(local.ops_environment, { IDP_METADATA_FILE = local.metadata_file })
-      secrets     = merge(var.services.ops.secrets, { DB_PASSWORD = var.database.role_secret_arns["ops_runtime"] })
-      command     = null
+      environment = merge(local.ops_environment, { IDP_METADATA_FILE = local.metadata_file, SERVER_TLS_CERT = var.server_tls.ops.cert_pem })
+      secrets = merge(var.services.ops.secrets, {
+        DB_PASSWORD    = var.database.role_secret_arns["ops_runtime"]
+        SERVER_TLS_KEY = var.server_tls.ops.key_secret_arn
+      })
+      command = null
     }
     cli = {
       image       = "ops"
@@ -115,11 +131,13 @@ locals {
   }
 }
 
+# The console of each task. Deletion protection keeps a group and its lines until somebody turns it off, which CloudTrail records.
 resource "aws_cloudwatch_log_group" "this" {
   for_each = local.tasks
 
-  name              = "/${var.name}/${each.key}"
-  retention_in_days = var.log_retention_days
+  name                        = "/${var.name}/${each.key}"
+  retention_in_days           = var.log_retention_days
+  deletion_protection_enabled = true
 }
 
 # Public, but ops trusts the keys in it, so only those who may change IAM can change it. The operator writes it, see
@@ -160,8 +178,18 @@ data "aws_iam_policy_document" "execution_secrets" {
   for_each = local.execution_secrets
 
   statement {
+    sid       = "OwnSecrets"
+    effect    = "Allow"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = each.value
+  }
+
+  # ECS appends the console lines with this role, and whatever is granted later reads, changes or deletes none of them.
+  statement {
+    sid       = "NoLogReadOrChange"
+    effect    = "Deny"
+    actions   = var.log_tampering_actions
+    resources = ["*"]
   }
 }
 

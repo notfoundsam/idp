@@ -3,6 +3,7 @@ package idp.ops.web
 import idp.sharedkernel.web.ClientIpFilter
 import idp.sharedkernel.web.ClientIpResolver
 import idp.sharedkernel.web.SecurityHeadersFilter
+import idp.sharedkernel.web.TlsGuard
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -16,6 +17,9 @@ private val DEPLOYED = listOf("prod", "staging")
 
 @Configuration(proxyBeanMethods = false)
 class WebConfiguration {
+    @Bean
+    fun tlsGuard(environment: Environment) = TlsGuard(environment, serves = true)
+
     @Bean
     fun securityHeadersFilter() = SecurityHeadersFilter()
 

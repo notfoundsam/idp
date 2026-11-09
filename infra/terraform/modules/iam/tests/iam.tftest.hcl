@@ -115,6 +115,30 @@ run "ops_and_the_cli_read_no_secret_and_open_no_shell" {
   }
 }
 
+run "no_task_reads_changes_or_deletes_the_stored_telemetry" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for name in keys(aws_iam_role.task) : contains([
+        for statement in data.aws_iam_policy_document.task[name].statement : "${statement.effect} ${join(",", sort(statement.actions))} -> ${join(",", sort(statement.resources))}"
+      ], "Deny cloudwatch:*,logs:*,xray:* -> *")
+    ])
+    error_message = "A task may reach CloudWatch Logs, X-Ray or the metrics, so it could read or delete what it logged."
+  }
+
+  assert {
+    condition = alltrue(flatten([
+      for name in keys(aws_iam_role.task) : [
+        for statement in data.aws_iam_policy_document.task[name].statement : [
+          for action in statement.actions : !startswith(action, "logs:") && !startswith(action, "xray:") && !startswith(action, "cloudwatch:")
+        ] if statement.effect == "Allow"
+      ]
+    ]))
+    error_message = "A task role is granted a call of CloudWatch Logs, X-Ray or CloudWatch."
+  }
+}
+
 run "only_the_cli_names_its_caller" {
   command = plan
 

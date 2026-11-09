@@ -66,7 +66,7 @@ variable "private_subnet_ids" {
 }
 
 variable "security_group_ids" {
-  description = "Security groups from the network module, by workload. The module adds the rules of the load balancers and of SMTP."
+  description = "Security groups from the network module, by workload. The module adds the rules of the load balancers and of SMTP, modules/telemetry those of OTLP."
   type        = map(string)
 
   validation {
@@ -258,6 +258,47 @@ variable "cpu_architecture" {
   description = "CPU architecture of the images."
   type        = string
   default     = "ARM64"
+}
+
+variable "server_tls" {
+  description = "Server certificate of app and ops from modules/pki and the secret that holds its key. Both ports serve it to the ALB."
+  type = map(object({
+    cert_pem       = string
+    key_secret_arn = string
+  }))
+
+  validation {
+    condition     = toset(keys(var.server_tls)) == toset(["app", "ops"])
+    error_message = "Certificates for app and ops, and for nothing else."
+  }
+
+  validation {
+    condition     = alltrue([for tls in values(var.server_tls) : can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:", tls.key_secret_arn))])
+    error_message = "A key is the ARN of a secret in Secrets Manager."
+  }
+}
+
+variable "telemetry" {
+  description = "The collector of modules/telemetry and the internal CA, the one issuer the exporters trust."
+  type = object({
+    endpoint = string
+    ca_pem   = string
+  })
+
+  validation {
+    condition     = startswith(var.telemetry.endpoint, "https://") && strcontains(var.telemetry.ca_pem, "BEGIN CERTIFICATE")
+    error_message = "An HTTPS endpoint and the PEM certificate of the CA that certifies it."
+  }
+}
+
+variable "log_tampering_actions" {
+  description = "Calls of CloudWatch Logs that every execution role denies, the output log_tampering_actions of modules/telemetry."
+  type        = list(string)
+
+  validation {
+    condition     = alltrue([for action in ["logs:Delete*", "logs:PutRetentionPolicy", "logs:Get*"] : contains(var.log_tampering_actions, action)])
+    error_message = "The list denies at least deleting, shortening and reading the lines."
+  }
 }
 
 variable "log_retention_days" {

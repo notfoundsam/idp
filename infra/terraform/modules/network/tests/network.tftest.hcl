@@ -129,4 +129,9 @@ run "services_reach_aws_through_the_endpoints_alone" {
     condition     = contains(var.interface_endpoints, "email-smtp")
     error_message = "SES is out of reach without a route to the internet."
   }
+
+  assert {
+    condition     = contains(var.interface_endpoints, "logs") && contains(var.interface_endpoints, "xray") && contains(keys(aws_vpc_security_group_egress_rule.endpoints), "otel-collector")
+    error_message = "The collector cannot reach CloudWatch Logs and X-Ray without a route to the internet."
+  }
 }

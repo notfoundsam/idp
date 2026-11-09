@@ -28,6 +28,13 @@ spring:
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
+  ssl:
+    bundle:
+      pem:
+        # The CA of the collector, and no other: without it the exporters would trust the JVM store.
+        otlp:
+          truststore:
+            certificate: ${OTLP_TLS_CA:}
 
 idp:
   tenants:
@@ -94,3 +101,16 @@ management:
     metrics:
       export:
         enabled: false
+        ssl:
+          bundle: otlp
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          ssl:
+            bundle: otlp
+    logging:
+      export:
+        otlp:
+          ssl:
+            bundle: otlp

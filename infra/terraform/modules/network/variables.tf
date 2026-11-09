@@ -22,13 +22,13 @@ variable "availability_zones" {
 variable "interface_endpoints" {
   description = "AWS services the tasks reach through interface endpoints. The VPC has no route to the internet."
   type        = list(string)
-  default     = ["ecr.api", "ecr.dkr", "logs", "secretsmanager", "kms", "sts", "email-smtp"]
+  default     = ["ecr.api", "ecr.dkr", "logs", "secretsmanager", "kms", "sts", "email-smtp", "xray"]
 }
 
 variable "services" {
   description = "Workloads that get a security group of their own, which other modules add rules to."
   type        = list(string)
-  default     = ["app", "worker", "ops", "migrator", "pgbouncer", "db-bootstrap"]
+  default     = ["app", "worker", "ops", "migrator", "pgbouncer", "db-bootstrap", "otel-collector"]
 }
 
 variable "deletion_protection" {

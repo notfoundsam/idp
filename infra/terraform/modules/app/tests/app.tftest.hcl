@@ -132,6 +132,15 @@ variables {
   ops_alb_arn                 = "arn:aws:elasticloadbalancing:eu-central-1:111111111111:loadbalancer/app/idp-test-ops/60dc6c495c0c9188"
   ops_certificate_arn         = "arn:aws:acm:eu-central-1:111111111111:certificate/0b4f3c1e-7a52-4d9e-9a3c-5f0e2d8b6a41"
   ops_client_cidrs            = ["10.100.0.0/22"]
+  server_tls = {
+    app = { cert_pem = "app certificate", key_secret_arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/tls/app-Tl51Ap" }
+    ops = { cert_pem = "ops certificate", key_secret_arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/tls/ops-Tl52Op" }
+  }
+  telemetry = {
+    endpoint = "https://otel-collector.idp.internal:4318"
+    ca_pem   = "-----BEGIN CERTIFICATE-----\ninternal CA\n-----END CERTIFICATE-----\n"
+  }
+  log_tampering_actions = ["logs:Delete*", "logs:Get*", "logs:PutRetentionPolicy", "logs:PutLogGroupDeletionProtection"]
 }
 
 run "every_rule_to_app_requires_the_header_of_the_distribution" {
@@ -174,13 +183,13 @@ run "the_health_check_of_the_alb_reaches_the_management_port" {
   command = plan
 
   assert {
-    condition     = alltrue([for group in aws_lb_target_group.this : group.port == 8080 && group.target_type == "ip" && group.protocol == "HTTP"])
-    error_message = "Requests reach another port than the one of the application."
+    condition     = alltrue([for group in aws_lb_target_group.this : group.port == 8080 && group.target_type == "ip" && group.protocol == "HTTPS"])
+    error_message = "Requests reach another port than the one of the application, or without TLS."
   }
 
   assert {
-    condition     = alltrue([for group in aws_lb_target_group.this : one(group.health_check).port == "8081" && one(group.health_check).matcher == "200"])
-    error_message = "The health check does not ask the management port."
+    condition     = alltrue([for group in aws_lb_target_group.this : one(group.health_check).port == "8081" && one(group.health_check).matcher == "200" && one(group.health_check).protocol == "HTTPS"])
+    error_message = "The health check does not ask the management port over TLS."
   }
 
   assert {
@@ -456,7 +465,7 @@ run "each_execution_role_reads_its_own_secrets" {
   command = plan
 
   assert {
-    condition = one(data.aws_iam_policy_document.execution_secrets["worker"].statement).resources == toset([
+    condition = one([for statement in data.aws_iam_policy_document.execution_secrets["worker"].statement : statement.resources if statement.effect == "Allow"]) == toset([
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/mail/smtp-Ij56Kl",
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/db/worker_runtime-Bb22Bb",
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/db/provisioner-Ee55Ee",
@@ -465,25 +474,131 @@ run "each_execution_role_reads_its_own_secrets" {
   }
 
   assert {
-    condition = one(data.aws_iam_policy_document.execution_secrets["ops"].statement).resources == toset([
+    condition = one([for statement in data.aws_iam_policy_document.execution_secrets["ops"].statement : statement.resources if statement.effect == "Allow"]) == toset([
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/db/ops_runtime-Cc33Cc",
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/ops/idp-metadata-Md5Xyz",
+      "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/tls/ops-Tl52Op",
     ])
-    error_message = "ops reads other secrets than its role and the metadata."
+    error_message = "ops reads other secrets than its role, its TLS key and the metadata."
   }
 
   assert {
     condition = alltrue([
       for name in ["cli", "migrator", "recovery"] :
-      length(one(data.aws_iam_policy_document.execution_secrets[name].statement).resources) == 1
+      length(one([for statement in data.aws_iam_policy_document.execution_secrets[name].statement : statement.resources if statement.effect == "Allow"])) == 1
     ])
     error_message = "A one-off task reads more than the password of its role."
   }
 
   assert {
-    condition     = !contains(one(data.aws_iam_policy_document.execution_secrets["ops"].statement).resources, var.services.app.secrets.VALKEY_PASSWORD)
+    condition     = !contains(one([for statement in data.aws_iam_policy_document.execution_secrets["ops"].statement : statement.resources if statement.effect == "Allow"]), var.services.app.secrets.VALKEY_PASSWORD)
     error_message = "ops reads a secret of app."
   }
+}
+
+run "app_and_ops_serve_tls_and_every_service_exports_to_the_collector_over_tls" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for name in ["app", "ops"] :
+      local.tasks[name].environment.SERVER_TLS_CERT == var.server_tls[name].cert_pem &&
+      local.tasks[name].secrets.SERVER_TLS_KEY == var.server_tls[name].key_secret_arn &&
+      !contains(keys(local.tasks[name].environment), "SERVER_TLS_ENABLED")
+    ])
+    error_message = "app or ops does not serve the certificate of the internal CA with its key from the secret."
+  }
+
+  assert {
+    condition = alltrue([
+      for name in ["worker", "cli", "migrator", "recovery"] :
+      !contains(keys(local.tasks[name].environment), "SERVER_TLS_CERT") && !contains(keys(local.tasks[name].secrets), "SERVER_TLS_KEY")
+    ])
+    error_message = "A task that no load balancer reaches gets a server key."
+  }
+
+  assert {
+    condition = alltrue([
+      for name in ["app", "worker", "ops", "cli"] :
+      local.tasks[name].environment.OTEL_EXPORTER_OTLP_ENDPOINT == "https://otel-collector.idp.internal:4318" &&
+      local.tasks[name].environment.OTEL_METRICS_EXPORTER == "otlp" &&
+      local.tasks[name].environment.OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE == "delta" &&
+      local.tasks[name].environment.OTLP_TLS_CA == var.telemetry.ca_pem
+    ])
+    error_message = "A service exports without TLS, to another collector or trusting another CA than the internal one."
+  }
+
+  assert {
+    condition     = alltrue([for name in ["migrator", "recovery"] : !contains(keys(local.tasks[name].environment), "OTEL_EXPORTER_OTLP_ENDPOINT")])
+    error_message = "migrator exports telemetry, which it has no exporter for."
+  }
+}
+
+run "the_console_lines_are_written_and_never_read_changed_or_deleted_by_a_task" {
+  command = plan
+
+  assert {
+    condition     = alltrue([for group in aws_cloudwatch_log_group.this : group.deletion_protection_enabled && group.retention_in_days == 90])
+    error_message = "A console log group can be deleted, or keeps its lines for another period than 90 days."
+  }
+
+  assert {
+    condition = alltrue([
+      for name, document in data.aws_iam_policy_document.execution_secrets : anytrue([
+        for statement in document.statement : statement.effect == "Deny" && statement.actions == toset(var.log_tampering_actions) && statement.resources == toset(["*"])
+      ])
+    ])
+    error_message = "An execution role may read, shorten or delete the console lines it writes."
+  }
+
+  assert {
+    condition = alltrue(flatten([
+      for document in values(data.aws_iam_policy_document.execution_secrets) : [
+        for statement in document.statement : [for action in statement.actions : !startswith(action, "logs:")] if statement.effect == "Allow"
+      ]
+    ]))
+    error_message = "An execution role is granted a call of CloudWatch Logs beside the managed policy of ECS."
+  }
+}
+
+run "a_service_that_switches_tls_off_refused" {
+  command = plan
+
+  variables {
+    services = {
+      app      = { environment = { SERVER_TLS_ENABLED = "false" }, secrets = {} }
+      worker   = { environment = {}, secrets = {} }
+      ops      = { environment = {}, secrets = {} }
+      migrator = { environment = {}, secrets = {} }
+    }
+  }
+
+  expect_failures = [aws_ecs_task_definition.this["app"]]
+}
+
+run "a_collector_without_tls_refused" {
+  command = plan
+
+  variables {
+    telemetry = {
+      endpoint = "http://otel-collector.idp.internal:4318"
+      ca_pem   = "-----BEGIN CERTIFICATE-----\ninternal CA\n-----END CERTIFICATE-----\n"
+    }
+  }
+
+  expect_failures = [var.telemetry]
+}
+
+run "a_missing_server_certificate_refused" {
+  command = plan
+
+  variables {
+    server_tls = {
+      app = { cert_pem = "app certificate", key_secret_arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/tls/app-Tl51Ap" }
+    }
+  }
+
+  expect_failures = [var.server_tls]
 }
 
 run "services_run_in_the_private_subnets_without_exec" {
