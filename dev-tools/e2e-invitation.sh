@@ -28,3 +28,4 @@ reinvite acme.idp.test admin@acme.test
 reinvite acme.idp.test services@acme.test
 reinvite ops-sso.idp.test operator@ops-sso.test
 reinvite ops-sso.idp.test outsider@ops-sso.test
+reinvite ops-sso.idp.test onboarding@ops-sso.test

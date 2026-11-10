@@ -1,11 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { acceptInvitation, cspViolations, enterLogin, enterPassword, saveRecoveryCodes, sessionCookie } from './support/login'
+import { acceptInvitation, cspViolations, enterLogin, enterPassword, sessionCookie } from './support/login'
+import { OPS, OPS_LOGIN, OPS_SSO, registerPasskey } from './support/ops'
 import { virtualAuthenticator } from './support/passkey'
-
-const OPS = 'https://ops.idp.test'
-const OPS_SSO = 'https://ops-sso.idp.test'
-const OPS_LOGIN = `${OPS}/saml2/authenticate/ops-sso`
 
 /** The first operator, whom the seed assigns to `ops`, and another admin of the service tenant, whom nobody assigns. */
 const OPERATOR = 'operator@ops-sso.test'
@@ -16,15 +13,6 @@ async function opsSession(page: Page): Promise<'signed-in' | 'anonymous'> {
   const status = (await page.request.get(`${OPS}/api/tenants/${randomUUID()}`)).status()
   expect([401, 404]).toContain(status)
   return status === 404 ? 'signed-in' : 'anonymous'
-}
-
-/** The service tenant asks for a passkey, so the step offers nothing else to register. */
-async function registerPasskey(page: Page) {
-  await expect(page.getByRole('button', { name: 'Register a passkey' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Set up an authenticator app' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Register a passkey' }).click()
-  await saveRecoveryCodes(page)
-  await page.waitForURL(`${OPS_SSO}/console/`)
 }
 
 test.describe('the login of ops', () => {

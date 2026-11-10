@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
+import { api, metadataOf, registerSp, uniqueSp } from './support/admin'
 import {
   ACME,
   acceptInvitation,
@@ -26,67 +27,10 @@ const USER_CARD = /\/console\/admin\/users\/([0-9a-f-]{36})$/
 const SAML_METADATA = process.env.SAML_METADATA_DIR ?? '../../dev-tools/simplesamlphp/metadata'
 const TEST_SP = 'SimpleSAMLphp'
 
-interface Answer {
-  status: number
-  body: string
-}
-
-/** Through the API with the session of the page, for what a test sets up or leaves as it found it. */
-async function api(page: Page, method: string, path: string, body?: unknown): Promise<Answer> {
-  return page.evaluate(
-    async ({ method, path, body }) => {
-      const csrf = document.cookie
-        .split('; ')
-        .find((it) => it.startsWith('__Host-csrf='))
-        ?.slice('__Host-csrf='.length)
-      const headers = new Headers({ Accept: 'application/json', 'X-CSRF-Token': csrf ?? '' })
-      if (body !== undefined) headers.set('Content-Type', 'application/json')
-      const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
-      return { status: response.status, body: await response.text() }
-    },
-    { method, path, body },
-  )
-}
-
-/** A service of its own per test and run, so nothing an earlier run left can clash with its EntityID. */
-function metadataOf(entityId: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="${entityId}">
-  <md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
-    <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="${entityId}/acs" index="0" isDefault="true"/>
-    <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="${entityId}/acs2" index="1"/>
-  </md:SPSSODescriptor>
-</md:EntityDescriptor>`
-}
-
-const uniqueSp = () => {
-  const suffix = randomBytes(6).toString('hex')
-  return { name: `e2e ${suffix}`, entityId: `https://e2e-${suffix}.example/saml` }
-}
-
 async function upload(page: Page, name: string, content: string, file = 'metadata.xml') {
   await page.getByLabel('Name', { exact: true }).fill(name)
   await page.getByLabel('Metadata file').setInputFiles({ name: file, mimeType: 'text/xml', buffer: Buffer.from(content) })
   await page.getByRole('button', { name: 'Connect' }).click()
-}
-
-async function registerSp(page: Page, name: string, entityId: string): Promise<string> {
-  const answer = await page.evaluate(
-    async ({ name, metadata }) => {
-      const csrf = document.cookie
-        .split('; ')
-        .find((it) => it.startsWith('__Host-csrf='))
-        ?.slice('__Host-csrf='.length)
-      const form = new FormData()
-      form.append('name', name)
-      form.append('metadata', new Blob([metadata], { type: 'text/xml' }), 'metadata.xml')
-      const response = await fetch('/api/admin/service-providers', { method: 'POST', headers: { 'X-CSRF-Token': csrf ?? '' }, body: form })
-      return { status: response.status, body: await response.text() }
-    },
-    { name, metadata: metadataOf(entityId) },
-  )
-  expect(answer.status).toBe(201)
-  return (JSON.parse(answer.body) as { id: string }).id
 }
 
 /** Leaves no service of the test behind, also when the test failed before its own removal. */
