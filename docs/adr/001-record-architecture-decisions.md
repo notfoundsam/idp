@@ -16,7 +16,7 @@ A multi-tenant SAML Identity Provider for B2B customers, built as one Kotlin and
 - **Layers:** bounded contexts in `modules/` expose services. Audiences in `audience/` own CQRS messages, controllers, permissions and responses.
 - **Context graph:** `federation → authentication → identity` and `federation → identity`. `tenancy`, `identity` and `audit` depend on no other context.
 - **Events:** one `platform.outbox` table holding IDs only. Audit is a synchronous port, not an event consumer.
-- **Portability:** the application speaks open protocols, and the AWS SDK lives in one adapter, so a move on-premises replaces infrastructure rather than code.
+- **Portability:** the application speaks open protocols, and the AWS SDK lives only in the `adapter.aws` packages of `shared-kernel`, so a move on-premises replaces infrastructure rather than code.
 
 ## Rationale
 

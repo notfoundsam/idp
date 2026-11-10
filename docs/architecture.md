@@ -65,3 +65,5 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 - `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP, 009 AWS infrastructure
 - `docs/security/`: ASVS map, authorization, authentication, sessions, limits, input validation, data protection, crypto inventory, logging, communications and runbooks
 - `docs/testing.md`: test layers, tools and fixtures
+- `docs/release.md`: releases and rollbacks of an environment
+- `docs/portability.md`: what replaces each AWS service on premises, and the order of a move

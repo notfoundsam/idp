@@ -73,6 +73,7 @@ The KMS rotates a KEK by itself: AWS KMS through `EnableKeyRotation` with 365 da
 3. A context made before the move carries the old URI. When that URI fails, `KeyHierarchy` reads both KEKs from `platform.tenants` once and tries the other one.
 4. The previous KEK still opens backups taken before the move. `PreviousKekJob` destroys it after `idp.kms.previous-kek-retention` from `KMS_PREVIOUS_KEK_RETENTION`: 35 days by default, as backups live 30, and in AWS 45, as long as the erasure journal keeps an entry. It records `tenant.previous_kek_destroyed`.
 5. Offboarding and a restore destroy both KEKs of a tenant.
+6. The platform KEK does not move with the tenants: `worker`, `ops`, the CLI and the recovery run each know one URI, `PLATFORM_KEK_URI`, and a contact sealed under it names no KEK. Its data lives briefly, an application contact until the tenant is active and a reinvite until `worker` sends it. Create the platform KEK in the new KMS, let the operators approve the open applications and submit or reinvite nothing until the switch, wait until no row of `platform.tenant_applications` holds a `contact_ciphertext` and `platform.admin_reinvites` is empty, then release the new URI to all four at once. A contact sealed under the old KEK after that cannot be read.
 
 ## Replacing an algorithm
 
