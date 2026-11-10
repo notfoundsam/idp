@@ -194,6 +194,10 @@ jobs:
           secret=$(jq -er .smoke.secret "$RUNNER_TEMP/release-config.json")
           host=$(jq -er .smoke.host "$RUNNER_TEMP/release-config.json")
           SMOKE_LOGIN=$(aws secretsmanager get-secret-value --secret-id "$secret" --query SecretString --output text)
+          password=$(jq -er .password <<<"$SMOKE_LOGIN")
+          totp_secret=$(jq -er .totpSecret <<<"$SMOKE_LOGIN")
+          echo "::add-mask::$password"
+          echo "::add-mask::$totp_secret"
           export SMOKE_LOGIN
           node infra/deploy/smoke-sso.mjs --host "$host" --app-version "$APP_VERSION"
       - name: Alarms

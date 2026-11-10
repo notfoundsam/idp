@@ -173,10 +173,6 @@ if (import.meta.main) {
   try {
     const options = parseOptions(process.argv.slice(2))
     const login = parseLogin(process.env.SMOKE_LOGIN)
-    if (process.env.GITHUB_ACTIONS === 'true') {
-      console.log(`::add-mask::${login.password}`)
-      console.log(`::add-mask::${login.totpSecret}`)
-    }
     await smoke({
       host: options.host,
       login,

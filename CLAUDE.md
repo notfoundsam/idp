@@ -51,7 +51,7 @@ The frontend runs only in Docker, so the host needs no Node. Use `docker compose
 
 Kotlin stays at the newest version CodeQL supports, currently 2.4.20. `renovate.json` holds the limit.
 
-CodeQL analyzes JavaScript and TypeScript on every PR, but Kotlin only on a manual run, because its extractor hangs on Kotlin code that uses jOOQ. Static analysis of Kotlin must return to CI before the first customer.
+CodeQL analyzes Kotlin, JavaScript and TypeScript on every PR with `security-extended`, and the job fails on a finding of CVSS medium or above (`infra/deploy/code-scanning.mjs`). Its Kotlin extractor runs inside the Kotlin daemon, so `kotlin.daemon.jvmargs` in `backend/gradle.properties` gives that daemon 3 GiB: with the 512 MiB it inherits from Gradle, the build runs out of heap.
 
 ## Task board
 
