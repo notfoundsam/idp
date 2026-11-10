@@ -1,0 +1,13 @@
+{
+  "name": "idp-deploy",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "0.8.15",
+    "xml-crypto": "6.4.0"
+  }
+}

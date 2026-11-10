@@ -81,6 +81,12 @@ dev-tools/simplesamlphp/fetch-idp-metadata.sh
 
 Then https://sp.idp.test/simplesaml/whoami.php logs in through `acme` and shows the NameID, the attributes and the authentication context it received. Tenants created before the SP registry have no SAML identity, so `make clean` first if `/saml/metadata` answers `404`. `SamlInteropTest` runs the same configuration in a container.
 
+## Release smoke test
+
+`make release-smoke` sets up the synthetic tenant of the release smoke test on `release-smoke.idp.test` as [docs/release.md](../docs/release.md#the-synthetic-tenant) does in an environment: the operator CLI submits and approves it, and `dev-tools/release-smoke.mjs` accepts the invitation of `admin@release-smoke.test` through the API, registers the test SP of `infra/deploy`, invites a synthetic user with TOTP and assigns it. The login of that user lands in `dev-tools/release-smoke/login.json`, outside git. A second run changes nothing while the file exists, so delete it after `make clean`.
+
+`make smoke-sso` runs `infra/deploy/smoke-sso.mjs` in the `release-smoke` container against that tenant, as the workflow `Deploy` runs it against an environment. Each run takes a TOTP code, so a second run in the same 30 seconds waits for the next one.
+
 ## Operator
 
 The API of `ops` needs a SAML login at the service tenant `ops-sso`: https://ops.idp.test/saml2/authenticate/ops-sso starts it, and a request without a session gets 401. The service tenant requires a passkey, which the operator registers in the login after setting the password, and `frontend/e2e/ops-login.spec.ts` walks this login. `ops` answers on `ops.idp.test` only.

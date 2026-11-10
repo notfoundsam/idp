@@ -8,9 +8,9 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 167 |
-| Partial | Part of the control is merged, the listed tasks finish it | 12 |
-| Planned | The listed tasks build the control | 2 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 170 |
+| Partial | Part of the control is merged, the listed tasks finish it | 10 |
+| Planned | The listed tasks build the control | 1 |
 | N/A | The feature does not exist, the note says why | 67 |
 | Exception | Deliberate deviation, see [Exceptions](#exceptions) | 5 |
 
@@ -328,10 +328,10 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V15.1.1 | 1 | Planned | T42 | `docs/security/dependencies.md` defines remediation time frames |
-| V15.1.2 | 2 | Partial | T42 | The dependency graph reaches GitHub from CI, a release SBOM remains |
+| V15.1.1 | 1 | Done | T42 | `docs/security/dependencies.md` sets remediation time frames by severity and update time frames, and `Deploy` stops on a breach (`vulnerabilities.test.mjs`) |
+| V15.1.2 | 2 | Done | T42 | Every release keeps CycloneDX SBOMs of the jars and the apps as an artifact, and `registries.mjs` allows only Maven Central, the Plugin Portal, Shibboleth for OpenSAML and npm, in CI and the release (`registries.test.mjs`) |
 | V15.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists expensive operations |
-| V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
+| V15.2.1 | 1 | Done | T42 | Trivy over the SBOMs of a release and the age of open Renovate pull requests stop `Deploy` past the time frames of `docs/security/dependencies.md` (`vulnerabilities.test.mjs`) |
 | V15.2.2 | 2 | Done | | Throttling, the hash semaphore and the limits on flows, open SAML requests and request size are merged (`HashLimitTest`, `LoginLimitsTest`, `SamlRequestsTest`). An inflated request is cut at 32 KiB before parsing (`AuthnRequestValidatorTest`) |
 | V15.2.3 | 2 | Done | T41 | Seed runs only in `local` (`LocalSeedTest`). `modules/app` gives every task `prod` or `staging` and refuses `local` and a profile from the settings of the root (`app.tftest.hcl`), and `ops` refuses `local` beside either (`OpsApiTest`) |
 | V15.3.1 | 1 | Done | T32, T34, T36 | Audiences own their responses and build them field by field (`ArchitectureRulesTest`), and every contract test checks that a response carries exactly the fields of its schema (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |

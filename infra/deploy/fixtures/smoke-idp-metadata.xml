@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?><md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://release-smoke.idp.test/saml/metadata"><md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>MIIDyjCCAjKgAwIBAgIQKhRWr9qVgFMyGqRtdnGL6TANBgkqhkiG9w0BAQsFADAhMR8wHQYDVQQD
+DBZyZWxlYXNlLXNtb2tlLmlkcC50ZXN0MB4XDTI2MTEwOTIyNDU1M1oXDTMxMTEwOTIyNDU1M1ow
+ITEfMB0GA1UEAwwWcmVsZWFzZS1zbW9rZS5pZHAudGVzdDCCAaIwDQYJKoZIhvcNAQEBBQADggGP
+ADCCAYoCggGBAI3m4LhNaSqF44y3klM+g15erV55tdMhDs0+UEZ4OAi9Ef6CFcfJGE+Q9k/5R3Bp
+IJ945niwfFCxYTEy5YprOdRDkSe1rkPu5iq6jAO+FmBc5fymCX/fvL6QwcKqewt3OtagtTlaNDDs
+qUI7SR5JHtOoLB7PLEargm3hZ+1gkyYO/Ir3JHmP+CmU6ZDrmWB5xq+BjcqRtffj/URLoN33Iuhf
+qEz+fyNIXv7zE5q7xwqZ3lJJnCoSZmFRmQ50w4W9mxhT6WZNSFzYYAjY9B/RG2nYIx8xmP4/okCw
+UC84zV0iww69Me9XPbV7em7nVgFdEC73qZxhsfjmMtn8hTltRqgnDYXMfSrV9tWUv1HWJG/0NS8L
+nTgEG1rVRlMElDk2yla0O7xwYp+vzDFomHIakVcyKynuilvxhYiT9ougS60h4h+rwsDyAvVhVAP9
+s/TET1WRzhrIO+Zde1GfXa9/7p4GZpKjBaIQwR0gcL06tJ1KFmu1eVkzcRdSiNvQhzyk9QIDAQAB
+MA0GCSqGSIb3DQEBCwUAA4IBgQBR6zCi7zVkn4Iamuzc8mzsyteubAlRGBbmqrlw0IQsdjXvMbro
+nyrJGgA4cD6I4kQTyupq/UIJ7x3N2Kmk0EJm3PFj2rKDe5BHIWJFnI4RiRB2YyjPGK0yMVjGNFNb
+DphMAvYC4Su0AniPzpzZqG1B4k/6UmTh/ZD6SzVneRY9+Tc5dmDm/a+0SUedqTqo9Ah+fnnMBkgF
+eF2fflgsJ/eHT6+e8x3qOf1j1r+nP0fZRLUX3YR/Thtfa92eGrLFB7lMEo27YOGk8yTTfkKQSSWc
+hFVMgH4uh6K6KmKNFHibZw0yOTKMAXNvsmoVYzThoPQnelbM6G19JvRRMfRjFRoEUKGevdthFY/y
+st/qJKuWsJ/0driwsCpkW0G4VYa+wpqcwQUwSj5CJYWoRsajbZpVuZeGfpgchFQbjQmn3pO8sOO9
+a2xKRXZHISSx4mZIX8nV5rdScS2hY+jQ9qiSqvSmtvxGkRoGXuTvHs1PbsjR/olgnAx3wPrkMdw/
+49G7Kqk=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat><md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://release-smoke.idp.test/saml/sso"/><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://release-smoke.idp.test/saml/sso"/></md:IDPSSODescriptor></md:EntityDescriptor>

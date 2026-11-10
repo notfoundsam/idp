@@ -40,6 +40,8 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      # The open Renovate pull requests, whose age the update time frames bound.
+      pull-requests: read
     env:
       ENVIRONMENT: ${{ inputs.environment }}
     steps:
@@ -49,6 +51,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.22.2
+      - name: Packages of the release scripts
+        run: corepack pnpm --dir infra/deploy install --frozen-lockfile
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -70,6 +74,35 @@ jobs:
             --run-number "$GITHUB_RUN_NUMBER" --out "$RUNNER_TEMP/release-plan.json" \
             --min-client-version "$MIN_CLIENT_VERSION" "${options[@]}" | tee -a "$GITHUB_OUTPUT"
           { echo '```json'; cat "$RUNNER_TEMP/release-plan.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      # docs/security/dependencies.md: the registries, the SBOMs of what will be live, and the time frames, before anything moves.
+      - name: Registries
+        run: node infra/deploy/registries.mjs
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: corretto
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: SBOMs
+        id: sbom
+        run: make sbom
+      - name: Vulnerabilities
+        run: make vulnerabilities
+      - name: Keep the SBOMs
+        if: always() && steps.sbom.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ inputs.environment }}-${{ steps.plan.outputs.version }}
+          path: build/sbom/
+          retention-days: 90
+      - name: Updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr list --repo "$GITHUB_REPOSITORY" --label dependencies --state open --limit 500 \
+            --json number,title,createdAt,labels > "$RUNNER_TEMP/updates.json"
+          node infra/deploy/updates.mjs --pulls "$RUNNER_TEMP/updates.json"
+
       - name: Log in to ECR
         run: |
           registry=$(jq -r '.repositories.app | split("/")[0]' "$RUNNER_TEMP/release-config.json")
@@ -77,13 +110,6 @@ jobs:
       - name: Images of infra
         run: node infra/deploy/images.mjs --config "$RUNNER_TEMP/release-config.json" --set infra
 
-      - if: steps.plan.outputs.backend == 'true'
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: corretto
-          java-version: "25"
-      - if: steps.plan.outputs.backend == 'true'
-        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - name: Jars
         if: steps.plan.outputs.backend == 'true'
         run: ./gradlew bootJar
@@ -158,13 +184,21 @@ jobs:
         env:
           VERSION: ${{ steps.plan.outputs.version }}
         run: node infra/deploy/release-assets.mjs activate --bucket "$(jq -r .bucket "$RUNNER_TEMP/release-config.json")" --version "$VERSION"
-      # Filled by smoke-sso, task 42 part 3. Until then a release that may not skip the test fails here and rolls back.
+      # A login of the synthetic tenant through the test SP of infra/deploy, see docs/release.md, answered by the app of this release.
       - name: Smoke SSO
         id: smoke
         if: steps.plan.outputs.rollout == 'true' && steps.plan.outputs.smoke == 'true'
+        env:
+          APP_VERSION: ${{ steps.plan.outputs.frontend-version }}
         run: |
-          echo "::error title=Smoke SSO::infra/deploy/smoke-sso.mjs does not exist yet"
-          exit 1
+          secret=$(jq -er .smoke.secret "$RUNNER_TEMP/release-config.json")
+          host=$(jq -er .smoke.host "$RUNNER_TEMP/release-config.json")
+          SMOKE_LOGIN=$(aws secretsmanager get-secret-value --secret-id "$secret" --query SecretString --output text)
+          export SMOKE_LOGIN
+          node infra/deploy/smoke-sso.mjs --host "$host" --app-version "$APP_VERSION"
+      - name: Alarms
+        if: steps.plan.outputs.rollout == 'true'
+        run: node infra/deploy/alarms.mjs --config "$RUNNER_TEMP/release-config.json" --minutes 5
       - name: Verified
         id: verified
         if: steps.plan.outputs.rollout == 'true'

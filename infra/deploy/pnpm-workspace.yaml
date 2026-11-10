@@ -1,0 +1,2 @@
+# The release scripts are a project of their own, apart from the frontend, so the smoke test brings no package into the pages.
+minimumReleaseAge: 10080

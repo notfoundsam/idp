@@ -5,7 +5,7 @@ TERRAFORM_ROOTS := bootstrap environments/staging environments/production
 TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/edge modules/iam modules/network modules/release modules/static modules/telemetry
 TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install web-release
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install web-release deploy-install check-registries sbom vulnerabilities release-smoke smoke-sso
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -61,9 +61,43 @@ web-release: frontend-install
 	docker compose run --rm --no-deps -e APP_VERSION=$(APP_VERSION) -e WEB_OUT_DIR=/app/frontend/release frontend \
 	  corepack pnpm -r --filter '!e2e' --if-present build
 
-# The release scripts against fakes of S3 and ECS, in the image of the frontend and without its packages.
-test-deploy:
+# The release scripts against fakes of S3, ECS and the IdP, in the image of the frontend with the packages of infra/deploy alone.
+test-deploy: deploy-install
 	docker compose run --rm --no-deps frontend node --test '/app/infra/deploy/*.test.mjs'
+
+# infra/deploy is a pnpm project of its own, so the smoke test brings no package into the pages, see docs/release.md.
+deploy-install:
+	docker compose run --rm --no-deps -v "$(CURDIR)/infra/deploy:/deploy" -w /deploy frontend corepack pnpm install --frozen-lockfile
+
+# Maven Central, the Gradle Plugin Portal, Shibboleth for OpenSAML and npm only, see docs/security/dependencies.md.
+check-registries:
+	docker compose run --rm --no-deps -v "$(CURDIR):/repo:ro" -w /repo frontend node infra/deploy/registries.mjs
+
+# The CycloneDX SBOMs of what a release ships, into build/sbom: the runtime classpath of the jars and the production packages of the
+# apps. Then Trivy matches them with known vulnerabilities, and the release stops on one past its time frame.
+sbom:
+	$(GRADLE) cyclonedxBom
+	mkdir -p build/sbom
+	cp backend/build/reports/cyclonedx/bom.json build/sbom/backend.cdx.json
+	docker compose run --rm --no-deps -v "$(CURDIR)/build/sbom:/sbom" frontend corepack pnpm --filter './apps/*' sbom \
+	  --sbom-format cyclonedx --sbom-type application --sbom-spec-version 1.6 --prod --lockfile-only --out '/sbom/%s.cdx.json'
+
+vulnerabilities:
+	for bom in build/sbom/*.cdx.json; do \
+	  docker compose run --rm trivy sbom --quiet --format json --output "$${bom%.cdx.json}.trivy.json" "$$bom" || exit 1; \
+	done
+	docker compose run --rm --no-deps -v "$(CURDIR):/repo:ro" -w /repo frontend node infra/deploy/vulnerabilities.mjs \
+	  $$(for bom in build/sbom/*.cdx.json; do printf -- '--sbom %s --report %s ' "$$bom" "$${bom%.cdx.json}.trivy.json"; done) \
+	  --accepted infra/deploy/accepted-vulnerabilities.json
+
+# The synthetic tenant of the release smoke test, set up once like in an environment, and the smoke test against it.
+release-smoke: deploy-install
+	dev-tools/release-smoke.sh
+
+smoke-sso: deploy-install
+	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	SMOKE_LOGIN="$$(cat dev-tools/release-smoke/login.json)" docker compose run --rm --no-deps release-smoke \
+	  node infra/deploy/smoke-sso.mjs --host release-smoke.idp.test
 
 # terraform test against a mocked AWS provider: plans only, reads no state and calls no AWS API.
 test-infra:

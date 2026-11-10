@@ -5,6 +5,7 @@ DOMAINS=(
   globex.idp.test
   ops.idp.test
   ops-sso.idp.test
+  release-smoke.idp.test
   mail.idp.test
   sp.idp.test
   dashboard.idp.test

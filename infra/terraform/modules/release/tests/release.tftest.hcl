@@ -37,8 +37,17 @@ override_resource {
   }
 }
 
+override_resource {
+  target          = aws_secretsmanager_secret.smoke_login
+  override_during = plan
+  values = {
+    arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/release/smoke-login-AbCdEf"
+  }
+}
+
 variables {
   name             = "idp-test"
+  smoke_host       = "release-smoke.idp.example.com"
   deploy_role_name = "idp-test-github-deploy"
   cluster_name     = "idp-test"
   static_bucket    = "idp-test-static-111111111111"
@@ -104,6 +113,11 @@ run "the_release_reads_its_settings_from_one_parameter" {
         cli            = { family = "idp-test-cli", network = var.one_off_tasks.cli.network }
         role-passwords = { family = "idp-test-db-role-passwords", network = var.role_passwords_task.network }
       }
+      smoke = {
+        host   = "release-smoke.idp.example.com"
+        secret = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/release/smoke-login-AbCdEf"
+      }
+      alarms = { prefix = "idp-test-", regions = ["eu-central-1", "us-east-1"] }
     }))
     error_message = "The settings miss what infra/deploy reads, or name the recovery run."
   }
@@ -200,9 +214,35 @@ run "the_release_pushes_images_writes_the_static_files_and_reads_its_settings" {
       "ecr:BatchCheckLayerAvailability,ecr:BatchGetImage,ecr:CompleteLayerUpload,ecr:DescribeImages,ecr:InitiateLayerUpload,ecr:PutImage,ecr:UploadLayerPart -> ${join(",", sort(values(var.repository_arns)))}",
       "s3:ListBucket -> arn:aws:s3:::idp-test-static-111111111111",
       "s3:DeleteObject,s3:GetObject,s3:PutObject -> arn:aws:s3:::idp-test-static-111111111111/*",
+      "secretsmanager:GetSecretValue -> arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/release/smoke-login-AbCdEf",
+      "cloudwatch:DescribeAlarms -> arn:aws:cloudwatch:*:111111111111:alarm:idp-test-*",
     ])
-    error_message = "A release reaches another parameter, repository or bucket, or may change more than the files of the frontend."
+    error_message = "A release reaches another parameter, repository, bucket, secret or alarm, or may change more than the files of the frontend."
   }
+}
+
+run "the_smoke_test_reads_one_secret_that_a_person_writes" {
+  command = plan
+
+  assert {
+    condition     = aws_secretsmanager_secret.smoke_login.name == "idp-test/release/smoke-login"
+    error_message = "The login of the synthetic user lives elsewhere than docs/release.md says."
+  }
+
+  assert {
+    condition     = !anytrue([for statement in data.aws_iam_policy_document.deploy.statement : anytrue([for action in statement.actions : startswith(action, "secretsmanager:") && action != "secretsmanager:GetSecretValue"])])
+    error_message = "A release may change or list secrets, where it only reads the login of the synthetic user."
+  }
+}
+
+run "a_smoke_host_that_is_no_dns_name_refused" {
+  command = plan
+
+  variables {
+    smoke_host = "https://release-smoke.idp.example.com"
+  }
+
+  expect_failures = [var.smoke_host]
 }
 
 run "x86_images_build_for_amd64" {

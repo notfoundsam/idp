@@ -430,6 +430,34 @@ services:
       # A test that rotates the signing key of acme hands SimpleSAMLphp the new metadata, as fetch-idp-metadata.sh does.
       - ./dev-tools/simplesamlphp/metadata:/saml-metadata
 
+  # The smoke test of a release and the setup of its synthetic tenant against the local environment, see dev-tools/README.md.
+  release-smoke:
+    image: node:24.22.2-alpine
+    profiles: [release]
+    working_dir: /repo
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/rootCA.pem
+      SMOKE_LOGIN:
+    extra_hosts:
+      - release-smoke.idp.test:host-gateway
+      - mail.idp.test:host-gateway
+    volumes:
+      - ./infra/deploy:/repo/infra/deploy:ro
+      - ./dev-tools:/repo/dev-tools
+      - ./dev-tools/certs:/certs:ro
+
+  # Matches the SBOMs of a release with known vulnerabilities, see docs/security/dependencies.md. The database is downloaded once a
+  # day into its volume.
+  trivy:
+    image: aquasec/trivy:0.76.1
+    profiles: [release]
+    working_dir: /repo
+    environment:
+      TRIVY_CACHE_DIR: /cache
+    volumes:
+      - ./build/sbom:/repo/build/sbom
+      - idp-trivy-cache:/cache
+
   nginx-config:
     image: node:24.22.2-alpine
     command: ["node", "/infra/web/render-nginx.mjs", "/etc/nginx/conf.d/default.conf"]
@@ -466,3 +494,4 @@ volumes:
   idp-web:
   idp-nginx-config:
   idp-tflint-plugins:
+  idp-trivy-cache:

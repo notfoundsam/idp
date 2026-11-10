@@ -87,6 +87,11 @@ output "release_parameter" {
   value       = module.release.parameter_name
 }
 
+output "smoke_login_secret" {
+  description = "Secret for the login of the synthetic user of the release smoke test, written once by hand, see docs/release.md."
+  value       = module.release.smoke_login_secret
+}
+
 output "ops_alb_dns_name" {
   description = "Target of the record ops.<domain>: the internal ALB of ops, which only the VPN reaches."
   value       = module.network.ops_alb_dns_name

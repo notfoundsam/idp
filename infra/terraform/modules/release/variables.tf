@@ -93,6 +93,16 @@ variable "execution_role_arns" {
   type        = map(string)
 }
 
+variable "smoke_host" {
+  description = "Host of the synthetic tenant that the smoke test of a release signs in to, set up once as docs/release.md describes."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.smoke_host))
+    error_message = "A lowercase DNS name such as release-smoke.idp.example.com."
+  }
+}
+
 variable "bootstrap_execution_role_arn" {
   description = "Execution role of the bootstrap tasks of modules/data."
   type        = string

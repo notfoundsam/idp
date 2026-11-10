@@ -265,6 +265,7 @@ module "release" {
   task_role_arns               = module.iam.task_role_arns
   execution_role_arns          = module.app.execution_role_arns
   bootstrap_execution_role_arn = module.data.bootstrap_execution_role_arn
+  smoke_host                   = "release-smoke.${var.domain}"
   role_passwords_task = {
     task_definition = module.data.bootstrap_task_definitions["role-passwords"]
     network = {

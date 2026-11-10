@@ -34,7 +34,16 @@ locals {
       { for name in local.one_offs : name => { family = var.task_families[name], network = var.one_off_tasks[name].network } },
       { role-passwords = { family = local.role_passwords_family, network = var.role_passwords_task.network } },
     )
+    smoke  = { host = var.smoke_host, secret = aws_secretsmanager_secret.smoke_login.arn }
+    alarms = { prefix = "${var.name}-", regions = distinct([data.aws_region.current.region, "us-east-1"]) }
   }
+}
+
+# A person writes the login of the synthetic user here, see docs/release.md, so its password never reaches the state.
+resource "aws_secretsmanager_secret" "smoke_login" {
+  name                    = "${var.name}/release/smoke-login"
+  description             = "Login, password and TOTP secret of the synthetic user that the smoke test of a release signs in as"
+  recovery_window_in_days = 7
 }
 
 resource "aws_ssm_parameter" "release" {
@@ -124,6 +133,19 @@ data "aws_iam_policy_document" "deploy" {
     sid       = "WatchReleaseTasks"
     actions   = ["ecs:DescribeTasks"]
     resources = ["${local.ecs}:task/${var.cluster_name}/*"]
+  }
+
+  statement {
+    sid       = "ReadSmokeLogin"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.smoke_login.arn]
+  }
+
+  # The alarms of the WAF of CloudFront live in us-east-1, the others in the region of the environment.
+  statement {
+    sid       = "WatchAlarms"
+    actions   = ["cloudwatch:DescribeAlarms"]
+    resources = ["arn:${data.aws_partition.current.partition}:cloudwatch:*:${data.aws_caller_identity.current.account_id}:alarm:${var.name}-*"]
   }
 
   statement {
