@@ -12,6 +12,7 @@ bouncycastle = "1.86"
 webauthn4j = "0.31.11.RELEASE"
 opensaml = "5.2.3"
 guava = "33.7.2-jre"
+jacoco = "0.8.14"
 
 [libraries]
 kotest-runner = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
@@ -61,6 +62,8 @@ testcontainers = { module = "org.testcontainers:testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
 opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
+# Not a dependency of any module: the Gradle plugin runs this agent, and Renovate reads its version here.
+jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

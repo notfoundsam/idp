@@ -222,6 +222,20 @@ describe('the card of a user', () => {
     expect(hasButton(wrapper, 'Send the invitation again')).toBe(false)
   })
 
+  test('shows markup in a name or the name of a service as text', async () => {
+    const markup = '<img src=x onerror="window.hit=1">'
+    const page = await asAdmin(`/admin/users/${ID}`)
+    page.answer(
+      'getUser',
+      cardWith({ name: markup, serviceProviders: [{ id: 'sp', entityId: 'https://sp.example/saml', name: `<b>Wiki</b>${markup}` }] }),
+    )
+    const wrapper = await start(page)
+    expect(wrapper.text()).toContain(markup)
+    expect(wrapper.get('[data-testid="service-provider"]').text()).toContain(`<b>Wiki</b>${markup}`)
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.find('b').exists()).toBe(false)
+  })
+
   test('of a user who is gone says so', async () => {
     const page = await asAdmin(`/admin/users/${ID}`)
     page.answer('getUser', refused(404))

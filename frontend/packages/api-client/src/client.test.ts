@@ -64,6 +64,13 @@ describe('requests', () => {
     expect(nth(sent, 0).init.body).toBe('{"code":"123456"}')
   })
 
+  test('a value with quotes, a backslash or markup stays one JSON string', async () => {
+    const { client, sent } = recording(() => json(flow))
+    const typed = 'a"b\\c","admin":true,"x":"</script>'
+    await client.submitPassword(flow.id, typed)
+    expect(JSON.parse(String(nth(sent, 0).init.body))).toEqual({ password: typed })
+  })
+
   test('an id from the URL cannot leave the path of its flow', async () => {
     const { client, sent } = recording(() => json(flow))
     await client.getFlow('../../password-reset')

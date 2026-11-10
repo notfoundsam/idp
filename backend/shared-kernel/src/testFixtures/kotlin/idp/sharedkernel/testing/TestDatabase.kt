@@ -95,6 +95,14 @@ class TestDatabase private constructor(
 
     fun owner(): DataSource = role("idp_owner", password = "idp_owner")
 
+    /** Neither a grant nor a row policy hides anything from it, so a test that reads every row reads as this one. */
+    fun superuser(): DataSource =
+        PGSimpleDataSource().also {
+            it.setUrl(url)
+            it.user = postgres.username
+            it.password = postgres.password
+        }
+
     /**
      * A copy of this database as it is now, which a test restores later like a backup. A template takes no connections, so the
      * ones PgBouncer keeps open go first, and it opens new ones on demand.

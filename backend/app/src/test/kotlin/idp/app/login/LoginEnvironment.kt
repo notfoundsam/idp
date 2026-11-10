@@ -150,10 +150,11 @@ class Reply(
     fun cookies(): List<String> = response.headers().allValues("Set-Cookie")
 }
 
-/** Keeps cookies and echoes the CSRF cookie the way the page does. Each instance is one browser. */
+/** Keeps cookies and echoes the CSRF cookie the way the page does. Each instance is one browser. [defaultHeaders] go with every request. */
 class Browser(
     private val application: ConfigurableApplicationContext,
     val host: String = ACME,
+    private val defaultHeaders: List<String> = emptyList(),
 ) {
     val cookies: MutableMap<String, String> = ConcurrentHashMap()
     private val http = HttpClient.newHttpClient()
@@ -218,7 +219,7 @@ class Browser(
                 .header("Host", host)
                 .header("User-Agent", USER_AGENT)
                 .timeout(REQUEST_TIMEOUT)
-        headers.toList().chunked(2).forEach { (name, value) -> request.header(name, value) }
+        (defaultHeaders + headers).chunked(2).forEach { (name, value) -> request.header(name, value) }
         if (cookies.isNotEmpty()) request.header("Cookie", cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" })
         return request
     }
@@ -312,7 +313,7 @@ fun JsonNode.text(name: String): String = get(name).asString()
 
 fun JsonNode.strings(name: String): List<String> = get(name).values().map { it.asString() }
 
-private fun decodeBase32(value: String): ByteArray {
+fun decodeBase32(value: String): ByteArray {
     var buffer = 0
     var bits = 0
     val bytes = mutableListOf<Byte>()

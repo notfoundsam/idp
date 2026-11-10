@@ -35,6 +35,7 @@ import java.security.cert.X509Certificate
 import java.time.Duration
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLSocket
 
 class AppApplicationTest :
     StringSpec({
@@ -87,6 +88,24 @@ class AppApplicationTest :
                     runCatching { get(port, "/actuator/health").statusCode() }.getOrNull() shouldNotBe 200
                 }
                 shouldThrow<SSLHandshakeException> { get(management, "/actuator/health", "https", TestCa("Test other CA").trust()) }
+            }
+        }
+
+        "both ports negotiate TLS 1.3 and TLS 1.2, the protocols they enable" {
+            runApplication<AppApplication>(*tls).use { context ->
+                val ports = listOf("local.server.port", "local.management.port").map { context.environment.getProperty(it)!!.toInt() }
+
+                ports.forEach { port ->
+                    listOf("TLSv1.3", "TLSv1.2").forEach { protocol ->
+                        (serverCa.trust().socketFactory.createSocket("localhost", port) as SSLSocket).use { socket ->
+                            socket.enabledProtocols = arrayOf(protocol)
+                            socket.startHandshake()
+                            socket.session.protocol shouldBe protocol
+                        }
+                    }
+                }
+                context.environment.getProperty("server.ssl.enabled-protocols") shouldBe "TLSv1.3,TLSv1.2"
+                context.environment.getProperty("management.server.ssl.enabled-protocols") shouldBe "TLSv1.3,TLSv1.2"
             }
         }
 

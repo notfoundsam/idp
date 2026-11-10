@@ -12,6 +12,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest` |
 | Telemetry | The real application with spans and log records kept in memory | `app/src/test/.../web/TracingTest.kt`, `LogsTest` |
 | Logs and metrics | The real application with its console copied: the JSON lines of logins, refusals, failures and SAML, and the counters they move | `NoPiiInLogsTest`, `FailureMetricsTest` |
+| Data at rest | The real application with Valkey after a journey through every kind of data it keeps, then every row of every table and every key of Valkey searched for each value the journey gave in clear | `app/src/test/.../security/PlaintextAtRestTest.kt` |
 | Load | k6 scenarios against `make up-observability`, run by hand to find bottlenecks and regressions, not to measure capacity | `dev-tools/k6/saml.js` |
 | SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest` |
 | SAML login of `ops` | Responses a fake IdP writes and signs, each bent in one way, posted to the ACS of the real `ops` | `ops/src/test/.../security/OpsSamlLoginTest.kt` |
@@ -66,6 +67,8 @@ How the project tests its code and with which tools. A change that adds a tool o
 - **oasdiff** in CI for breaking changes in the API contracts.
 - **Terraform** and **TFLint** in their images, as the compose services `terraform` and `tflint` under the profile `infra`. `make lint-infra` runs them, and the CI job `infra` runs the same target. Each root initialises with `-backend=false` and `-lockfile=readonly`, so the check reads no state, calls no AWS API and fails when `.terraform.lock.hcl` is behind `required_providers`.
 - **`terraform test`** with `mock_provider "aws"` for the modules in `TERRAFORM_TESTED_MODULES` of the `Makefile`, run by `make test-infra` and the CI job `infra`. Each such module keeps its own `.terraform.lock.hcl` with the provider version of the roots. A run only plans, so it asserts on the arguments a module sets, and `expect_failures` covers the validations of its variables. An id or ARN that an assertion compares is known only through `override_resource` or `mock_resource` with `override_during = plan`, and an ARN that the provider validates needs one too. Mocks do not support ephemeral resources, so a generated secret lives in a module without tests, such as `modules/keys`, and reaches a tested one as a variable.
+- **`Plaintext`** and **`scan`** in the `shared-kernel` test fixtures: a value a test gave the application, searched in any case, as UTF-8, base64 or hex, and raw bytes as they are. `TestDatabase.scan` reads every row of every table of every schema as the superuser, so no grant or row policy hides one, and names each finding by column and label, never by value. `ValkeyServer.entries` hands every key with its value. A test also checks that the rows it meant to scan are there, since an empty table holds nothing either.
+- **JaCoCo** through the Gradle plugins `jacoco` and `jacoco-report-aggregation`, with the agent version pinned in `gradle/libs.versions.toml`. See [Coverage](#coverage).
 - **`TestCa`** in the `shared-kernel` test fixtures, on BouncyCastle: test CAs, the server certificates they issue and a client context that trusts one CA alone, for `ProductionDatabaseTest`, `ValkeyTlsTest`, `ProductionTelemetryTest`, the TLS ports of `app` and `ops` and the prod profile in `ThrottleApplicationTest`. Tests that start `app` or `ops` without a certificate pass `SERVER_TLS_ENABLED=false`, as the local environment does.
 
 Not used: MockMvc, the Spring test context, Mockito and MockK.
@@ -99,6 +102,9 @@ The criteria of the first version and the tests that prove them. `acceptance.spe
 | A user logs in only to the SPs the admin assigned them to | `login.spec.ts`: `a user who is not assigned to the SP proves every factor and is still refused there`. `admin-sp.spec.ts`: `lets a new user sign in to the test SP only while they are assigned to it`. `ops-login.spec.ts`: the unassigned admin. `acceptance.spec.ts`: the test SP of the spec, and an SP of one tenant unknown at the other | `ResumeApiTest`: `does not get past the assignment, and a withdrawn one counts at the next login` |
 | A user recovers access after losing the password and every factor | `acceptance.spec.ts`: `a user who lost the password and every factor resets the password and gets new factors from the admin`, `the only admin who lost everything gets back in through the operator, who learns nothing of the tenant` | `RecoveryApiTest`: `nothing in the login API brings a factor back`, `the tenant admin gives the way back, and the user enrolls again`. `ReinviteAdminHandlerTest`: `the only admin who lost everything starts over, and no session of the old life survives` |
 | The operator creates a tenant without access to its PII | `acceptance.spec.ts`: the answers of `ops` hold the mask, then nothing of the contact, and the browser of the operator gets `401` from the tenant | `OpsAccessBoundaryTest`, `OpsCliTest`: `reads print the same data as the API, with the mask only`, `reinvite seals the address, starts the event and prints neither the address nor anything of the tenant` |
+| PII, tokens and secrets are stored only encrypted or hashed, flows, sessions and audit included | | `PlaintextAtRestTest`: every table and Valkey after invitations, TOTP, passkeys, recovery codes, a password change and reset, email changes, sessions, open flows, a SAML login and a waiting AuthnRequest, and admin actions. `OpsAccessBoundaryTest`: `no table keeps a contact in clear, of an application or of a new admin`. `TenantProvisioningProcessTest`: `no table of the platform or of the new tenant keeps the contact in clear, before the run or after it`. `StoredPlaintextTest` proves that the scan finds a value in every column type and encoding |
+| The ASVS Level 2 map is closed, its exceptions justified | | [asvs-l2.md](security/asvs-l2.md): no row Partial or Planned. Each Exception names its reason and limit, each Staging row the check on staging that remains |
+| Coverage of `shared-kernel`, `identity`, `authentication`, `federation` and the audiences is at least 80% | | `./gradlew check` fails below it, see [Coverage](#coverage) |
 
 Recovery after losing every factor goes through a person by design, see [the runbook](security/tenant-admin-recovery-runbook.md): the password comes back through the mail, the factors through the tenant admin, and an only admin through the operator after a check outside the system. No path in the login brings a factor back.
 
@@ -112,11 +118,20 @@ Recovery after losing every factor goes through a person by design, see [the run
 - `pooled(role)` connects through PgBouncer with the configuration from `dev-tools`, as the application does.
 - A test that proves one transaction over the real HTTP path makes the last write fail with a trigger that raises, limited to the rows of its user, and drops the trigger in `finally`. The first write must then be gone. See `revokingFails` in `AdminUsersApiTest`.
 
+## Coverage
+
+Every test task runs with the JaCoCo agent. `./gradlew check` builds `testCodeCoverageReport`, HTML and XML in `backend/build/reports/jacoco/testCodeCoverageReport`, from the tests of every module, and fails when the lines of one of these modules are covered less than 80%: `shared-kernel`, `modules/identity`, `modules/authentication`, `modules/federation` and the four audiences. Each has its task, such as `verifyCoverageOfIdentity`, and the failure names the ratio.
+
+- **All tests count.** A module is measured with the tests of the whole build, because the audiences and the SAML endpoints are tested over HTTP in `app` and `ops`, the way they run.
+- **Excluded:** `db`, which holds only jOOQ code generated from the migrations. The migrations have tests of their own, and every database test runs the generated code.
+- **Nothing else is excluded.** A line that no test reaches is a test to write, not an exclusion.
+- `localStackTest` does not count, since `check` does not run it.
+
 ## Commands
 
 ```bash
 make test                                  # backend, frontend and the release scripts
-cd backend && ./gradlew check              # backend tests, ktlint, architecture rules
+cd backend && ./gradlew check              # backend tests, ktlint, architecture rules, coverage
 cd backend && ./gradlew :app:test --tests 'idp.app.login.FlowApiTest'
 cd backend && ./gradlew :shared-kernel:localStackTest
 make test-frontend                         # runs in Docker, also the tests of infra/web and the lint rules

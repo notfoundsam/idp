@@ -34,6 +34,7 @@ dependencies {
     testFixturesImplementation(libs.jackson.databind)
     testFixturesImplementation(libs.kotest.assertions)
     testFixturesImplementation(libs.snakeyaml)
+    testFixturesImplementation(libs.lettuce.core)
     testFixturesImplementation(libs.bouncycastle)
     testFixturesImplementation(libs.bouncycastle.pkix)
     // Compile only: on the runtime classpath of `worker` tests it would turn their application into a web one.
