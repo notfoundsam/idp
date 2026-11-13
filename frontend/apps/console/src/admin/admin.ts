@@ -1,6 +1,5 @@
 import {
   ApiError,
-  PRECONDITION_FAILED,
   type AuditCursor,
   type AuditTarget,
   type AuditTargetType,
@@ -111,10 +110,6 @@ export function targetOf(type: unknown, id: unknown): AuditTarget | undefined {
 }
 
 export const journalOf = (target: AuditTarget) => ({ name: 'audit', query: { targetType: target.type, targetId: target.id } })
-
-export const isMissing = (error: unknown) => error instanceof ApiError && error.status === 404
-
-export const isConflict = (error: unknown) => error instanceof ApiError && error.status === PRECONDITION_FAILED
 
 export const hasStatus = (error: unknown, status: number) => error instanceof ApiError && error.status === status
 

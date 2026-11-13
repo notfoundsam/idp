@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Factors } from '@idp/api-client'
-import { grouped, otpauthUri } from '@idp/ui'
+import { grouped, otpauthUri, QrCode } from '@idp/ui'
 import { ref } from 'vue'
 import { useConsole } from '../context'
 import { CODE_REFUSED, FACTOR_REQUIRED } from '../messages'
@@ -43,7 +43,8 @@ function cancel() {
       <button type="button" :disabled="remove.isPending.value" @click="remove.mutate(undefined)">Remove authenticator app</button>
     </template>
     <form v-else-if="secret" data-testid="totp-form" @submit.prevent="confirm.mutate(code.trim())">
-      <p>Add this key to your authenticator app, or open the link on this device.</p>
+      <p>Scan this code with your authenticator app, type in the key, or open the link on this device.</p>
+      <QrCode :value="otpauthUri(secret, browser.host, email)" label="QR code of the key for your authenticator app" />
       <p>
         <code data-testid="totp-secret">{{ grouped(secret) }}</code>
       </p>

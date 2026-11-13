@@ -11,7 +11,7 @@ import {
   actorOf,
   ALREADY_ACCEPTED,
   BLOCK_REFUSED,
-  isMissing,
+  hasStatus,
   journalOf,
   LAST_ADMIN,
   ROLES,
@@ -74,7 +74,7 @@ function act(action: { mutate: (variables: undefined) => void }) {
 <template>
   <RouterLink :to="{ name: 'users' }">Back to users</RouterLink>
   <p v-if="card.isPending.value && !card.error.value" role="status">Loading…</p>
-  <p v-if="isMissing(card.error.value)" role="alert" data-testid="no-such-user">There is no such user. They may have been erased.</p>
+  <p v-if="hasStatus(card.error.value, 404)" role="alert" data-testid="no-such-user">There is no such user. They may have been erased.</p>
   <ProblemMessage v-else :error="card.error.value" />
   <template v-if="card.data.value">
     <h1 data-testid="user-email">{{ card.data.value.email }}</h1>

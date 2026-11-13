@@ -46,6 +46,15 @@ export async function atConsole(page: Page, login: string, origin = ACME) {
   await expect(page.getByTestId('account-email')).toHaveText(login)
 }
 
+/**
+ * Opens the console without a session and waits until it sends the browser to the login. The console may do that before `load`,
+ * which would abort a `goto` that waits for it.
+ */
+export async function sentToLogin(page: Page, origin = ACME) {
+  await page.goto(`${origin}/console/`, { waitUntil: 'commit' })
+  await page.waitForURL(/\/login\/(\?flow=[0-9a-f-]{36})?$/)
+}
+
 /** Shown once after the first second factor. */
 export async function saveRecoveryCodes(page: Page) {
   await expect(page.getByTestId('recovery-codes').locator('li').first()).toBeVisible()
@@ -55,6 +64,7 @@ export async function saveRecoveryCodes(page: Page) {
 /** Sets up TOTP at the step the policy asks for and answers its secret and the recovery codes shown once. */
 export async function enrollTotp(page: Page): Promise<{ secret: string; codes: string[] }> {
   await page.getByRole('button', { name: 'Set up an authenticator app' }).click()
+  await expect(page.getByRole('img', { name: 'QR code of the key for your authenticator app' })).toBeVisible()
   const secret = (await page.getByTestId('totp-secret').innerText()).replace(/\s/g, '')
   await page.getByLabel('Code from your authenticator app').fill(totp(secret))
   await page.getByRole('button', { name: 'Confirm' }).click()

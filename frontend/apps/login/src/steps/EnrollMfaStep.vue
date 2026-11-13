@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { grouped, otpauthUri, registerPasskey } from '@idp/ui'
+import { grouped, otpauthUri, QrCode, registerPasskey } from '@idp/ui'
 import { computed, ref } from 'vue'
 import type { Login } from '../login'
 import ProblemMessage from './ProblemMessage.vue'
@@ -38,7 +38,8 @@ async function passkey(credentials: CredentialsContainer) {
   <section data-step="ENROLL_MFA">
     <p>Your organisation asks for a second way to prove it is you. Set one up to go on.</p>
     <form v-if="secret" @submit.prevent="confirmTotp">
-      <p>Add this key to your authenticator app, or open the link on this device.</p>
+      <p>Scan this code with your authenticator app, type in the key, or open the link on this device.</p>
+      <QrCode :value="otpauthUri(secret, host, login.state.login)" label="QR code of the key for your authenticator app" />
       <p>
         <code data-testid="totp-secret">{{ grouped(secret) }}</code>
       </p>

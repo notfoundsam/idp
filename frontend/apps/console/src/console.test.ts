@@ -1,3 +1,4 @@
+import { qrModules } from '@idp/ui'
 import type { VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, test } from 'vitest'
 import { PASSWORD_REFUSED } from './messages'
@@ -120,6 +121,7 @@ describe('TOTP', () => {
     expect(wrapper.get('[data-testid="totp-secret"]').text()).toBe('JBSW Y3DP EHPK 3PXP')
     const link = wrapper.get('a[href^="otpauth:"]').attributes('href') ?? ''
     expect(link).toContain(`otpauth://totp/${encodeURIComponent(`acme.idp.test:${EMAIL}`)}?secret=JBSWY3DPEHPK3PXP`)
+    expect(wrapper.get('[data-testid="qr-code"] path').attributes('d')).toBe(qrModules(link).path)
 
     await wrapper.get('#totp').setValue(' 123456 ')
     await wrapper.get('[data-testid="totp-form"]').trigger('submit')

@@ -1,4 +1,5 @@
 import { ApiError, UPGRADE_REQUIRED } from '@idp/api-client'
+import { OUTDATED, REJECTED, throttled, UNEXPECTED, UNREACHABLE } from '@idp/ui'
 import type { Problem } from './login'
 
 /** The API refuses a bad link and a weak password with the same empty answer, so the page names both. */
@@ -30,16 +31,16 @@ export function troubleOf(error: unknown): Trouble {
 export function messageOf(problem: Problem, retryAfter: number | null): string {
   switch (problem) {
     case 'rejected':
-      return 'That did not work. Check what you entered and try again.'
+      return REJECTED
     case 'throttled':
-      return retryAfter === null ? 'Too many attempts. Wait a moment and try again.' : `Too many attempts. Try again in ${retryAfter} s.`
+      return throttled(retryAfter)
     case 'outdated':
-      return 'This page is out of date. Reload it to go on.'
+      return OUTDATED
     case 'unreachable':
-      return 'The server could not be reached. Check your connection and try again.'
+      return UNREACHABLE
     case 'broken-link':
       return 'This link is incomplete. Open it again from the mail, or copy the whole address into the browser.'
     case 'unexpected':
-      return 'Something went wrong. Try again.'
+      return UNEXPECTED
   }
 }

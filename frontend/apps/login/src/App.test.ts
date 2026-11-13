@@ -1,3 +1,4 @@
+import { qrModules } from '@idp/ui'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, test, vi } from 'vitest'
 import App from './App.vue'
@@ -85,7 +86,7 @@ describe('steps on screen', () => {
     expect(wrapper.text()).not.toContain('passkey')
   })
 
-  test('setting up an app shows its key and a link to open it with', async () => {
+  test('setting up an app shows its key as a QR code, as text and as a link to open it with', async () => {
     const setup = loginWith()
     setup.answer('startFlow', flowAt('ENROLL_MFA', ['TOTP']))
     setup.answer('beginTotpEnrollment', { secret: 'JBSWY3DPEHPK3PXP' })
@@ -93,7 +94,9 @@ describe('steps on screen', () => {
     await wrapper.get('button').trigger('click')
     await settled()
     expect(wrapper.get('[data-testid="totp-secret"]').text()).toBe('JBSW Y3DP EHPK 3PXP')
-    expect(wrapper.get('a').attributes('href')).toMatch(/^otpauth:\/\/totp\/acme\.idp\.test\?secret=JBSWY3DPEHPK3PXP&/)
+    const link = wrapper.get('a').attributes('href') ?? ''
+    expect(link).toMatch(/^otpauth:\/\/totp\/acme\.idp\.test\?secret=JBSWY3DPEHPK3PXP&/)
+    expect(wrapper.get('[data-testid="qr-code"] path').attributes('d')).toBe(qrModules(link).path)
   })
 
   test('recovery codes are shown once and the page goes on when they are saved', async () => {

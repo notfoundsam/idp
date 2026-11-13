@@ -44,14 +44,12 @@ export interface AuditTarget {
 
 /** A page of the journal: the first one without [after], the next one from the `next` of the page before. */
 export interface JournalQuery {
-  limit?: number
   after?: AuditCursor
   target?: AuditTarget
 }
 
-function journalPath({ limit, after, target }: JournalQuery): string {
+function journalPath({ after, target }: JournalQuery): string {
   const query = new URLSearchParams()
-  if (limit !== undefined) query.set('limit', String(limit))
   if (after !== undefined) {
     query.set('before', after.before)
     query.set('beforeId', after.beforeId)

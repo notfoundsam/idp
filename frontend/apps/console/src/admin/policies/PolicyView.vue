@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { VersionedPolicy } from '@idp/api-client'
+import { PRECONDITION_FAILED, type VersionedPolicy } from '@idp/api-client'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { reactive, ref, watch } from 'vue'
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import { useConsole } from '../../context'
-import { isConflict, POLICY, TIMEOUTS_REFUSED, usePolicy } from '../admin'
+import { hasStatus, POLICY, TIMEOUTS_REFUSED, usePolicy } from '../admin'
 
 const { admin } = useConsole()
 const queries = useQueryClient()
@@ -96,7 +96,7 @@ async function reload() {
       />
       <p>A shorter timeout reaches the sessions already open on their next request.</p>
     </fieldset>
-    <div v-if="isConflict(save.error.value)" role="alert" data-testid="policy-conflict">
+    <div v-if="hasStatus(save.error.value, PRECONDITION_FAILED)" role="alert" data-testid="policy-conflict">
       <p>Someone else saved the policy after you opened it. Load their version, then make your change again.</p>
       <button type="button" :disabled="policy.isFetching.value" @click="reload">Load the current policy</button>
     </div>

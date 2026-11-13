@@ -19,7 +19,7 @@ import {
   sessionCookie,
   SP_WHOAMI,
 } from './support/login'
-import { linkFromMail } from './support/mail'
+import { linkFromMail, mailIds } from './support/mail'
 import { virtualAuthenticator } from './support/passkey'
 import { totp } from './support/totp'
 
@@ -156,12 +156,12 @@ test.describe.serial('an invited user', () => {
     await enterLogin(page, INVITEE)
     await page.getByRole('link', { name: 'Forgot your password?' }).click()
     await expect(page).toHaveURL(`${ACME}/login/forgot-password`)
-    const since = Date.now() - 2_000
+    const earlier = await mailIds(request, INVITEE, 'Reset your')
     await page.getByLabel('Email').fill(INVITEE)
     await page.getByRole('button', { name: 'Send link' }).click()
     await expect(page.getByTestId('reset-requested')).toBeVisible()
 
-    const link = await linkFromMail(request, { to: INVITEE, subject: 'Reset your', path: '/reset-password', since })
+    const link = await linkFromMail(request, { to: INVITEE, subject: 'Reset your', path: '/reset-password', skip: earlier })
     await page.goto(link)
     expect(page.url()).toBe(`${ACME}/reset-password`)
     await expect(page.locator('#password-rules')).toContainText('15 or more is recommended')

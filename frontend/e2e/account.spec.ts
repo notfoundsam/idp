@@ -9,13 +9,13 @@ import {
   enterRecoveryCode,
   enterTotp,
   newPassword,
+  sentToLogin,
   sessionCookie,
 } from './support/login'
 import { virtualAuthenticator } from './support/passkey'
 import { totp } from './support/totp'
 
 const CONSOLE = `${ACME}/console/`
-const LOGIN = /\/login\/(\?flow=[0-9a-f-]{36})?$/
 const SECOND_BROWSER = 'Mozilla/5.0 (X11; Linux x86_64) e2e-second-browser'
 
 async function shownCodes(page: Page): Promise<string[]> {
@@ -116,8 +116,7 @@ test.describe.serial('the account of a user', () => {
 
     await signOut(page)
     expect(await sessionCookie(context)).toBeUndefined()
-    await page.goto(CONSOLE)
-    await page.waitForURL(LOGIN)
+    await sentToLogin(page)
   })
 
   test('lists the sessions, marks this one, and ends another one or all others', async ({ page, browser }) => {
@@ -137,8 +136,7 @@ test.describe.serial('the account of a user', () => {
     await theOther.getByRole('button', { name: 'End session' }).click()
     await expect(theOther).toHaveCount(0)
 
-    await second.goto(CONSOLE)
-    await second.waitForURL(LOGIN)
+    await sentToLogin(second)
     await signIn(second, password, (it) => enterRecoveryCode(it, codes[1] ?? ''))
     await page.reload()
     await expect(theOther).toHaveCount(1)
@@ -146,8 +144,7 @@ test.describe.serial('the account of a user', () => {
     await expect(page.getByTestId('session')).toHaveCount(1)
     await expect(current).toHaveCount(1)
 
-    await second.goto(CONSOLE)
-    await second.waitForURL(LOGIN)
+    await sentToLogin(second)
     await page.reload()
     await expect(page.getByTestId('account-email')).toHaveText(ACCOUNT_USER)
     await other.close()
@@ -200,7 +197,6 @@ test.describe.serial('the account of a user', () => {
     await expect(page.getByTestId('account-email')).toHaveText(ACCOUNT_USER)
     await signOut(page)
     expect(await sessionCookie(context)).toBeUndefined()
-    await page.goto(CONSOLE)
-    await page.waitForURL(LOGIN)
+    await sentToLogin(page)
   })
 })

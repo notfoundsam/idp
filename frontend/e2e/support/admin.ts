@@ -1,5 +1,6 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
+import { ACME } from './login'
 
 export interface Answer {
   status: number
@@ -21,6 +22,20 @@ export async function api(page: Page, method: string, path: string, body?: unkno
     },
     { method, path, body },
   )
+}
+
+/**
+ * Through the API with the cookies of [context] and no page, for the cleanup after a test, which may have ended with its page
+ * closed by a timeout or at another host.
+ */
+export async function contextApi(context: BrowserContext, method: string, path: string, body?: unknown, origin = ACME): Promise<Answer> {
+  const csrf = (await context.cookies(origin)).find((it) => it.name === '__Host-csrf')?.value
+  const response = await context.request.fetch(`${origin}${path}`, {
+    method,
+    headers: { Accept: 'application/json', 'X-CSRF-Token': csrf ?? '' },
+    data: body,
+  })
+  return { status: response.status(), body: await response.text() }
 }
 
 /** A service of its own per test and run, so nothing an earlier run left can clash with its EntityID. */

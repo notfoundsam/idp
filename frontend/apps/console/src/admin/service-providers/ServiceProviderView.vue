@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Role, SpSettings, UserStatus, VersionedServiceProvider } from '@idp/api-client'
+import { PRECONDITION_FAILED, type Role, type SpSettings, type UserStatus, type VersionedServiceProvider } from '@idp/api-client'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { computed, reactive, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -10,8 +10,7 @@ import { useChange } from '../../queries'
 import {
   ATTRIBUTES,
   attributeOf,
-  isConflict,
-  isMissing,
+  hasStatus,
   journalOf,
   MAX_USERS_PER_CALL,
   NAME_ID_FORMATS,
@@ -167,7 +166,7 @@ const remove = useChange(() => admin.removeServiceProvider(props.id), [], async 
 <template>
   <RouterLink :to="{ name: 'service-providers' }">Back to services</RouterLink>
   <p v-if="provider.isPending.value && !provider.error.value" role="status">Loading…</p>
-  <p v-if="isMissing(provider.error.value)" role="alert" data-testid="no-such-service-provider">
+  <p v-if="hasStatus(provider.error.value, 404)" role="alert" data-testid="no-such-service-provider">
     There is no such service. It may have been removed.
   </p>
   <ProblemMessage v-else :error="provider.error.value" />
@@ -221,7 +220,7 @@ const remove = useChange(() => admin.removeServiceProvider(props.id), [], async 
             {{ attributeOf(attribute) }}
           </label>
         </fieldset>
-        <div v-if="isConflict(save.error.value)" role="alert" data-testid="settings-conflict">
+        <div v-if="hasStatus(save.error.value, PRECONDITION_FAILED)" role="alert" data-testid="settings-conflict">
           <p>Someone else saved the settings of this service after you opened them. Load their version, then make your change again.</p>
           <button type="button" :disabled="provider.isFetching.value" @click="reload">Load the current settings</button>
         </div>
@@ -269,7 +268,7 @@ const remove = useChange(() => admin.removeServiceProvider(props.id), [], async 
             <button type="button" @click="leaveOut(user.id)">Leave out</button>
           </li>
         </ul>
-        <p v-if="isMissing(assign.error.value)" role="alert">{{ USER_GONE }}</p>
+        <p v-if="hasStatus(assign.error.value, 404)" role="alert">{{ USER_GONE }}</p>
         <ProblemMessage v-else :error="assign.error.value" />
         <button type="button" :disabled="assign.isPending.value" @click="act(assign, picked.map((it) => it.id))">Assign selected</button>
       </template>

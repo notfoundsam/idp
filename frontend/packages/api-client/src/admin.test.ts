@@ -228,14 +228,12 @@ describe('the journal', () => {
   test('goes on from the cursor of the page before and keeps the target, each value with its pair', async () => {
     const { client, sent } = recording(() => json(page))
     await client.readAuditJournal({
-      limit: 20,
       after: { before: '2026-11-04T09:00:00.123456Z', beforeId: 'e1' },
       target: { type: 'SERVICE_PROVIDER', id: SP_ID },
     })
     const url = new URL(sent[0]?.path ?? '', 'https://acme.idp.test')
     expect(url.pathname).toBe('/api/admin/audit')
     expect(Object.fromEntries(url.searchParams)).toEqual({
-      limit: '20',
       before: '2026-11-04T09:00:00.123456Z',
       beforeId: 'e1',
       targetType: 'SERVICE_PROVIDER',

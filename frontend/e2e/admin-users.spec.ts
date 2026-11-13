@@ -10,12 +10,12 @@ import {
   enterLogin,
   enterPassword,
   enterRecoveryCode,
+  sentToLogin,
   sessionCookie,
 } from './support/login'
-import { linkFromMail } from './support/mail'
+import { linkFromMail, mailIds } from './support/mail'
 
 const CONSOLE = `${ACME}/console/`
-const LOGIN = /\/login\/(\?flow=[0-9a-f-]{36})?$/
 const CARD = /\/console\/admin\/users\/[0-9a-f-]{36}$/
 
 /** The policy `acme` starts with locally, which the other specs rely on: a second factor for users, no passkeys required. */
@@ -87,12 +87,13 @@ test.describe.serial('an admin of the tenant', () => {
     await expect(page.getByTestId('user-email')).toHaveText(invitee)
     await expect(page.getByTestId('user-status')).toContainText('Invited')
     await expect(page.getByTestId('user-event').filter({ hasText: 'user.created' })).toHaveCount(1)
-    const resent = Date.now()
+    await linkFromMail(request, { to: invitee, subject: 'You are invited', path: '/invite' })
+    const first = await mailIds(request, invitee, 'You are invited')
     await page.getByRole('button', { name: 'Send the invitation again' }).click()
     await expect(page.getByTestId('admin-notice')).toContainText('A new invitation is on its way')
 
     const user = await newBrowser(browser)
-    const link = await linkFromMail(request, { to: invitee, subject: 'You are invited', path: '/invite', since: resent - 1_000 })
+    const link = await linkFromMail(request, { to: invitee, subject: 'You are invited', path: '/invite', skip: first })
     const userPassword = randomBytes(16).toString('hex')
     await user.page.goto(link)
     await user.page.getByLabel('New password').fill(userPassword)
@@ -119,8 +120,7 @@ test.describe.serial('an admin of the tenant', () => {
     await page.getByRole('button', { name: 'Block' }).click()
     await expect(page.getByTestId('user-status')).toHaveText('Blocked')
     await expect(page.getByTestId('user-event').filter({ hasText: 'user.blocked' })).toHaveCount(1)
-    await user.page.goto(CONSOLE)
-    await user.page.waitForURL(LOGIN)
+    await sentToLogin(user.page)
     await page.getByRole('button', { name: 'Unblock' }).click()
     await expect(page.getByTestId('user-status')).toHaveText('Active')
 
@@ -219,8 +219,7 @@ test.describe.serial('an admin of the tenant', () => {
     await expect(page.getByTestId('signed-out')).toBeVisible()
     expect(await sessionCookie(context)).toBeUndefined()
 
-    await user.page.goto(CONSOLE)
-    await user.page.waitForURL(LOGIN)
+    await sentToLogin(user.page)
     await user.context.close()
   })
 })

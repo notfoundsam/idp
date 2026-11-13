@@ -1,4 +1,5 @@
 import { ApiError, needsReauthentication, UPGRADE_REQUIRED } from '@idp/api-client'
+import { OUTDATED, REJECTED, throttled, UNEXPECTED, UNREACHABLE } from '@idp/ui'
 
 /** The API refuses a wrong current password and a weak new one with the same empty answer, so the form names both. */
 export const PASSWORD_REFUSED =
@@ -11,24 +12,18 @@ export const CODE_REFUSED = 'That code did not work. Wait for the next one in th
 export const FACTOR_REQUIRED = 'Your organization requires this kind of sign-in. Add another one first, then remove this one.'
 
 /** What a failed call means to the user. A refusal of the input reads differently on each form, so [rejected] names it there. */
-export function messageOf(error: unknown, rejected = 'That did not work. Check what you entered and try again.'): string {
+export function messageOf(error: unknown, rejected = REJECTED): string {
   if (needsReauthentication(error)) return 'For this change, sign in again: your last sign-in is too old.'
-  if (!(error instanceof ApiError)) {
-    return error instanceof DOMException
-      ? 'The browser did not create a passkey. Try again.'
-      : 'The server could not be reached. Check your connection and try again.'
-  }
+  if (!(error instanceof ApiError)) return error instanceof DOMException ? 'The browser did not create a passkey. Try again.' : UNREACHABLE
   switch (error.status) {
     case 422:
       return rejected
     case 429:
-      return error.retryAfter === null
-        ? 'Too many attempts. Wait a moment and try again.'
-        : `Too many attempts. Try again in ${error.retryAfter} s.`
+      return throttled(error.retryAfter)
     case UPGRADE_REQUIRED:
-      return 'This page is out of date. Reload it to go on.'
+      return OUTDATED
     default:
-      return 'Something went wrong. Try again.'
+      return UNEXPECTED
   }
 }
 

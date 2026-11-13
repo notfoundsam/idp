@@ -11,7 +11,7 @@ import {
   newPassword,
   sessionCookie,
 } from './support/login'
-import { linkFromMail } from './support/mail'
+import { linkFromMail, mailIds } from './support/mail'
 import { OPS, OPS_LOGIN, OPS_SSO, opsApi, registerPasskey } from './support/ops'
 import { virtualAuthenticator } from './support/passkey'
 import { authnRequest, samlResponseOf, serveAcs, type TestSp } from './support/saml'
@@ -104,7 +104,16 @@ test.describe('a new tenant', () => {
     operator = await newPage(browser)
   })
 
+  /** A test that failed before the last one leaves its tenants active, each with a schema and a KEK, unless they go here. */
   test.afterAll(async () => {
+    for (const tenant of [first, second]) {
+      if (tenant.id === '') continue
+      const shown = await opsApi(operator, 'GET', `/api/tenants/${tenant.id}`)
+      if (shown.status !== 200) continue
+      const { status } = JSON.parse(shown.body) as { status: string }
+      if (status === 'ACTIVE') await opsApi(operator, 'POST', `/api/tenants/${tenant.id}/suspend`)
+      if (status === 'ACTIVE' || status === 'SUSPENDED') await opsApi(operator, 'POST', `/api/tenants/${tenant.id}/offboarding`)
+    }
     if (opsSp !== '' && operatorId !== '') {
       await operator.goto(`${OPS_SSO}/console/`)
       await api(operator, 'POST', `/api/admin/service-providers/${opsSp}/users/removal`, { userIds: [operatorId] })
@@ -201,12 +210,11 @@ test.describe('a new tenant', () => {
     testSpId = await registerSp(admin.page, sp.name, sp.entityId)
 
     member.email = `member-${randomName()}@${first.subdomain}.test`
-    const invited = Date.now()
     const created = await api(admin.page, 'POST', '/api/admin/users', { email: member.email, role: 'USER' })
     expect(created.status).toBe(201)
     member.id = (JSON.parse(created.body) as { id: string }).id
     member.page = await newPage(browser)
-    const link = await linkFromMail(request, { to: member.email, subject: 'You are invited', path: '/invite', since: invited - 1_000 })
+    const link = await linkFromMail(request, { to: member.email, subject: 'You are invited', path: '/invite' })
     await member.page.goto(link)
     member.password = newPassword()
     await member.page.getByLabel('New password').fill(member.password)
@@ -311,11 +319,11 @@ test.describe('a new tenant', () => {
     await page.goto(`${first.origin}/login/`)
     await enterLogin(page, member.email)
     await page.getByRole('link', { name: 'Forgot your password?' }).click()
-    const since = Date.now() - 2_000
+    const earlier = await mailIds(request, member.email, 'Reset your')
     await page.getByLabel('Email').fill(member.email)
     await page.getByRole('button', { name: 'Send link' }).click()
     await expect(page.getByTestId('reset-requested')).toBeVisible()
-    await page.goto(await linkFromMail(request, { to: member.email, subject: 'Reset your', path: '/reset-password', since }))
+    await page.goto(await linkFromMail(request, { to: member.email, subject: 'Reset your', path: '/reset-password', skip: earlier }))
     const password = newPassword()
     await page.getByLabel('New password').fill(password)
     await page.getByRole('button', { name: 'Set password' }).click()
@@ -337,11 +345,11 @@ test.describe('a new tenant', () => {
 
   test('the only admin who lost everything gets back in through the operator, who learns nothing of the tenant', async ({ request }) => {
     const admin = adminOf(first)
-    const since = Date.now() - 2_000
+    const earlier = await mailIds(request, first.admin, 'You are invited')
     const answer = await opsApi(operator, 'POST', `/api/tenants/${first.id}/admin-reinvite`, { contact: first.admin })
     expect(answer.status).toBe(202)
     expect(answer.body).toBe('')
-    const link = await linkFromMail(request, { to: first.admin, subject: 'You are invited', path: '/invite', since })
+    const link = await linkFromMail(request, { to: first.admin, subject: 'You are invited', path: '/invite', skip: earlier })
     await expect.poll(async () => (await api(admin.page, 'GET', `/api/admin/users/${member.id}`)).status).toBe(401)
 
     await admin.page.context().clearCookies()
