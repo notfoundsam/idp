@@ -14,7 +14,7 @@ Each tenant lives in a Postgres schema of its own, and its personal data is encr
 backend/      Kotlin and Spring Boot: one monolith built into app, worker, ops and migrator
 frontend/     Vue 3 pnpm workspace: the login and console apps, the API client, end-to-end tests
 contracts/    OpenAPI contracts, one per audience
-infra/        Terraform for AWS, the release scripts, the images of PgBouncer, the database bootstrap and the collector
+infra/        Terraform for AWS, the release scripts, the headers and routes of the static files, the images of PgBouncer, the database bootstrap and the collector
 dev-tools/    The local environment of docker-compose.yml
 docs/         Architecture, decisions, security, testing, releases
 ```
@@ -65,7 +65,11 @@ The first version is complete in the repository and runs locally. It speaks SAML
 Before the first customer:
 
 - **Region and domain:** the AWS region and the product domain are placeholders in the `*.example` files of `infra/terraform`, `eu-central-1` and `idp.example.com`. Passkeys are bound to the domain, so it must not change after the first users. `PasswordPolicy` refuses the product name in a password and still names it `idp`.
-- **Staging checks:** a few controls are proven only against LocalStack or a mocked AWS provider. Their rows in [asvs-l2.md](docs/security/asvs-l2.md) have the status `Staging` and name the check that remains.
+- **DNS host:** not decided, so Terraform creates no records. The validation records of the certificates, the DKIM records of SES and the record of `ops` are created there by hand, see [infra/terraform/README.md](infra/terraform/README.md).
+- **SES:** the domain identity is verified only once its DKIM records exist, and SES sends to unverified addresses only after AWS grants production access in the region. Until then no invitation reaches a customer.
+- **VPN:** `ops` answers only to the ranges of `ops_client_cidrs`, which is empty until a VPN to the VPC exists, so the operator API is unreachable before it.
+- **Alarm thresholds:** the metric alarms use the thresholds of the local environment until a load test on staging measures normal traffic.
+- **Staging checks:** seven controls rest in part on LocalStack or a mocked AWS provider alone. Their rows in [asvs-l2.md](docs/security/asvs-l2.md) have the status `Staging` and name the check that remains on a staging environment.
 
 ## License
 

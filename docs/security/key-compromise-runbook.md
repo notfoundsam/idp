@@ -45,9 +45,7 @@ If no copy is likely and the path is closed, record the decision not to notify a
 
 ## 4. Watch
 
-Until step 5 is done, watch every `Decrypt` of the tenant KEK outside the task roles, and every export or sharing of a snapshot. The
-alarms `kms-decrypt`, `kms-key-policy` and `rds-snapshot-export` of `infra/terraform/modules/alarms` already fire on them in AWS,
-so check that they are in the state OK and that the on-call engineers hear from the topic `<env>-alarms`.
+Until step 5 is done, watch every `Decrypt` of the tenant KEK outside the task roles, and every export or sharing of a snapshot. The alarms `kms-decrypt`, `kms-key-policy` and `rds-snapshot-export` of `infra/terraform/modules/alarms` already fire on them in AWS, so check that they are in the state OK and that the on-call engineers hear from the topic `<env>-alarms`.
 
 ## 5. Replace the key when data was copied or the path cannot be proven closed
 

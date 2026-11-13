@@ -15,9 +15,10 @@ A map of the code: where things live and how a request moves through them. Decis
 | `contracts/openapi` | `auth.yaml`, `account.yaml` and `admin.yaml` for `app`, `ops.yaml` for `ops` |
 | `frontend` | Apps `login` and `console`, packages `api-client` with types generated from `contracts/openapi` and `ui`, end-to-end tests in `e2e` |
 | `infra/web` | Security headers of the static files in `security-headers.json`, their types in `content-types.mjs`, the local nginx config rendered from both, the CloudFront Function `spa-rewrite.js` and the routes it shares with nginx in `spa-routes.json` |
-| `infra/deploy` | Release scripts that `.github/workflows/deploy.yml` and `rollback.yml` call: the frontend files into S3 with their manifests in `release-assets.mjs`, their pruning in `prune-assets.mjs`, what goes out in `plan-release.mjs` and `changes.mjs`, images in `images.mjs`, revisions, one-off runs and rollouts in `release-tasks.mjs`, the rollback in `rollback.mjs`, the smoke test in `smoke-sso.mjs` and `saml.mjs`, the alarms after it in `alarms.mjs`, and the checks of `docs/security/dependencies.md` in `registries.mjs`, `vulnerabilities.mjs` and `updates.mjs`. A pnpm project of its own, see `docs/release.md` |
+| `infra/deploy` | Release scripts that `.github/workflows/deploy.yml` and `rollback.yml` call: the frontend files into S3 with their manifests in `release-assets.mjs`, their pruning in `prune-assets.mjs`, what goes out in `plan-release.mjs` and `changes.mjs`, images in `images.mjs`, revisions in `task-definitions.mjs`, one-off runs and rollouts in `release-tasks.mjs`, the rollback in `rollback.mjs`, the smoke test in `smoke-sso.mjs` and `saml.mjs`, the alarms after it in `alarms.mjs`, the checks of `docs/security/dependencies.md` in `registries.mjs`, `vulnerabilities.mjs` and `updates.mjs`, and the CodeQL gate of pull requests in `code-scanning.mjs`. A pnpm project of its own, see `docs/release.md` |
 | `infra/terraform` | AWS environments, see `infra/terraform/README.md` |
 | `infra/pgbouncer`, `infra/db-bootstrap` | Images of PgBouncer and of the database bootstrap in AWS. The role step also sets the passwords locally |
+| `infra/otel-collector` | The image of the OpenTelemetry Collector in AWS, see `docs/security/logging.md` |
 | `dev-tools`, `docker-compose.yml` | Local environment, see `dev-tools/README.md` |
 
 ## Deployables
@@ -63,7 +64,7 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 ## Other documents
 
 - `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP, 009 AWS infrastructure
-- `docs/security/`: ASVS map, authorization, authentication, sessions, limits, input validation, data protection, crypto inventory, logging, communications and runbooks
+- `docs/security/`: ASVS map, authorization, authentication, sessions, limits, input validation, data protection, crypto inventory, logging, communications, dependencies and runbooks
 - `docs/testing.md`: test layers, tools and fixtures
 - `docs/release.md`: releases and rollbacks of an environment
 - `docs/portability.md`: what replaces each AWS service on premises, and the order of a move
