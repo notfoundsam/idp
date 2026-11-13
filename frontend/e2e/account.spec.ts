@@ -75,9 +75,19 @@ test.describe.serial('the account of a user', () => {
     await expect(page.getByLabel('Current password')).toHaveValue('')
 
     await page.getByRole('button', { name: 'Remove authenticator app' }).click()
+    await expect(page.getByRole('alert')).toContainText('Add another one first')
+    await expect(page.getByTestId('totp-status')).toHaveText('An authenticator app is set up.')
+
+    await page.getByRole('button', { name: 'Add a passkey' }).click()
+    await expect(page.getByTestId('passkey')).toHaveCount(1)
+    await expect(page.getByTestId('passkey')).toContainText('never used')
+    await expect(page.getByTestId('recovery-codes')).toHaveCount(0)
+    expect(await authenticator.passkeys()).toEqual([{ rpId: 'acme.idp.test', discoverable: true }])
+
+    await page.getByRole('button', { name: 'Remove authenticator app' }).click()
     await expect(page.getByTestId('totp-status')).toHaveText('No authenticator app is set up.')
     await expect(page.getByTestId('end-sessions-offer')).toBeVisible()
-    await expect(page.getByTestId('recovery-codes-left')).toHaveCount(0)
+    await expect(page.getByTestId('recovery-codes-left')).toBeVisible()
     await page.getByRole('button', { name: 'Set up an authenticator app' }).click()
     secret = (await page.getByTestId('totp-secret').innerText()).replace(/\s/g, '')
     expect(secret).not.toBe(enrolled)
@@ -88,14 +98,9 @@ test.describe.serial('the account of a user', () => {
     await expect(page.getByRole('alert')).toContainText('That code did not work')
     await page.getByLabel('Code from your authenticator app').fill(totp(secret))
     await page.getByRole('button', { name: 'Confirm' }).click()
-    expect(await shownCodes(page)).not.toEqual([])
     await expect(page.getByTestId('totp-status')).toHaveText('An authenticator app is set up.')
-
-    await page.getByRole('button', { name: 'Add a passkey' }).click()
-    await expect(page.getByTestId('passkey')).toHaveCount(1)
-    await expect(page.getByTestId('passkey')).toContainText('never used')
     await expect(page.getByTestId('recovery-codes')).toHaveCount(0)
-    expect(await authenticator.passkeys()).toEqual([{ rpId: 'acme.idp.test', discoverable: true }])
+
     await page.getByRole('button', { name: /^Remove the passkey added / }).click()
     await expect(page.getByTestId('no-passkeys')).toBeVisible()
 

@@ -1,6 +1,7 @@
 package idp.app.account
 
 import idp.app.admin.put
+import idp.app.admin.resetPolicies
 import idp.app.admin.roleBody
 import idp.app.admin.signedIn
 import idp.app.login.ACME
@@ -340,6 +341,64 @@ class AccountApiTest :
                 val (browser, _) = signedIn("bad-id")
 
                 browser.delete("$PASSKEYS/nonsense").status shouldBe 400
+            }
+        }
+
+        context("the last factor the policy asks for") {
+            val policies = environment.acme.table("tenant_policies")
+
+            fun <T> underPolicy(
+                change: String,
+                block: () -> T,
+            ): T {
+                environment.sql.update("UPDATE $policies SET $change")
+                return try {
+                    block()
+                } finally {
+                    environment.resetPolicies()
+                }
+            }
+
+            test("stays under a policy that asks for MFA, while one of two goes, and each refusal changes nothing") {
+                val (browser, user) = signedIn("keeps-last")
+                browser.addTotp()
+
+                underPolicy("mfa_for_users = true") {
+                    refused(browser.delete(TOTP))
+                    browser.factors().get("totp").asBoolean() shouldBe true
+                    browser.factors().get("recoveryCodesLeft").asInt() shouldBe CODES
+
+                    browser.addPasskey(PasskeyDevice()).status shouldBe 200
+                    browser.delete(TOTP).status shouldBe 204
+                    refused(browser.delete("$PASSKEYS/${browser.passkeyIds().single()}"))
+                }
+
+                browser.passkeyIds() shouldHaveSize 1
+                browser.factors().get("recoveryCodesLeft").asInt() shouldBe CODES
+                actions(user).filter { it == "user.totp_removed" } shouldHaveSize 1
+                actions(user).filter { it == "user.passkey_removed" }.shouldBeEmpty()
+            }
+
+            test("is the last passkey under a policy that asks for one, though a TOTP is left") {
+                val (browser, _) = signedIn("keeps-passkey-last")
+                browser.addTotp()
+                browser.addPasskey(PasskeyDevice()).status shouldBe 200
+
+                underPolicy("passkey_required = true") {
+                    refused(browser.delete("$PASSKEYS/${browser.passkeyIds().single()}"))
+                    browser.delete(TOTP).status shouldBe 204
+                }
+
+                browser.passkeyIds() shouldHaveSize 1
+            }
+
+            test("is any second factor of an admin, whom every policy asks for MFA") {
+                val (browser, admin) = environment.signedIn(application, email("admin-keeps-totp"))
+
+                refused(browser.delete(TOTP))
+
+                browser.factors().get("totp").asBoolean() shouldBe true
+                actions(admin).filter { it == "user.totp_removed" }.shouldBeEmpty()
             }
         }
 

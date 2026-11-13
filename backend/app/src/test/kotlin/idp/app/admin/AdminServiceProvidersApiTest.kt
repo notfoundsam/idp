@@ -19,6 +19,7 @@ import idp.federation.application.SpSettings
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.security.UserRole
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
@@ -326,6 +327,29 @@ class AdminServiceProvidersApiTest :
                 browser.upload("Too large", metadataOf(MAX_METADATA_BYTES + 1)).status shouldBe 422
                 browser.upload("Far too large", metadataOf(170_000)).status shouldBe 413
                 browser.post(SEARCH, searchBody("x".repeat(40_000))).status shouldBe 413
+            }
+
+            test("an SP the platform manages is neither removed nor reconfigured by an admin, and nothing is audited") {
+                val (browser, admin) = admin("sp-managed")
+                val managed = acme.acting { federation.registerServiceProvider("ops", metadata(), Actor.System, managed = true) }
+                val etag = browser.get(spPath(managed)).header(ETAG).shouldNotBeNull()
+
+                browser.delete(spPath(managed)).status shouldBe 422
+                browser.put(settings(managed), spSettingsBody(nameIdFormat = "EMAIL"), "If-Match", etag).status shouldBe 422
+
+                stored(managed).shouldNotBeNull().settings.nameIdFormat shouldBe NameIdFormat.PERSISTENT
+                audit(admin).map { it.action }.filter { it.startsWith("sp.") }.shouldBeEmpty()
+                acme.acting { federation.removeServiceProvider(managed, Actor.System) }
+            }
+
+            test("the limit of a file holds only on the exact path of the upload, and any other spelling gets the small one") {
+                val (browser, _) = admin("sp-spellings")
+                val largest = metadataOf(MAX_METADATA_BYTES)
+
+                listOf("$SPS/", "$SPS;v=1", "$SPS/.").forEach { path ->
+                    withClue(path) { browser.multipart(path, metadataForm("Respelled", largest)).status shouldBe 413 }
+                }
+                browser.get(SPS).list("serviceProviders").none { it.text("name") == "Respelled" } shouldBe true
             }
         }
 

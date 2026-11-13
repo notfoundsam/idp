@@ -29,6 +29,17 @@ internal class TenantPolicies {
             ),
         )
 
+    fun passkeysLocked(dsl: DSLContext): Boolean =
+        dsl
+            .select(TENANT_POLICIES.PASSKEYS_LOCKED)
+            .from(TENANT_POLICIES)
+            .fetchSingle()
+            .value1()!!
+
+    fun lockPasskeys(dsl: DSLContext) {
+        dsl.update(TENANT_POLICIES).set(TENANT_POLICIES.PASSKEYS_LOCKED, true).execute()
+    }
+
     private fun toPolicy(row: TenantPoliciesRecord) =
         TenantPolicy(
             row.mfaForUsers!!,

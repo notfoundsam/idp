@@ -25,6 +25,7 @@ internal class ServiceProviders {
         dsl: DSLContext,
         sp: ServiceProvider,
         now: Instant,
+        managed: Boolean = false,
     ): Boolean {
         val inserted =
             dsl
@@ -39,6 +40,7 @@ internal class ServiceProviders {
                 .set(SERVICE_PROVIDERS.SIGNATURE_ALGORITHM, sp.settings.signatureAlgorithm.name)
                 .set(SERVICE_PROVIDERS.RELEASED_ATTRIBUTES, sp.settings.attributes.names())
                 .set(SERVICE_PROVIDERS.CREATED_AT, now.atOffset(ZoneOffset.UTC))
+                .set(SERVICE_PROVIDERS.MANAGED, managed)
                 .onConflict(SERVICE_PROVIDERS.ENTITY_ID)
                 .doNothing()
                 .execute() == 1
@@ -99,6 +101,16 @@ internal class ServiceProviders {
         )
 
     private fun Set<SamlAttribute>.names(): Array<String> = map { it.name }.sorted().toTypedArray()
+
+    fun isManaged(
+        dsl: DSLContext,
+        id: UUID,
+    ): Boolean =
+        dsl
+            .select(SERVICE_PROVIDERS.MANAGED)
+            .from(SERVICE_PROVIDERS)
+            .where(SERVICE_PROVIDERS.ID.eq(id))
+            .fetchOne(SERVICE_PROVIDERS.MANAGED) == true
 
     /** Assignments and endpoints go with it by FK. */
     fun delete(

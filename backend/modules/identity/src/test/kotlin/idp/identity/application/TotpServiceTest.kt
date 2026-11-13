@@ -809,6 +809,36 @@ class TotpServiceTest :
                 }
             }
 
+            test("a requirement keeps the last second factor, the codes and the journal as they were") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.acting { issueRecoveryCodes(user, ADMIN) }
+                    audit.changes.clear()
+
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) } }
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, requirement = FactorRequirement.PASSKEY) } }
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe true
+                    tenant.recoveryHashes(user) shouldHaveSize 10
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
+            test("a requirement of a second factor lets the TOTP go while a passkey is left") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.passkey(user)
+
+                    tenant.acting { remove(user, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) }
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe false
+                }
+            }
+
             test("lets a new secret be enrolled") {
                 TotpFixture().run {
                     val tenant = tenant()

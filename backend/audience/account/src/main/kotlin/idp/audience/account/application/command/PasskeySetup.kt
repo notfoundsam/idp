@@ -1,5 +1,6 @@
 package idp.audience.account.application.command
 
+import idp.authentication.application.AuthenticationService
 import idp.authentication.application.LoginFactor
 import idp.identity.application.PasskeyAttestation
 import idp.identity.application.PasskeyNotValid
@@ -60,11 +61,12 @@ class RemovePasskey(
 
 class RemovePasskeyHandler(
     private val passkeys: PasskeyService,
+    private val authentication: AuthenticationService,
 ) : MessageHandler<RemovePasskey, Unit> {
     override val messageType = RemovePasskey::class
 
     override fun handle(message: RemovePasskey) {
         val user = currentUser()
-        passkeys.remove(user.id, message.id, user, clientIp())
+        passkeys.remove(user.id, message.id, user, clientIp(), authentication.factorRequirementFor(currentRole()))
     }
 }

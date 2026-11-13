@@ -6,9 +6,7 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.crypto.KeyManagementService
-import idp.sharedkernel.observability.FailureSource
 import idp.sharedkernel.observability.Failures
-import idp.sharedkernel.observability.LogFields
 import idp.sharedkernel.scheduling.JobLease
 import idp.sharedkernel.scheduling.ScheduledJob
 import idp.sharedkernel.tenant.TenantContext
@@ -16,12 +14,9 @@ import idp.sharedkernel.tenant.TenantTransaction
 import idp.tenancy.application.TenancyNotFound
 import idp.tenancy.application.TenancyService
 import idp.tenancy.application.TenantView
-import org.slf4j.LoggerFactory
+import idp.worker.forEachTenantWithKek
 import java.time.Clock
 import java.time.Duration
-
-private val log = LoggerFactory.getLogger(KekMoveJob::class.java)
-private val failures = Failures()
 
 const val KEK_REPLACED = "tenant.kek_replaced"
 const val PREVIOUS_KEK_DESTROYED = "tenant.previous_kek_destroyed"
@@ -41,12 +36,13 @@ class KekMoveJob(
     private val audit: AuditLog,
     private val newKeys: String,
     private val keepPrevious: Duration,
+    private val failures: Failures,
     override val interval: Duration = Duration.ofHours(1),
 ) : ScheduledJob {
     override val name: String = "kek-move"
 
     override fun run(lease: JobLease) {
-        tenancy.forEachTenantWithKek(name, lease) { tenant ->
+        tenancy.forEachTenantWithKek(name, lease, failures) { tenant ->
             when {
                 tenant.previousKekUri == null && !tenant.kekUri!!.startsWith("$newKeys://") -> rewrap(replace(tenant))
                 tenant.previousKekUri != null && tenant.previousKekDestroyAfter == null -> rewrap(tenant)
@@ -82,13 +78,14 @@ class PreviousKekJob(
     private val kms: KeyManagementService,
     private val transaction: TenantTransaction,
     private val audit: AuditLog,
+    private val failures: Failures,
     private val clock: Clock = Clock.systemUTC(),
     override val interval: Duration = Duration.ofHours(1),
 ) : ScheduledJob {
     override val name: String = "kek-destroy-previous"
 
     override fun run(lease: JobLease) {
-        tenancy.forEachTenantWithKek(name, lease) { tenant ->
+        tenancy.forEachTenantWithKek(name, lease, failures) { tenant ->
             val previous = tenant.previousKekUri
             val after = tenant.previousKekDestroyAfter
             if (previous != null && after != null && !clock.instant().isBefore(after)) {
@@ -96,26 +93,6 @@ class PreviousKekJob(
                 val record = AuditRecord(Actor.System, PREVIOUS_KEK_DESTROYED, AuditTarget.tenant(tenant.id))
                 TenantContext.with(TenantContext(tenant.id, tenant.kekUri)) { transaction.atomically { audit.recordChange(record) } }
                 tenancy.forgetPreviousKek(tenant.id)
-            }
-        }
-    }
-}
-
-/** The lease is renewed before each tenant, and a failure stops that tenant alone. */
-private fun TenancyService.forEachTenantWithKek(
-    job: String,
-    lease: JobLease,
-    block: (TenantView) -> Unit,
-) {
-    for (tenant in tenantsWithKek()) {
-        if (!lease.renew()) {
-            log.warn("Job {} lost its lease and stops", job)
-            return
-        }
-        runCatching { block(tenant) }.onFailure {
-            LogFields.with(LogFields.TENANT_ID, tenant.id.toString()) {
-                log.error("Job {} failed for tenant {}", job, tenant.id)
-                failures.record(FailureSource.JOB, it)
             }
         }
     }

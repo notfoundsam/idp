@@ -79,7 +79,10 @@ class AccountConfiguration {
     ) = ConfirmTotpSetupHandler(totp, audit)
 
     @Bean
-    fun removeTotpHandler(totp: TotpService) = RemoveTotpHandler(totp)
+    fun removeTotpHandler(
+        totp: TotpService,
+        authentication: AuthenticationService,
+    ) = RemoveTotpHandler(totp, authentication)
 
     @Bean
     fun beginPasskeySetupHandler(passkeys: PasskeyService) = BeginPasskeySetupHandler(passkeys)
@@ -92,7 +95,10 @@ class AccountConfiguration {
     ) = FinishPasskeySetupHandler(passkeys, totp, audit)
 
     @Bean
-    fun removePasskeyHandler(passkeys: PasskeyService) = RemovePasskeyHandler(passkeys)
+    fun removePasskeyHandler(
+        passkeys: PasskeyService,
+        authentication: AuthenticationService,
+    ) = RemovePasskeyHandler(passkeys, authentication)
 
     @Bean
     fun renewRecoveryCodesHandler(

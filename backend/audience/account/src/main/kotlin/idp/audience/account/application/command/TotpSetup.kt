@@ -1,5 +1,6 @@
 package idp.audience.account.application.command
 
+import idp.authentication.application.AuthenticationService
 import idp.authentication.application.LoginFactor
 import idp.identity.application.TotpEnrollment
 import idp.identity.application.TotpService
@@ -52,11 +53,12 @@ class RemoveTotp :
 
 class RemoveTotpHandler(
     private val totp: TotpService,
+    private val authentication: AuthenticationService,
 ) : MessageHandler<RemoveTotp, Unit> {
     override val messageType = RemoveTotp::class
 
     override fun handle(message: RemoveTotp) {
         val user = currentUser()
-        totp.remove(user.id, user, clientIp())
+        totp.remove(user.id, user, clientIp(), authentication.factorRequirementFor(currentRole()))
     }
 }

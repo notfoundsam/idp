@@ -29,6 +29,7 @@ import idp.sharedkernel.crypto.DerivedKey
 import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.domain.Conflict
+import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.scheduling.TenantCleanup
@@ -105,6 +106,8 @@ class SamlSubject(
 }
 
 class SamlIdentityMissing : IllegalStateException("The tenant has no SAML identity yet")
+
+class ServiceProviderManaged : DomainRuleViolation("The platform manages this Service Provider, so only the system changes it")
 
 data class AcsEndpointView(
     val index: Int,
@@ -224,16 +227,20 @@ class FederationService(
         return SigningCredential(key.certificate, KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(pkcs8)))
     }
 
-    /** Parses before the transaction, so a large or hostile file holds no connection. */
+    /**
+     * Parses before the transaction, so a large or hostile file holds no connection. A [managed] SP, such as `ops` at the service
+     * tenant, is then removed or reconfigured only by the system.
+     */
     fun registerServiceProvider(
         name: String,
         metadata: ByteArray,
         actor: Actor,
         ip: String? = null,
+        managed: Boolean = false,
     ): UUID {
         val sp = ServiceProvider.registered(UUID.randomUUID(), name, importer.read(metadata))
         transaction.execute { dsl ->
-            if (!serviceProviders.add(dsl, sp, clock.instant())) throw EntityIdTaken()
+            if (!serviceProviders.add(dsl, sp, clock.instant(), managed)) throw EntityIdTaken()
             audit.recordChange(
                 AuditRecord(actor, SP_REGISTERED, AuditTarget.serviceProvider(sp.id), ip, mapOf("entity_id" to sp.entityId)),
             )
@@ -254,6 +261,7 @@ class FederationService(
     ): Long =
         transaction.execute { dsl ->
             val sp = load(dsl, spId)
+            ensureChangeable(dsl, spId, actor)
             if (version != null && version != sp.version) throw VersionConflictException(SERVICE_PROVIDERS_TABLE, spId, version)
             if (sp.settings == settings) return@execute sp.version
             sp.changeSettings(settings)
@@ -287,6 +295,7 @@ class FederationService(
     ) {
         transaction.execute { dsl ->
             val sp = load(dsl, spId)
+            ensureChangeable(dsl, spId, actor)
             serviceProviders.delete(dsl, spId)
             audit.recordChange(
                 AuditRecord(actor, SP_REMOVED, AuditTarget.serviceProvider(spId), ip, mapOf("entity_id" to sp.entityId)),
@@ -468,6 +477,14 @@ class FederationService(
         dsl: DSLContext,
         id: UUID,
     ): ServiceProvider = serviceProviders.find(dsl, id) ?: throw ServiceProviderNotFound(id)
+
+    private fun ensureChangeable(
+        dsl: DSLContext,
+        id: UUID,
+        actor: Actor,
+    ) {
+        if (actor != Actor.System && serviceProviders.isManaged(dsl, id)) throw ServiceProviderManaged()
+    }
 
     private fun sha256(value: String): ByteArray = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
 

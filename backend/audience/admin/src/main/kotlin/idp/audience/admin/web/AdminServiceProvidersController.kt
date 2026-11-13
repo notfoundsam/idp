@@ -19,7 +19,6 @@ import idp.federation.application.SignedPart
 import idp.federation.application.SpSettings
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
-import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
 import org.springframework.http.HttpHeaders
@@ -222,13 +221,7 @@ class AdminServiceProvidersController(
         @RequestHeader(HttpHeaders.IF_MATCH, required = false) ifMatch: String?,
         @RequestBody request: SpSettingsRequest,
     ): ResponseEntity<Void> {
-        val version = versionOf(ifMatch)
-        val saved =
-            try {
-                commands.dispatch(ChangeSpSettings(id, request.settings(), version))
-            } catch (_: VersionConflictException) {
-                throw ResponseStatusException(HttpStatus.PRECONDITION_FAILED)
-            }
+        val saved = commands.dispatch(ChangeSpSettings(id, request.settings(), versionOf(ifMatch)))
         return ResponseEntity.noContent().eTag(etag(saved)).build()
     }
 

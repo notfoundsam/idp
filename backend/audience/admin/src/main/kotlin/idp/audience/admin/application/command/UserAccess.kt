@@ -8,11 +8,15 @@ import idp.sharedkernel.security.RequiresFreshAuthentication
 import idp.sharedkernel.security.UserRole
 import java.util.UUID
 
-/** The role is read on every request, so a live session of the user gets the new one on its next request. */
+/**
+ * The role is read on every request, so a live session of the user gets the new one on its next request.
+ * An admin role outlives the session that granted it, so a stolen session alone must not be enough.
+ */
 class ChangeRole(
     val userId: UUID,
     val role: UserRole,
-) : Command<Unit>
+) : Command<Unit>,
+    RequiresFreshAuthentication
 
 class ChangeRoleHandler(
     private val identity: IdentityService,

@@ -5,6 +5,7 @@ import idp.authentication.adapters.persistence.Flows
 import idp.authentication.adapters.persistence.SessionCleanup
 import idp.authentication.adapters.persistence.Sessions
 import idp.authentication.adapters.persistence.TenantPolicies
+import idp.authentication.domain.Assurance
 import idp.authentication.domain.AuthFactor
 import idp.authentication.domain.AuthFlow
 import idp.authentication.domain.FlowExpired
@@ -18,6 +19,7 @@ import idp.authentication.domain.SsoSession
 import idp.authentication.domain.StepInProgress
 import idp.authentication.domain.StepNotAllowed
 import idp.authentication.domain.TenantPolicy
+import idp.identity.application.FactorRequirement
 import idp.identity.application.IdentityService
 import idp.identity.application.PasskeyService
 import idp.identity.application.TotpService
@@ -29,10 +31,12 @@ import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.DerivedKey
 import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.KeyHierarchy
+import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.security.Principal
 import idp.sharedkernel.security.Role
+import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
@@ -89,6 +93,8 @@ class UserSessionView(
 class SessionNotFound(
     id: UUID,
 ) : NotFound("No live session $id")
+
+class PasskeysLocked : DomainRuleViolation("The platform requires passkeys of this tenant, so the policy keeps them")
 
 /** MFA for `TENANT_ADMIN` has no field: no policy relaxes it. */
 data class PolicyView(
@@ -407,6 +413,16 @@ class AuthenticationService(
             policies.load(dsl).run { PolicyView(mfaForUsers, passkeyRequired, sessionIdleTimeout, sessionAbsoluteTimeout, version) }
         }
 
+    /** What a user of [role] must keep of their factors, so removing one never leaves them below the policy. */
+    fun factorRequirementFor(role: UserRole): FactorRequirement =
+        transaction.execute { dsl ->
+            when (policies.load(dsl).assuranceFor(role)) {
+                Assurance.PASSKEY -> FactorRequirement.PASSKEY
+                Assurance.MULTI_FACTOR -> FactorRequirement.SECOND_FACTOR
+                Assurance.SINGLE_FACTOR -> FactorRequirement.NONE
+            }
+        }
+
     /**
      * Replaces the policy read at [version], so an admin cannot overwrite a change they have not seen. Records the fields that
      * changed, a relaxed MFA too. Returns the new version, or the same one when nothing changed.
@@ -418,6 +434,7 @@ class AuthenticationService(
         ip: String? = null,
     ): Long =
         transaction.execute { dsl ->
+            if (!change.passkeyRequired && policies.passkeysLocked(dsl)) throw PasskeysLocked()
             val current = policies.load(dsl)
             val next =
                 TenantPolicy(change.mfaForUsers, change.passkeyRequired, change.sessionIdleTimeout, change.sessionAbsoluteTimeout, version)
@@ -441,12 +458,16 @@ class AuthenticationService(
             }
         }
 
-    /** Every role then logs in with a passkey. Records only a change, so a repeat leaves the journal as it was. */
+    /**
+     * Every role then logs in with a passkey, and the policy can no longer drop it: the service tenant is the IdP of `ops`, which
+     * accepts only a passkey. Records only a change, so a repeat leaves the journal as it was.
+     */
     fun requirePasskeys(
         actor: Actor,
         ip: String? = null,
     ) {
         transaction.execute { dsl ->
+            policies.lockPasskeys(dsl)
             val policy = policies.load(dsl)
             if (policy.passkeyRequired) return@execute
             policies.save(dsl, policy.withPasskeysRequired())

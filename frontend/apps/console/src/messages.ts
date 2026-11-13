@@ -7,6 +7,9 @@ export const PASSWORD_REFUSED =
 /** A wrong code and one that has to wait read the same. */
 export const CODE_REFUSED = 'That code did not work. Wait for the next one in the app and try again.'
 
+/** The policy keeps the last factor it asks for, so the replacement comes first. */
+export const FACTOR_REQUIRED = 'Your organization requires this kind of sign-in. Add another one first, then remove this one.'
+
 /** What a failed call means to the user. A refusal of the input reads differently on each form, so [rejected] names it there. */
 export function messageOf(error: unknown, rejected = 'That did not work. Check what you entered and try again.'): string {
   if (needsReauthentication(error)) return 'For this change, sign in again: your last sign-in is too old.'

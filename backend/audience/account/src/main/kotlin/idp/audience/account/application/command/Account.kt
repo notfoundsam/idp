@@ -8,6 +8,7 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.security.SecurityContext
+import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.web.ClientIp
 import java.util.UUID
 
@@ -34,6 +35,9 @@ internal fun currentUser(): Actor.User = checkNotNull(SecurityContext.currentOrN
 
 /** A principal of this audience comes from a session cookie, so it always names its session. */
 internal fun currentSession(): UUID = checkNotNull(SecurityContext.currentOrNull()?.sessionId)
+
+/** The role is read from the user on every request, so it is the current one. */
+internal fun currentRole(): UserRole = UserRole.valueOf(checkNotNull(SecurityContext.currentOrNull()).role.name)
 
 internal fun AuditLog.credentialRefused(
     user: Actor.User,

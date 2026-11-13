@@ -105,6 +105,25 @@ class CertificateExpiryJobTest :
             }
         }
 
+        test("a tenant that starts failing keeps the end read last time, so its certificate still counts") {
+            Certificates().run {
+                clock.offset = Duration.ofDays(-400)
+                val failing = tenant()
+                clock.offset = Duration.ZERO
+                tenant()
+                val end = certificate(failing).notAfter.toInstant()
+                run()
+                job.earliest() shouldBe end
+
+                sql.update("""DROP TABLE "${TenantSchema(failing.tenantId).name}".saml_signing_keys CASCADE""")
+                run()
+
+                failures() shouldBe 1.0
+                job.earliest() shouldBe end
+                gauge() shouldBe end.epochSecond.toDouble()
+            }
+        }
+
         test("before a run, and without any certificate, the gauge has no value") {
             Certificates().run {
                 gauge().isNaN() shouldBe true

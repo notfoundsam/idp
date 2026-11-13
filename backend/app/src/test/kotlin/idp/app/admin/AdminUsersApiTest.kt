@@ -368,6 +368,19 @@ class AdminUsersApiTest :
                 audit(admin).filter { it.action == "user.created" }.size shouldBe 1
             }
 
+            test("needs a fresh login, creates nobody and the refusal is audited") {
+                val (browser, admin) = admin("aged-inviter")
+                environment.age(admin)
+
+                val reply = browser.post(USERS, inviteBody(email("stolen-session-admin"), UserRole.TENANT_ADMIN))
+
+                reply.status shouldBe 403
+                reply.json().text("error") shouldBe "reauthentication_required"
+                browser.search(email("stolen-session-admin")).found().shouldBeEmpty()
+                audit(admin).map { it.action } shouldContain REAUTHENTICATION
+                audit(admin).map { it.action } shouldNotContain "user.created"
+            }
+
             test("a body without a role, with an unknown one or with an unknown field answers 400") {
                 val (browser, _) = admin("sloppy-inviter")
 
@@ -421,6 +434,20 @@ class AdminUsersApiTest :
 
                 demoted.post(invitation(UUID.randomUUID())).status shouldBe 403
                 demoted.isSignedIn() shouldBe true
+            }
+
+            test("needs a fresh login, keeps the role and the refusal is audited") {
+                val (browser, admin) = admin("aged-promoter")
+                val (_, target) = member("not-promoted")
+                environment.age(admin)
+
+                val reply = browser.put(role(target), roleBody(UserRole.TENANT_ADMIN))
+
+                reply.status shouldBe 403
+                reply.json().text("error") shouldBe "reauthentication_required"
+                stored(target).shouldNotBeNull().role shouldBe UserRole.USER
+                audit(admin).map { it.action } shouldContain REAUTHENTICATION
+                audit(admin).map { it.action } shouldNotContain "user.role_changed"
             }
 
             test("an unknown role answers 400 and an unknown user 404") {

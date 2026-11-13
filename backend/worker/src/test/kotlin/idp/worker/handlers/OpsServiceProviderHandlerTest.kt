@@ -2,6 +2,7 @@ package idp.worker.handlers
 
 import idp.federation.application.FederationService
 import idp.federation.application.NameIdFormat
+import idp.federation.application.ServiceProviderManaged
 import idp.identity.application.IdentityService
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.crypto.KeyHierarchy
@@ -109,8 +110,11 @@ class OpsServiceProviderHandlerTest :
                 sp.authnRequestsSigned shouldBe false
                 sp.settings.nameIdFormat shouldBe NameIdFormat.EMAIL
                 federation.assignedUsers(sp.id).shouldContainExactly(identity.findByEmail(OPERATOR_EMAIL).shouldNotBeNull().id)
+                val admin = Actor.User(identity.findByEmail(OPERATOR_EMAIL).shouldNotBeNull().id)
+                shouldThrow<ServiceProviderManaged> { federation.removeServiceProvider(sp.id, admin) }
             }
             tenant.passkeyRequired() shouldBe true
+            sql.queryForObject("SELECT passkeys_locked FROM ${tenant.table("tenant_policies")}", Boolean::class.java) shouldBe true
             sql.queryForList(
                 "SELECT DISTINCT actor_type FROM ${tenant.table("audit_entries")} WHERE action IN " +
                     "('sp.registered', 'sp.settings_changed', 'policy.changed', 'sp.user_assigned')",

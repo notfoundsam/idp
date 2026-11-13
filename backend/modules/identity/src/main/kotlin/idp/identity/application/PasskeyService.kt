@@ -3,6 +3,7 @@ package idp.identity.application
 import idp.identity.adapters.persistence.PasskeyChallenges
 import idp.identity.adapters.persistence.Passkeys
 import idp.identity.adapters.persistence.RecoveryCodes
+import idp.identity.adapters.persistence.Totps
 import idp.identity.adapters.persistence.Users
 import idp.identity.adapters.webauthn.AssertionCheck
 import idp.identity.adapters.webauthn.PasskeyVerifier
@@ -79,6 +80,7 @@ class PasskeyService(
     private val passkeys = Passkeys()
     private val recoveryCodes = RecoveryCodes()
     private val challenges = PasskeyChallenges()
+    private val floor = FactorFloor(users, Totps(), passkeys)
     private val verifier = PasskeyVerifier()
     private val random = SecureRandom()
 
@@ -134,15 +136,21 @@ class PasskeyService(
             passkeys.ofUser(dsl, userId).map { PasskeyView(it.id, it.createdAt, it.lastUsedAt, it.backedUp) }
         }
 
-    /** A passkey of someone else reads as missing. Recovery codes go when this was the last second factor. */
+    /**
+     * A passkey of someone else reads as missing. Recovery codes go when this was the last second factor. [requirement] refuses a
+     * removal that would leave the user below it.
+     */
     fun remove(
         userId: UUID,
         passkeyId: UUID,
         actor: Actor,
         ip: String? = null,
+        requirement: FactorRequirement = FactorRequirement.NONE,
     ) {
         transaction.execute { dsl ->
-            if (!passkeys.delete(dsl, userId, passkeyId)) throw PasskeyNotFound(passkeyId)
+            floor.removing(dsl, userId, requirement) {
+                if (!passkeys.delete(dsl, userId, passkeyId)) throw PasskeyNotFound(passkeyId)
+            }
             val codesRemoved = recoveryCodes.deleteWithoutSecondFactor(dsl, userId)
             val details = mapOf(PASSKEY to passkeyId.toString()) + removedCodes(codesRemoved)
             audit.recordChange(AuditRecord(actor, PASSKEY_REMOVED, AuditTarget.user(userId), ip, details))

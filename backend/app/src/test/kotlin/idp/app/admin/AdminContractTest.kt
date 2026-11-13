@@ -310,6 +310,9 @@ class AdminContractTest :
             environment.age(admin)
             browser.post(MFA_RESET.of(target)).conforms(POST, MFA_RESET).status shouldBe 403
             browser.delete(USER.of(target)).conforms(DELETE, USER).status shouldBe 403
+            val invitation = inviteBody("contract-aged-invitee@acme.test", UserRole.TENANT_ADMIN)
+            browser.post(USERS, invitation).conforms(POST, USERS).status shouldBe 403
+            browser.put(ROLE.of(admin), roleBody(UserRole.USER)).conforms(PUT, ROLE).status shouldBe 403
         }
 
         test("ending every session of the tenant conforms") {

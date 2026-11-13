@@ -2,7 +2,7 @@
 import type { Factors } from '@idp/api-client'
 import { registerPasskey } from '@idp/ui'
 import { useConsole } from '../context'
-import { dateOf } from '../messages'
+import { dateOf, FACTOR_REQUIRED } from '../messages'
 import { FACTORS, useChange } from '../queries'
 import { useAccountStore } from '../store'
 import ProblemMessage from './ProblemMessage.vue'
@@ -46,7 +46,7 @@ const remove = useChange((id: string) => client.removePasskey(id), [FACTORS], ()
       </li>
     </ul>
     <p v-else data-testid="no-passkeys">No passkey is registered.</p>
-    <ProblemMessage :error="remove.error.value" />
+    <ProblemMessage :error="remove.error.value" :rejected="FACTOR_REQUIRED" />
     <ProblemMessage :error="add.error.value" />
     <button v-if="browser.credentials" type="button" :disabled="add.isPending.value" @click="add.mutate(browser.credentials)">
       Add a passkey

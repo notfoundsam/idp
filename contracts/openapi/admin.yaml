@@ -5,8 +5,8 @@ info:
   description: >-
     The tenant admin area. Every call needs a live session of a `TENANT_ADMIN` of the tenant the host names, and anyone else gets 403.
     A session belongs to its tenant, so a session of another tenant counts as none and gets 401, and a user of another tenant reads as
-    missing. A call that changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Erasing a user,
-    resetting their MFA, saving the policy or the settings of a Service Provider, removing a Service Provider and completing a rotation of
+    missing. A call that changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Inviting a user,
+    changing a role, erasing a user, resetting their MFA, saving the policy or the settings of a Service Provider, removing a Service Provider and completing a rotation of
     the signing key need a session whose full login is at most 10 minutes old: otherwise the answer is 403 with
     `reauthentication_required`, and the client walks a flow of the login API started with `reauthenticate`, then repeats the call. A
     client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and a client older than
@@ -34,7 +34,7 @@ paths:
         "401":
           $ref: "#/components/responses/NoSession"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/Refused"
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
@@ -119,7 +119,7 @@ paths:
         "401":
           $ref: "#/components/responses/NoSession"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/Refused"
         "404":
           $ref: "#/components/responses/UserNotFound"
         "413":
@@ -330,7 +330,8 @@ paths:
           $ref: "#/components/responses/TooLarge"
         "422":
           description: >-
-            A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds
+            A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds.
+            Or the policy drops passkeys of the service tenant, which the platform requires there
         "426":
           $ref: "#/components/responses/UpgradeRequired"
         "428":
@@ -451,6 +452,8 @@ paths:
           $ref: "#/components/responses/Refused"
         "404":
           $ref: "#/components/responses/ServiceProviderNotFound"
+        "422":
+          $ref: "#/components/responses/ServiceProviderManaged"
         "426":
           $ref: "#/components/responses/UpgradeRequired"
         "429":
@@ -493,6 +496,8 @@ paths:
           description: The settings changed since the client read them, or `If-Match` names no version of them
         "413":
           $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/ServiceProviderManaged"
         "426":
           $ref: "#/components/responses/UpgradeRequired"
         "428":
@@ -740,6 +745,8 @@ components:
       description: The tenant has no such user
     ServiceProviderNotFound:
       description: The tenant has no such Service Provider
+    ServiceProviderManaged:
+      description: The platform manages this Service Provider, such as `ops` at the service tenant, so no admin changes it
     LastAdmin:
       description: The user is the last admin who can act, so the tenant would be left without one
     TooLarge:

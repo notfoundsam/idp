@@ -3,7 +3,7 @@ import type { Factors } from '@idp/api-client'
 import { grouped, otpauthUri } from '@idp/ui'
 import { ref } from 'vue'
 import { useConsole } from '../context'
-import { CODE_REFUSED } from '../messages'
+import { CODE_REFUSED, FACTOR_REQUIRED } from '../messages'
 import { FACTORS, useChange } from '../queries'
 import { useAccountStore } from '../store'
 import ProblemMessage from './ProblemMessage.vue'
@@ -39,7 +39,7 @@ function cancel() {
     <h2 id="totp-heading">Authenticator app</h2>
     <template v-if="factors.totp">
       <p data-testid="totp-status">An authenticator app is set up.</p>
-      <ProblemMessage :error="remove.error.value" />
+      <ProblemMessage :error="remove.error.value" :rejected="FACTOR_REQUIRED" />
       <button type="button" :disabled="remove.isPending.value" @click="remove.mutate(undefined)">Remove authenticator app</button>
     </template>
     <form v-else-if="secret" data-testid="totp-form" @submit.prevent="confirm.mutate(code.trim())">

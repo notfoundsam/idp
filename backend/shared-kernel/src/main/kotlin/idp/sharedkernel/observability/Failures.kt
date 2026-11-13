@@ -11,13 +11,11 @@ private const val MAX_CAUSES = 10
 
 private val log = LoggerFactory.getLogger(Failures::class.java)
 
-/** Where a failure surfaced, a tag of [Failures]. */
-enum class FailureSource(
-    val tag: String,
-) {
-    HTTP("http"),
-    OUTBOX("outbox"),
-    JOB("job"),
+/** Where a failure surfaced, a tag of [Failures] in lower case. */
+enum class FailureSource {
+    HTTP,
+    OUTBOX,
+    JOB,
 }
 
 /**
@@ -33,8 +31,9 @@ class Failures(
     ) {
         val causes = generateSequence(failure) { it.cause?.takeIf { cause -> cause !== it } }.take(MAX_CAUSES).toList()
         val tls = causes.any { it is SSLException }
-        registry.counter(FAILURES, "source", source.tag, "tls", tls.toString()).increment()
-        log.error("event=failure source={} tls={} causes={}", source.tag, tls, causes.joinToString(" <- ", transform = ::describe))
+        val tag = source.name.lowercase()
+        registry.counter(FAILURES, "source", tag, "tls", tls.toString()).increment()
+        log.error("event=failure source={} tls={} causes={}", tag, tls, causes.joinToString(" <- ", transform = ::describe))
     }
 
     private fun describe(failure: Throwable): String {

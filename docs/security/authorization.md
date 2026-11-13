@@ -27,7 +27,7 @@ Who may call which function, reach which data and read which field. A new messag
 | `login` | `email.change` | `USER`, `TENANT_ADMIN` | Ask to change the own email | Login at most 10 minutes old |
 | `account` | `account.own` | `USER`, `TENANT_ADMIN` | Factors, password, sessions of the own account | Changing a factor and ending other sessions need a login at most 10 minutes old, a password change the current password |
 | `account` | public | anyone | Logout | Acts only on the session of the request |
-| `admin` | `admin.users` | `TENANT_ADMIN` | Search by the whole email, the user card, invite, resend the invitation, change the role, block, unblock, erase, reset MFA, end the sessions of a user or of the whole tenant | Erasing and resetting MFA need a login at most 10 minutes old |
+| `admin` | `admin.users` | `TENANT_ADMIN` | Search by the whole email, the user card, invite, resend the invitation, change the role, block, unblock, erase, reset MFA, end the sessions of a user or of the whole tenant | Inviting, changing a role, erasing and resetting MFA need a login at most 10 minutes old |
 | `admin` | `admin.policy` | `TENANT_ADMIN` | Read and save the policy | Saving needs a login at most 10 minutes old and the current `If-Match` |
 | `admin` | `admin.service_providers` | `TENANT_ADMIN` | List, read, register from a metadata file and remove SPs, save their settings, list, assign and revoke their users | Saving settings needs a login at most 10 minutes old and the current `If-Match`, removing an SP a login at most 10 minutes old |
 | `admin` | `admin.signing_keys` | `TENANT_ADMIN` | List the SAML signing keys, start and complete a rotation | Completing needs a login at most 10 minutes old |
@@ -37,7 +37,7 @@ Who may call which function, reach which data and read which field. A new messag
 | `operator` | `tenants.bootstrap` | `OperatorCli` | Bootstrap the service tenant | The API never holds this role |
 | SAML | none, outside the bus | anyone | AuthnRequest, resume, metadata | A Response goes only to a user assigned to the SP, checked after the login |
 
-Domain rules stand on top of permissions: the last active admin of a tenant cannot step down, be blocked or be erased, and MFA of `TENANT_ADMIN` cannot be switched off.
+Domain rules stand on top of permissions: the last active admin of a tenant cannot step down, be blocked or be erased, and MFA of `TENANT_ADMIN` cannot be switched off. At the service tenant `ops-sso` an admin cannot remove or reconfigure the SP `ops` or drop the passkeys of the policy, which `worker` set up: operators would be locked out of `ops`. Its signing key still rotates in the admin area, and the operator then replaces the metadata `ops` trusts, see [crypto-inventory.md](crypto-inventory.md).
 
 ## Data
 

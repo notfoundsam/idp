@@ -1,12 +1,13 @@
 package idp.audience.account.application.query
 
+import idp.audience.account.application.command.currentRole
+import idp.audience.account.application.command.currentSession
+import idp.audience.account.application.command.currentUser
 import idp.authentication.application.AuthenticationService
 import idp.authentication.application.UserSessionView
 import idp.identity.application.IdentityService
-import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.MessageHandler
 import idp.sharedkernel.bus.Query
-import idp.sharedkernel.security.SecurityContext
 import idp.sharedkernel.security.UserRole
 import java.util.UUID
 
@@ -29,13 +30,7 @@ class GetSessionsHandler(
     override val messageType = GetSessions::class
 
     override fun handle(message: GetSessions): AccountSessions {
-        val principal = checkNotNull(SecurityContext.currentOrNull())
-        val user = principal.actor as Actor.User
-        return AccountSessions(
-            checkNotNull(identity.emailOf(user.id)),
-            UserRole.valueOf(principal.role.name),
-            authentication.sessionsOf(user.id),
-            checkNotNull(principal.sessionId),
-        )
+        val user = currentUser()
+        return AccountSessions(checkNotNull(identity.emailOf(user.id)), currentRole(), authentication.sessionsOf(user.id), currentSession())
     }
 }

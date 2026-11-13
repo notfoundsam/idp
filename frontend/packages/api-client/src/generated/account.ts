@@ -330,6 +330,13 @@ export interface components {
             };
             content?: never;
         };
+        /** @description It is the last second factor under a policy that asks for MFA, or the last passkey under one that asks for passkeys. Add the replacement first */
+        FactorRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
         /** @description The request is over the size limit */
         TooLarge: {
             headers: {
@@ -478,6 +485,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: components["responses"]["FactorRequired"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -581,6 +589,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: components["responses"]["FactorRequired"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };

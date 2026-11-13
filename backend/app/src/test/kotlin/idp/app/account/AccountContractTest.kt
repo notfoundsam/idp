@@ -141,6 +141,13 @@ class AccountContractTest :
             browser.post(TOTP).conforms(POST, TOTP).status shouldBe 422
             browser.get(FACTORS).conforms(GET, FACTORS).status shouldBe 200
             browser.post(RECOVERY_CODES).conforms(POST, RECOVERY_CODES).status shouldBe 200
+            val policies = environment.acme.table("tenant_policies")
+            environment.sql.update("UPDATE $policies SET mfa_for_users = true")
+            try {
+                browser.delete(TOTP).conforms(DELETE, TOTP).status shouldBe 422
+            } finally {
+                environment.sql.update("UPDATE $policies SET mfa_for_users = false")
+            }
             browser.delete(TOTP).conforms(DELETE, TOTP).status shouldBe 204
             browser.post(RECOVERY_CODES).conforms(POST, RECOVERY_CODES).status shouldBe 422
         }
@@ -163,6 +170,13 @@ class AccountContractTest :
                     .text("id")
             browser.delete(PASSKEY.replace("{id}", "nonsense")).conforms(DELETE, PASSKEY).status shouldBe 400
             browser.delete(PASSKEY.replace("{id}", "${UUID.randomUUID()}")).conforms(DELETE, PASSKEY).status shouldBe 404
+            val policies = environment.acme.table("tenant_policies")
+            environment.sql.update("UPDATE $policies SET mfa_for_users = true")
+            try {
+                browser.delete(PASSKEY.replace("{id}", id)).conforms(DELETE, PASSKEY).status shouldBe 422
+            } finally {
+                environment.sql.update("UPDATE $policies SET mfa_for_users = false")
+            }
             browser.delete(PASSKEY.replace("{id}", id)).conforms(DELETE, PASSKEY).status shouldBe 204
         }
 

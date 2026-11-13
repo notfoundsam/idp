@@ -172,6 +172,16 @@ describe('TOTP', () => {
     expect(wrapper.get('[role="alert"] a').attributes('href')).toBe('/login/?reauthenticate')
     expect(wrapper.find('[data-testid="end-sessions-offer"]').exists()).toBe(false)
   })
+
+  test('the last factor the policy asks for stays, and the page says to add another first', async () => {
+    const page = await signedIn('/', factorsWith({ totp: true }))
+    page.answer('removeTotp', refused(422))
+    const wrapper = await start(page)
+    await click(wrapper, 'Remove authenticator app')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Add another one first')
+    expect(wrapper.get('[data-testid="totp-status"]').text()).toContain('An authenticator app is set up')
+    expect(wrapper.find('[data-testid="end-sessions-offer"]').exists()).toBe(false)
+  })
 })
 
 describe('passkeys', () => {
@@ -244,6 +254,15 @@ describe('passkeys', () => {
     await click(wrapper, 'Remove')
     expect(page.called('removePasskey')[0]?.args).toEqual([PASSKEY.id])
     expect(wrapper.find('[data-testid="no-passkeys"]').exists()).toBe(true)
+  })
+
+  test('the last one the policy asks for stays, and the page says to add another first', async () => {
+    const page = await signedIn('/', factorsWith({ passkeys: [PASSKEY] }))
+    page.answer('removePasskey', refused(422))
+    const wrapper = await start(page)
+    await click(wrapper, 'Remove')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Add another one first')
+    expect(wrapper.findAll('[data-testid="passkey"]')).toHaveLength(1)
   })
 
   test('a browser without passkeys is told so', async () => {

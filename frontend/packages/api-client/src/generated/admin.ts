@@ -621,6 +621,13 @@ export interface components {
             };
             content?: never;
         };
+        /** @description The platform manages this Service Provider, such as `ops` at the service tenant, so no admin changes it */
+        ServiceProviderManaged: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
         /** @description The user is the last admin who can act, so the tenant would be left without one */
         LastAdmin: {
             headers: {
@@ -688,7 +695,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["NoSession"];
-            403: components["responses"]["Forbidden"];
+            403: components["responses"]["Refused"];
             413: components["responses"]["TooLarge"];
             /** @description The address is not valid, or the tenant already has a user with it. The answer does not say which */
             422: {
@@ -789,7 +796,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["NoSession"];
-            403: components["responses"]["Forbidden"];
+            403: components["responses"]["Refused"];
             404: components["responses"]["UserNotFound"];
             413: components["responses"]["TooLarge"];
             422: components["responses"]["LastAdmin"];
@@ -1032,7 +1039,7 @@ export interface operations {
                 content?: never;
             };
             413: components["responses"]["TooLarge"];
-            /** @description A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds */
+            /** @description A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds. Or the policy drops passkeys of the service tenant, which the platform requires there */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1210,6 +1217,7 @@ export interface operations {
             401: components["responses"]["NoSession"];
             403: components["responses"]["Refused"];
             404: components["responses"]["ServiceProviderNotFound"];
+            422: components["responses"]["ServiceProviderManaged"];
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -1251,6 +1259,7 @@ export interface operations {
                 content?: never;
             };
             413: components["responses"]["TooLarge"];
+            422: components["responses"]["ServiceProviderManaged"];
             426: components["responses"]["UpgradeRequired"];
             /** @description The request has no `If-Match` */
             428: {

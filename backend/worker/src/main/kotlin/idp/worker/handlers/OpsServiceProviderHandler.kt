@@ -35,7 +35,7 @@ class OpsServiceProviderHandler(
     }
 
     private fun register() =
-        federation.registerServiceProvider(ServiceTenant.SP_NAME, metadata().toByteArray(), Actor.System).also { id ->
+        federation.registerServiceProvider(ServiceTenant.SP_NAME, metadata().toByteArray(), Actor.System, managed = true).also { id ->
             federation.changeSettings(id, SpSettings(nameIdFormat = NameIdFormat.EMAIL), Actor.System)
         }
 

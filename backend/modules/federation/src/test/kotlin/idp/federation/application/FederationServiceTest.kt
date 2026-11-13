@@ -646,6 +646,30 @@ class FederationServiceTest :
                 }
             }
 
+            test("of an SP the platform manages, or a change of its settings, is refused to an admin and left to the system") {
+                Federation().run {
+                    val tenant = tenant()
+                    val managed =
+                        tenant.acting {
+                            registerServiceProvider("ops", spMetadata().toByteArray(), Actor.System, managed = true)
+                        }
+                    val own = tenant.register(spMetadata(entityId = "https://crm.example/saml"))
+                    audit.changes.clear()
+
+                    shouldThrow<ServiceProviderManaged> { tenant.acting { removeServiceProvider(managed, ADMIN) } }
+                    shouldThrow<ServiceProviderManaged> {
+                        tenant.acting { changeSettings(managed, SpSettings(nameIdFormat = NameIdFormat.PERSISTENT), ADMIN) }
+                    }
+                    tenant.acting { serviceProvider(managed) }.shouldNotBeNull()
+                    audit.changes.shouldBeEmpty()
+
+                    tenant.acting { changeSettings(managed, SpSettings(nameIdFormat = NameIdFormat.EMAIL), Actor.System) }
+                    tenant.acting { removeServiceProvider(own, ADMIN) }
+                    tenant.acting { removeServiceProvider(managed, Actor.System) }
+                    tenant.acting { serviceProvider(managed) }.shouldBeNull()
+                }
+            }
+
             test("of a user takes their assignments along") {
                 Federation().run {
                     val tenant = tenant()

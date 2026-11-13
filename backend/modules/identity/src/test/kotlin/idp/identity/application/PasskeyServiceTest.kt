@@ -35,6 +35,7 @@ import com.webauthn4j.test.authenticator.webauthn.WebAuthnAuthenticatorAdaptor
 import com.webauthn4j.test.client.ClientPlatform
 import idp.identity.adapters.persistence.Passkeys
 import idp.identity.domain.credential.PasskeyCredential
+import idp.identity.domain.credential.TotpSecret
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.audit.AuditRecord
@@ -792,6 +793,39 @@ class PasskeyServiceTest :
                     tenant.acting { passkeysOf(user) }.map { it.id } shouldContainExactly listOf(second)
                     tenant.recoveryCodesLeft(user) shouldBe 10
                     audit.changes.single().details shouldBe mapOf("passkey" to "$first")
+                }
+            }
+
+            test("a requirement keeps the last factor it asks for, and nothing is audited") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+                    tenant.recoveryCodes(user)
+                    val id = tenant.acting { passkeysOf(user) }.single().id
+
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, id, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) } }
+
+                    tenant.credentials(user) shouldHaveSize 1
+                    tenant.recoveryCodesLeft(user) shouldBe 10
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
+            test("a requirement of a passkey keeps the last one though a TOTP is left, while a second factor lets it go") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.registered(user)
+                    val secret = TotpSecret.decoded(TenantContext.with(tenant) { totp.enroll(user) }.secret)
+                    val code = secret.code(TotpSecret.stepAt(clock.instant()))
+                    TenantContext.with(tenant) { totp.confirm(user, code, ADMIN) } shouldBe true
+                    val id = tenant.acting { passkeysOf(user) }.single().id
+
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, id, ADMIN, requirement = FactorRequirement.PASSKEY) } }
+                    tenant.acting { remove(user, id, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) }
+
+                    tenant.credentials(user).shouldBeEmpty()
                 }
             }
 

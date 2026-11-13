@@ -1,12 +1,11 @@
 package idp.audience.account.application.query
 
+import idp.audience.account.application.command.currentUser
 import idp.identity.application.PasskeyService
 import idp.identity.application.PasskeyView
 import idp.identity.application.TotpService
-import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.MessageHandler
 import idp.sharedkernel.bus.Query
-import idp.sharedkernel.security.SecurityContext
 
 class Factors(
     val totp: Boolean,
@@ -24,7 +23,7 @@ class GetFactorsHandler(
     override val messageType = GetFactors::class
 
     override fun handle(message: GetFactors): Factors {
-        val user = checkNotNull(SecurityContext.currentOrNull()).actor as Actor.User
+        val user = currentUser()
         return Factors(totp.hasConfirmedTotp(user.id), passkeys.passkeysOf(user.id), totp.recoveryCodesLeft(user.id))
     }
 }

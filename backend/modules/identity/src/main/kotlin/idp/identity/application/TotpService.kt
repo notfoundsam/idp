@@ -1,5 +1,6 @@
 package idp.identity.application
 
+import idp.identity.adapters.persistence.Passkeys
 import idp.identity.adapters.persistence.RecoveryCodes
 import idp.identity.adapters.persistence.Totps
 import idp.identity.adapters.persistence.Users
@@ -50,6 +51,7 @@ class TotpService(
     private val users = Users()
     private val totps = Totps()
     private val recoveryCodes = RecoveryCodes()
+    private val floor = FactorFloor(users, totps, Passkeys())
     private val random = SecureRandom()
 
     /**
@@ -116,16 +118,19 @@ class TotpService(
 
     /**
      * The way to replace a confirmed secret, which [enroll] refuses. A secret nobody confirmed is no factor, so it counts as none.
-     * Recovery codes go when this was the last second factor.
+     * Recovery codes go when this was the last second factor. [requirement] refuses a removal that would leave the user below it.
      */
     fun remove(
         userId: UUID,
         actor: Actor,
         ip: String? = null,
+        requirement: FactorRequirement = FactorRequirement.NONE,
     ) {
         transaction.execute { dsl ->
-            totps.find(dsl, userId)?.takeIf { it.isConfirmed } ?: throw TotpNotEnrolled()
-            totps.delete(dsl, userId)
+            floor.removing(dsl, userId, requirement) {
+                totps.find(dsl, userId)?.takeIf { it.isConfirmed } ?: throw TotpNotEnrolled()
+                totps.delete(dsl, userId)
+            }
             val codesRemoved = recoveryCodes.deleteWithoutSecondFactor(dsl, userId)
             audit.recordChange(AuditRecord(actor, TOTP_REMOVED, AuditTarget.user(userId), ip, removedCodes(codesRemoved)))
         }

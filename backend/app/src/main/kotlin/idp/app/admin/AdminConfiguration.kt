@@ -1,6 +1,7 @@
 package idp.app.admin
 
 import idp.audience.admin.AdminSecurityConfig
+import idp.audience.admin.AdminThrottleConfig
 import idp.audience.admin.application.command.AssignUsersHandler
 import idp.audience.admin.application.command.BlockUserHandler
 import idp.audience.admin.application.command.ChangeRoleHandler
@@ -30,6 +31,7 @@ import idp.audience.admin.web.AdminAuditController
 import idp.audience.admin.web.AdminPolicyController
 import idp.audience.admin.web.AdminServiceProvidersController
 import idp.audience.admin.web.AdminUsersController
+import idp.audience.admin.web.IfMatchAdvice
 import idp.audit.application.AuditService
 import idp.authentication.application.AuthenticationService
 import idp.federation.application.FederationService
@@ -37,6 +39,7 @@ import idp.identity.application.IdentityService
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.SecurityConfig
+import idp.sharedkernel.throttle.ThrottleConfig
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -44,6 +47,9 @@ import org.springframework.context.annotation.Configuration
 class AdminConfiguration {
     @Bean
     fun adminSecurityConfig(): SecurityConfig = AdminSecurityConfig
+
+    @Bean
+    fun adminThrottleConfig(): ThrottleConfig = AdminThrottleConfig
 
     @Bean
     fun inviteUserHandler(identity: IdentityService) = InviteUserHandler(identity)
@@ -156,4 +162,7 @@ class AdminConfiguration {
         commands: CommandBus,
         queries: QueryBus,
     ) = AdminPolicyController(commands, queries)
+
+    @Bean
+    fun ifMatchAdvice() = IfMatchAdvice()
 }

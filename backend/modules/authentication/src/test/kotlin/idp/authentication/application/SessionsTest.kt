@@ -8,6 +8,7 @@ import idp.authentication.domain.SessionTimeoutsNotValid
 import idp.authentication.domain.StepInProgress
 import idp.authentication.domain.StepNotAllowed
 import idp.authentication.domain.TenantPolicy
+import idp.identity.application.FactorRequirement
 import idp.identity.application.IdentityService
 import idp.identity.application.PasskeyService
 import idp.identity.application.TotpService
@@ -296,6 +297,19 @@ class SessionsTest :
                     audit.changes.clear()
                 }
 
+                test("names what each role must keep of its factors") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+
+                    tenant.acting { factorRequirementFor(UserRole.USER) } shouldBe FactorRequirement.SECOND_FACTOR
+                    val relaxed = tenant.acting { savePolicy(change, read.version, ADMIN) }
+                    tenant.acting { factorRequirementFor(UserRole.USER) } shouldBe FactorRequirement.NONE
+                    tenant.acting { factorRequirementFor(UserRole.TENANT_ADMIN) } shouldBe FactorRequirement.SECOND_FACTOR
+                    tenant.acting { savePolicy(change.copy(passkeyRequired = true), relaxed, ADMIN) }
+                    UserRole.entries.forEach { tenant.acting { factorRequirementFor(it) } shouldBe FactorRequirement.PASSKEY }
+                    audit.changes.clear()
+                }
+
                 test("the same values keep the version and record nothing") {
                     val tenant = newTenant()
                     val read = tenant.acting { policy() }
@@ -386,6 +400,37 @@ class SessionsTest :
 
                     TenantContext.with(tenant) { transaction.execute { policies.load(it) } }.version shouldBe version
                     audit.changes.shouldBeEmpty()
+                }
+
+                test("locks them in: a saved policy may change the rest but not drop the passkey") {
+                    val tenant = tenant()
+                    tenant.acting { requirePasskeys(Actor.System) }
+                    val read = tenant.acting { policy() }
+                    audit.changes.clear()
+                    val change = PolicyChange(true, false, Duration.ofMinutes(15), Duration.ofHours(8))
+
+                    shouldThrow<PasskeysLocked> { tenant.acting { savePolicy(change, read.version, ADMIN) } }
+                    tenant.acting { policy() } shouldBe read
+                    audit.changes.shouldBeEmpty()
+
+                    tenant.acting { savePolicy(change.copy(passkeyRequired = true), read.version, ADMIN) }
+                    tenant.acting { policy() }.run {
+                        passkeyRequired shouldBe true
+                        sessionIdleTimeout shouldBe Duration.ofMinutes(15)
+                    }
+                    audit.changes.clear()
+                }
+
+                test("another tenant may still drop a passkey it chose itself") {
+                    val tenant = tenant()
+                    val read = tenant.acting { policy() }
+                    val passkeys = PolicyChange(true, true, read.sessionIdleTimeout, read.sessionAbsoluteTimeout)
+                    val required = tenant.acting { savePolicy(passkeys, read.version, ADMIN) }
+
+                    tenant.acting { savePolicy(passkeys.copy(passkeyRequired = false), required, ADMIN) }
+
+                    tenant.acting { policy() }.passkeyRequired shouldBe false
+                    audit.changes.clear()
                 }
             }
 
