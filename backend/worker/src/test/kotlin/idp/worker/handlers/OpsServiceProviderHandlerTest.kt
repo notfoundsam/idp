@@ -144,6 +144,22 @@ class OpsServiceProviderHandlerTest :
             tenant.journal() shouldBe journal
         }
 
+        test("an SP ops registered before it could be flagged becomes managed on the next run") {
+            val tenant = serviceTenant()
+            sql.update("UPDATE ${tenant.table("service_providers")} SET managed = false")
+            val admin = Actor.User(TenantContext.with(tenant) { identity.findByEmail(OPERATOR_EMAIL).shouldNotBeNull().id })
+            val journal = tenant.journal()
+
+            TenantContext.with(tenant) { handler.handle(bootstrapped(tenantId)) }
+
+            sql.queryForObject("SELECT managed FROM ${tenant.table("service_providers")}", Boolean::class.java) shouldBe true
+            TenantContext.with(tenant) {
+                val sp = federation.serviceProviderByEntityId(OPS_ENTITY_ID).shouldNotBeNull()
+                shouldThrow<ServiceProviderManaged> { federation.removeServiceProvider(sp.id, admin) }
+            }
+            tenant.journal() shouldBe journal
+        }
+
         test("before provisioning invited the first admin it fails and changes nothing, so the outbox brings it back") {
             val id = environment.database.tenantSchema()
             val kekUri = environment.kms.createKey("tenant-${UUID.randomUUID()}")

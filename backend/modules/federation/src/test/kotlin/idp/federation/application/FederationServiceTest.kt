@@ -670,6 +670,23 @@ class FederationServiceTest :
                 }
             }
 
+            test("of an SP the system flags as managed later is refused to an admin, and the flag is left to the system") {
+                Federation().run {
+                    val tenant = tenant()
+                    val sp = tenant.register()
+                    audit.changes.clear()
+
+                    shouldThrow<ServiceProviderManaged> { tenant.acting { manageServiceProvider(sp, ADMIN) } }
+                    shouldThrow<ServiceProviderNotFound> { tenant.acting { manageServiceProvider(UUID.randomUUID(), Actor.System) } }
+                    tenant.acting { manageServiceProvider(sp, Actor.System) }
+                    tenant.acting { manageServiceProvider(sp, Actor.System) }
+
+                    shouldThrow<ServiceProviderManaged> { tenant.acting { removeServiceProvider(sp, ADMIN) } }
+                    tenant.acting { serviceProvider(sp) }.shouldNotBeNull()
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
             test("of a user takes their assignments along") {
                 Federation().run {
                     val tenant = tenant()

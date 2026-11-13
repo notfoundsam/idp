@@ -112,6 +112,16 @@ internal class ServiceProviders {
             .where(SERVICE_PROVIDERS.ID.eq(id))
             .fetchOne(SERVICE_PROVIDERS.MANAGED) == true
 
+    fun markManaged(
+        dsl: DSLContext,
+        id: UUID,
+    ): Boolean =
+        dsl
+            .update(SERVICE_PROVIDERS)
+            .set(SERVICE_PROVIDERS.MANAGED, true)
+            .where(SERVICE_PROVIDERS.ID.eq(id))
+            .execute() == 1
+
     /** Assignments and endpoints go with it by FK. */
     fun delete(
         dsl: DSLContext,

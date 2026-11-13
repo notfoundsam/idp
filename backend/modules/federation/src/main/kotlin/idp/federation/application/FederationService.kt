@@ -303,6 +303,15 @@ class FederationService(
         }
     }
 
+    /** Safe to repeat. Brings the guard of a [registerServiceProvider] with `managed` to an SP the system registered without it. */
+    fun manageServiceProvider(
+        spId: UUID,
+        actor: Actor,
+    ) {
+        if (actor != Actor.System) throw ServiceProviderManaged()
+        transaction.execute { dsl -> if (!serviceProviders.markManaged(dsl, spId)) throw ServiceProviderNotFound(spId) }
+    }
+
     fun serviceProvider(id: UUID): ServiceProviderView? = transaction.execute { dsl -> serviceProviders.find(dsl, id)?.view() }
 
     fun serviceProviderByEntityId(entityId: String): ServiceProviderView? =

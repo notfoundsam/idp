@@ -5,7 +5,7 @@ import { firingAlarms, parseOptions, watchAlarms } from './alarms.mjs'
 const ALARMS = { region: 'eu-central-1', names: ['idp-test-backend-tls-failures', 'idp-test-outbox-lag'] }
 const START = Date.parse('2026-11-13T10:00:00Z')
 
-const firing = (name, at) => ({ AlarmName: name, StateUpdatedTimestamp: at })
+const firing = (name, at) => ({ AlarmName: name, StateTransitionedTimestamp: at })
 
 // A recorded AWS CLI that answers each describe-alarms in turn, and a clock that only the waits move.
 function recorded(answers) {
@@ -61,6 +61,14 @@ test('an alarm that fired before the release started is named once and does not 
     '::warning title=Alarm::idp-test-outbox-lag has fired since before the release started, so it does not stop the release',
     'No alarm of idp-test-backend-tls-failures, idp-test-outbox-lag went to ALARM for 2 minutes',
   ])
+})
+
+test('an alarm in ALARM since before the start counts as earlier, though CloudWatch evaluated it again since', async () => {
+  const before = { MetricAlarms: [{ ...firing('idp-test-outbox-lag', '2026-11-13T09:00:00Z'), StateUpdatedTimestamp: '2026-11-13T10:01:00Z' }] }
+  const aws = recorded([before, before, before, before, before])
+  const { result, lines } = watch(aws)
+  await result
+  assert.match(lines[0], /idp-test-outbox-lag has fired since before the release started/)
 })
 
 test('an alarm that fired before, cleared and fires again after the start stops the release', async () => {

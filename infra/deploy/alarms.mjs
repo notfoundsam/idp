@@ -9,7 +9,7 @@ export async function firingAlarms(run, { region, names }) {
   const parsed = output.trim() === '' ? {} : JSON.parse(output)
   return [...(parsed.MetricAlarms ?? []), ...(parsed.CompositeAlarms ?? [])].map((alarm) => ({
     name: alarm.AlarmName,
-    at: Date.parse(alarm.StateUpdatedTimestamp),
+    at: Date.parse(alarm.StateTransitionedTimestamp),
   }))
 }
 
