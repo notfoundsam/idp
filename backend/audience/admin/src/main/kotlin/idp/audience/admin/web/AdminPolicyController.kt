@@ -15,8 +15,15 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.time.Duration
 
-/** Read and saved alike. MFA for `TENANT_ADMIN` and an expiry of the password have no field, so a body that names one is refused. */
-data class PolicyBody(
+/** MFA for `TENANT_ADMIN` and an expiry of the password have no field, so a body that names one is refused. */
+data class PolicyRequest(
+    val mfaForUsers: Boolean,
+    val passkeyRequired: Boolean,
+    val sessionIdleSeconds: Long,
+    val sessionAbsoluteSeconds: Long,
+)
+
+data class PolicyResponse(
     val mfaForUsers: Boolean,
     val passkeyRequired: Boolean,
     val sessionIdleSeconds: Long,
@@ -31,10 +38,10 @@ class AdminPolicyController(
     private val queries: QueryBus,
 ) {
     @GetMapping
-    fun policy(): ResponseEntity<PolicyBody> {
+    fun policy(): ResponseEntity<PolicyResponse> {
         val policy = queries.ask(GetPolicy())
         val body =
-            PolicyBody(
+            PolicyResponse(
                 policy.mfaForUsers,
                 policy.passkeyRequired,
                 policy.sessionIdleTimeout.seconds,
@@ -46,7 +53,7 @@ class AdminPolicyController(
     @PutMapping
     fun save(
         @RequestHeader(HttpHeaders.IF_MATCH, required = false) ifMatch: String?,
-        @RequestBody request: PolicyBody,
+        @RequestBody request: PolicyRequest,
     ): ResponseEntity<Void> {
         val version = versionOf(ifMatch)
         val change =

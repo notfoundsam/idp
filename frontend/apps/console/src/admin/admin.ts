@@ -9,8 +9,8 @@ import {
   type UserEvent,
   type UserStatus,
 } from '@idp/api-client'
-import { useInfiniteQuery, useQuery } from '@tanstack/vue-query'
-import type { Ref } from 'vue'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { computed, ref, watch, type Ref } from 'vue'
 import { useConsole } from '../context'
 
 export const ROLES: readonly Role[] = ['USER', 'TENANT_ADMIN']
@@ -25,7 +25,12 @@ export const AUDIT = ['admin', 'audit'] as const
 export const MAX_USERS_PER_CALL = 500
 
 /** The importer refuses a larger file, so the page refuses it before sending it. */
-export const MAX_METADATA_BYTES = 128 * 1024
+export const MAX_METADATA_KIB = 128
+export const MAX_METADATA_BYTES = MAX_METADATA_KIB * 1024
+
+/** The bounds of the timeouts that the API holds the policy to. */
+export const IDLE_MINUTES = { min: 5, max: 60 } as const
+export const ABSOLUTE_MAX_MINUTES = 24 * 60
 
 export function roleOf(role: Role): string {
   return role === 'TENANT_ADMIN' ? 'Admin' : 'User'
@@ -119,10 +124,11 @@ export const ALREADY_ACCEPTED = 'The user has already accepted an invitation.'
 export const BLOCK_REFUSED = 'The user is not active, or is the last admin who can act.'
 export const UNBLOCK_REFUSED = 'The user is not blocked.'
 export const TIMEOUTS_REFUSED =
-  'The idle timeout is from 5 to 60 minutes, and the session lifetime from the idle timeout to 1440 minutes, that is 24 hours.'
+  `The idle timeout is from ${IDLE_MINUTES.min} to ${IDLE_MINUTES.max} minutes, and the session lifetime from the idle timeout to ` +
+  `${ABSOLUTE_MAX_MINUTES} minutes, that is ${ABSOLUTE_MAX_MINUTES / 60} hours.`
 export const METADATA_REFUSED =
   'The file is not valid SAML metadata of one service with https endpoints, or the name is empty or over 200 characters.'
-export const METADATA_TOO_LARGE = 'The file is over 128 KiB, the largest metadata accepted.'
+export const METADATA_TOO_LARGE = `The file is over ${MAX_METADATA_KIB} KiB, the largest metadata accepted.`
 export const ENTITY_ID_TAKEN = 'A service with the EntityID of this file is connected already.'
 export const USER_GONE = 'A user of the selection no longer exists, so nobody was assigned. Leave them out and try again.'
 export const ROTATION_IN_PROGRESS = 'A rotation is in progress already. The page now shows it.'
@@ -142,6 +148,63 @@ export function usePolicy() {
   return useQuery({ queryKey: POLICY, queryFn: () => admin.getPolicy(), refetchOnWindowFocus: false })
 }
 
+interface VersionedQuery<R> {
+  readonly data: { readonly value: R | undefined }
+  readonly isFetching: { readonly value: boolean }
+  refetch: () => Promise<{ data: R | undefined }>
+}
+
+/**
+ * A form over something read with its version. What is cached from an earlier visit waits for the fresh read, whose version a save
+ * would match. After a `412` [reload] replaces what the form held with the change of the other admin, who makes theirs again on top.
+ */
+export function useVersionedForm<R extends { version: string }>(
+  query: VersionedQuery<R>,
+  fill: (read: R) => void,
+  change: (version: string) => Promise<string>,
+  queryKey: () => readonly unknown[],
+) {
+  const queries = useQueryClient()
+  const version = ref<string | null>(null)
+  const saved = ref(false)
+
+  function load(read: R) {
+    fill(read)
+    version.value = read.version
+  }
+
+  watch(
+    () => [query.data.value, query.isFetching.value] as const,
+    ([read, fetching]) => {
+      if (read !== undefined && !fetching && version.value === null) load(read)
+    },
+    { immediate: true },
+  )
+
+  const save = useMutation({
+    mutationFn: change,
+    onSuccess: async (next) => {
+      saved.value = true
+      version.value = next
+      await queries.invalidateQueries({ queryKey: queryKey(), exact: true })
+    },
+  })
+
+  function submit() {
+    saved.value = false
+    if (version.value !== null) save.mutate(version.value)
+  }
+
+  async function reload() {
+    const read = await query.refetch()
+    if (read.data === undefined) return
+    load(read.data)
+    save.reset()
+  }
+
+  return { version, saved, save, submit, reload }
+}
+
 export function useServiceProviders() {
   const { admin } = useConsole()
   return useQuery({ queryKey: SERVICE_PROVIDERS, queryFn: () => admin.listServiceProviders() })
@@ -157,9 +220,11 @@ export function useServiceProvider(id: Ref<string>) {
   })
 }
 
+export const assignedUsersKey = (id: string) => [...SERVICE_PROVIDERS, id, 'users'] as const
+
 export function useAssignedUsers(id: Ref<string>) {
   const { admin } = useConsole()
-  return useQuery({ queryKey: [...SERVICE_PROVIDERS, id, 'users'] as const, queryFn: () => admin.listAssignedUsers(id.value) })
+  return useQuery({ queryKey: computed(() => assignedUsersKey(id.value)), queryFn: () => admin.listAssignedUsers(id.value) })
 }
 
 export function useSigningKeys() {

@@ -66,9 +66,16 @@ class PasskeyAssertion(
     val signature: ByteArray,
 )
 
+/** What [PasskeyService] verifies, so the options of both audiences ask the browser for the same. */
+object PasskeyCeremony {
+    const val RESIDENT_KEY = "required"
+    const val USER_VERIFICATION = "required"
+    const val ATTESTATION = "none"
+}
+
 /**
  * Passkeys are discoverable, so a login starts before anyone is known. The caller passes the host the tenant was resolved from, it
- * is the relying party. The browser must get `residentKey: required`, `userVerification: required` and `attestation: none`.
+ * is the relying party. The browser must get the options of [PasskeyCeremony].
  */
 class PasskeyService(
     private val transaction: TenantTransaction,
@@ -144,8 +151,8 @@ class PasskeyService(
         userId: UUID,
         passkeyId: UUID,
         actor: Actor,
-        ip: String? = null,
-        requirement: FactorRequirement = FactorRequirement.NONE,
+        ip: String?,
+        requirement: FactorRequirement,
     ) {
         transaction.execute { dsl ->
             floor.removing(dsl, userId, requirement) {

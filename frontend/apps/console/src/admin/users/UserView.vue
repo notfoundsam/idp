@@ -5,7 +5,7 @@ import { ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import { useConsole } from '../../context'
-import { dateOf } from '../../messages'
+import { dateOf } from '../../format'
 import { useChange } from '../../queries'
 import {
   actorOf,

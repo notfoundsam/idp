@@ -25,15 +25,22 @@ enum class FailureSource {
 class Failures(
     private val registry: MeterRegistry = Metrics.globalRegistry,
 ) {
+    /** The one line of the failure: a [job] is named in it, and the tenant comes from the fields of the log. */
     fun record(
         source: FailureSource,
         failure: Throwable,
+        job: String? = null,
     ) {
         val causes = generateSequence(failure) { it.cause?.takeIf { cause -> cause !== it } }.take(MAX_CAUSES).toList()
         val tls = causes.any { it is SSLException }
         val tag = source.name.lowercase()
         registry.counter(FAILURES, "source", tag, "tls", tls.toString()).increment()
-        log.error("event=failure source={} tls={} causes={}", tag, tls, causes.joinToString(" <- ", transform = ::describe))
+        val described = causes.joinToString(" <- ", transform = ::describe)
+        if (job == null) {
+            log.error("event=failure source={} tls={} causes={}", tag, tls, described)
+        } else {
+            log.error("event=failure source={} job={} tls={} causes={}", tag, job, tls, described)
+        }
     }
 
     private fun describe(failure: Throwable): String {

@@ -35,7 +35,6 @@ import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.security.Principal
-import idp.sharedkernel.security.Role
 import idp.sharedkernel.security.UserRole
 import idp.sharedkernel.security.UserStatus
 import idp.sharedkernel.tenant.TenantContext
@@ -327,7 +326,7 @@ class AuthenticationService(
             val session = sessions.findByTokenHash(dsl, SessionToken(token).hash())?.takeIf { it.isLive(policies.load(dsl), now) }
             val user = session?.let { identity.user(it.userId) }?.takeIf { it.status == UserStatus.ACTIVE } ?: return@execute null
             if (session.isDueForLastSeen(now, lastSeenInterval)) sessions.markSeen(dsl, session.id, now)
-            Principal(Actor.User(user.id), Role(user.role.name), session.authenticatedAt, session.id)
+            Principal(Actor.User(user.id), user.role.role, session.authenticatedAt, session.id)
         }
 
     /** The live sessions of [userId], the one seen last first. Their IP and User-Agent open with the key of the user. */

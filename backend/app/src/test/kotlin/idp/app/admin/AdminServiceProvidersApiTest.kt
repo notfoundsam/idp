@@ -393,6 +393,51 @@ class AdminServiceProvidersApiTest :
                 }
             }
 
+            test("carry every value of every setting both ways") {
+                val (browser, _) = admin("sp-thorough-configurer")
+                val id = register()
+                val combinations =
+                    listOf(
+                        SpSettings(
+                            NameIdFormat.PERSISTENT,
+                            SignedPart.ASSERTION,
+                            SignatureAlgorithm.RSA_PSS_SHA256,
+                            setOf(SamlAttribute.EMAIL),
+                        ),
+                        SpSettings(
+                            NameIdFormat.EMAIL,
+                            SignedPart.RESPONSE,
+                            SignatureAlgorithm.RSA_SHA256,
+                            setOf(SamlAttribute.DISPLAY_NAME),
+                        ),
+                        SpSettings(
+                            NameIdFormat.PERSISTENT,
+                            SignedPart.BOTH,
+                            SignatureAlgorithm.RSA_PSS_SHA256,
+                            SamlAttribute.entries.toSet(),
+                        ),
+                    )
+
+                combinations.forEachIndexed { version, expected ->
+                    val body =
+                        spSettingsBody(
+                            expected.nameIdFormat.name,
+                            expected.signedPart.name,
+                            expected.signatureAlgorithm.name,
+                            expected.attributes.map { it.name },
+                        )
+                    browser.put(settings(id), body, IF_MATCH, "\"$version\"").status shouldBe 204
+
+                    stored(id).shouldNotBeNull().settings shouldBe expected
+                    browser.get(spPath(id)).json().get("settings").run {
+                        text("nameIdFormat") shouldBe expected.nameIdFormat.name
+                        text("signedPart") shouldBe expected.signedPart.name
+                        text("signatureAlgorithm") shouldBe expected.signatureAlgorithm.name
+                        get("attributes").values().map { it.asString() }.toSet() shouldBe expected.attributes.map { it.name }.toSet()
+                    }
+                }
+            }
+
             test("saved with a version no longer current answer 412, and without one 428") {
                 val (browser, admin) = admin("sp-stale")
                 val id = register()

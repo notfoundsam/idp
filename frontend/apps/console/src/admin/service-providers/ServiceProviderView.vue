@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { PRECONDITION_FAILED, type Role, type SpSettings, type UserStatus, type VersionedServiceProvider } from '@idp/api-client'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { computed, reactive, ref, toRef, watch } from 'vue'
+import { computed, reactive, ref, toRef } from 'vue'
 import { useRouter } from 'vue-router'
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import { useConsole } from '../../context'
-import { dateOf } from '../../messages'
+import { dateOf } from '../../format'
 import { useChange } from '../../queries'
 import {
+  assignedUsersKey,
   ATTRIBUTES,
   attributeOf,
   hasStatus,
@@ -26,6 +27,7 @@ import {
   USER_GONE,
   USERS,
   useServiceProvider,
+  useVersionedForm,
 } from '../admin'
 import ConfirmAction from '../ConfirmAction.vue'
 import { useAdminStore } from '../store'
@@ -43,8 +45,6 @@ const notice = ref(store.take())
 const current = computed(() => provider.data.value?.serviceProvider)
 
 const form = reactive<SpSettings>({ nameIdFormat: 'PERSISTENT', signedPart: 'ASSERTION', signatureAlgorithm: 'RSA_PSS_SHA256', attributes: [] })
-const version = ref<string | null>(null)
-const saved = ref(false)
 
 function fill(read: VersionedServiceProvider) {
   const settings = read.serviceProvider.settings
@@ -52,52 +52,27 @@ function fill(read: VersionedServiceProvider) {
   form.signedPart = settings.signedPart
   form.signatureAlgorithm = settings.signatureAlgorithm
   form.attributes = [...settings.attributes]
-  version.value = read.version
 }
 
-/** Settings cached from an earlier visit wait for the fresh ones, whose version a save would match. */
-watch(
-  () => [provider.data.value, provider.isFetching.value] as const,
-  ([read, fetching]) => {
-    if (read !== undefined && !fetching && version.value === null) fill(read)
-  },
-  { immediate: true },
+const { version, saved, save, submit, reload } = useVersionedForm(
+  provider,
+  fill,
+  (read) =>
+    admin.saveServiceProviderSettings(props.id, { ...form, attributes: ATTRIBUTES.filter((it) => form.attributes.includes(it)) }, read),
+  () => [...SERVICE_PROVIDERS, props.id],
 )
 
-const save = useMutation({
-  mutationFn: (read: string) =>
-    admin.saveServiceProviderSettings(
-      props.id,
-      { ...form, attributes: ATTRIBUTES.filter((it) => form.attributes.includes(it)) },
-      read,
-    ),
-  onSuccess: async (next) => {
-    saved.value = true
-    version.value = next
-    await queries.invalidateQueries({ queryKey: [...SERVICE_PROVIDERS, props.id], exact: true })
-  },
-})
-
 function submitSettings() {
-  saved.value = false
   notice.value = null
-  if (version.value !== null) save.mutate(version.value)
+  submit()
 }
 
-/** The change of the other admin replaces what this form held, and the admin makes theirs again on top of it. */
-async function reload() {
-  const read = await provider.refetch()
-  if (read.data === undefined) return
-  fill(read.data)
-  save.reset()
-}
-
-const usersOfProvider = computed(() => [...SERVICE_PROVIDERS, props.id, 'users'])
+const usersOfProvider = () => [assignedUsersKey(props.id), USERS]
 
 const revoking = ref<string[]>([])
 const revoke = useChange(
   (ids: string[]) => admin.unassignUsers(props.id, ids),
-  [usersOfProvider.value, USERS],
+  usersOfProvider,
   () => {
     notice.value = `${countOf(revoking.value.length)} can no longer sign in to it. A session already open at the service lasts as the service decides.`
     revoking.value = []
@@ -138,7 +113,7 @@ function leaveOut(user: string) {
 
 const assign = useChange(
   (ids: string[]) => admin.assignUsers(props.id, ids),
-  [usersOfProvider.value, USERS],
+  usersOfProvider,
   () => {
     notice.value = `${countOf(picked.value.length)} can sign in to it now.`
     picked.value = []

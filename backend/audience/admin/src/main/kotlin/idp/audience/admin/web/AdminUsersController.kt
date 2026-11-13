@@ -13,7 +13,6 @@ import idp.audience.admin.application.query.FindUserByEmail
 import idp.audience.admin.application.query.GetUserCard
 import idp.audience.admin.application.query.UserCard
 import idp.audit.application.AuditEntryView
-import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.UserRole
@@ -75,12 +74,6 @@ data class UserEventResponse(
     val actorId: UUID?,
 )
 
-enum class ActorType {
-    USER,
-    SYSTEM,
-    ANONYMOUS,
-}
-
 /** Not a data class: `toString` must not print the email or the name. */
 class UserCardResponse(
     val id: UUID,
@@ -91,15 +84,6 @@ class UserCardResponse(
     val serviceProviders: List<AssignedServiceProviderResponse>,
     val events: List<UserEventResponse>,
 )
-
-/** An operator acts in `platform.operator_audit`, never in the journal of a tenant. */
-internal fun Actor.typeAndId(): Pair<ActorType, UUID?> =
-    when (this) {
-        is Actor.User -> ActorType.USER to id
-        Actor.System -> ActorType.SYSTEM to null
-        Actor.Anonymous -> ActorType.ANONYMOUS to null
-        is Actor.Operator -> error("An operator in the journal of a tenant")
-    }
 
 private fun AuditEntryView.response(): UserEventResponse {
     val (type, actorId) = actor.typeAndId()

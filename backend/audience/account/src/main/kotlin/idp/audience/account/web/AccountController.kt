@@ -17,6 +17,7 @@ import idp.audience.account.application.query.GetSessions
 import idp.authentication.application.CsrfCookie
 import idp.authentication.application.SessionCookie
 import idp.identity.application.PasskeyAttestation
+import idp.identity.application.PasskeyCeremony
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import idp.sharedkernel.security.UserRole
@@ -37,7 +38,6 @@ import java.time.Instant
 import java.util.Base64
 import java.util.UUID
 
-private const val USER_VERIFICATION = "required"
 private const val CLEAR_SITE_DATA = "Clear-Site-Data"
 private const val CLEARED_SITE_DATA = "\"cache\", \"storage\""
 
@@ -164,9 +164,9 @@ class AccountController(
             encoded(options.userHandle),
             options.algorithms,
             options.excludeCredentials.map(::encoded),
-            residentKey = "required",
-            userVerification = USER_VERIFICATION,
-            attestation = "none",
+            residentKey = PasskeyCeremony.RESIDENT_KEY,
+            userVerification = PasskeyCeremony.USER_VERIFICATION,
+            attestation = PasskeyCeremony.ATTESTATION,
         )
     }
 

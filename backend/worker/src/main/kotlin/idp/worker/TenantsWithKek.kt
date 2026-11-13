@@ -23,10 +23,7 @@ internal fun TenancyService.forEachTenantWithKek(
             return false
         }
         runCatching { block(tenant) }.onFailure {
-            LogFields.with(LogFields.TENANT_ID, tenant.id.toString()) {
-                log.error("Job {} failed for tenant {}", job, tenant.id)
-                failures.record(FailureSource.JOB, it)
-            }
+            LogFields.with(LogFields.TENANT_ID, tenant.id.toString()) { failures.record(FailureSource.JOB, it, job) }
         }
     }
     return true

@@ -74,7 +74,7 @@ object AdminSecurityConfig : SecurityConfig {
 
     override val roles: Map<Role, Set<Permission>> =
         mapOf(
-            Role(UserRole.TENANT_ADMIN.name) to
+            UserRole.TENANT_ADMIN.role to
                 setOf(MANAGE_USERS, MANAGE_POLICY, MANAGE_SERVICE_PROVIDERS, MANAGE_SIGNING_KEYS, READ_AUDIT),
         )
 }

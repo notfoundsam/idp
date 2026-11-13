@@ -676,7 +676,7 @@ class FederationServiceTest :
                     val sp = tenant.register()
                     audit.changes.clear()
 
-                    shouldThrow<ServiceProviderManaged> { tenant.acting { manageServiceProvider(sp, ADMIN) } }
+                    shouldThrow<IllegalStateException> { tenant.acting { manageServiceProvider(sp, ADMIN) } }
                     shouldThrow<ServiceProviderNotFound> { tenant.acting { manageServiceProvider(UUID.randomUUID(), Actor.System) } }
                     tenant.acting { manageServiceProvider(sp, Actor.System) }
                     tenant.acting { manageServiceProvider(sp, Actor.System) }

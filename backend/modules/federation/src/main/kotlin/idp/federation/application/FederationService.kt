@@ -308,7 +308,7 @@ class FederationService(
         spId: UUID,
         actor: Actor,
     ) {
-        if (actor != Actor.System) throw ServiceProviderManaged()
+        check(actor == Actor.System) { "Only the system manages a service provider" }
         transaction.execute { dsl -> if (!serviceProviders.markManaged(dsl, spId)) throw ServiceProviderNotFound(spId) }
     }
 

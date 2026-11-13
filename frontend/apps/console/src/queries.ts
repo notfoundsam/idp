@@ -22,14 +22,17 @@ export function useIsAdmin() {
   return computed(() => sessions.data.value?.role === 'TENANT_ADMIN')
 }
 
-/** A change whose success makes the listed queries stale, so the page reads them anew. */
-export function useChange<V, R>(change: (variables: V) => Promise<R>, stale: readonly (readonly string[])[], onSuccess?: (result: R) => void) {
+type QueryKeys = readonly (readonly string[])[]
+
+/** A change whose success makes the listed queries stale, so the page reads them anew. A getter names them as they are then. */
+export function useChange<V, R>(change: (variables: V) => Promise<R>, stale: QueryKeys | (() => QueryKeys), onSuccess?: (result: R) => void) {
   const queries = useQueryClient()
   return useMutation({
     mutationFn: change,
     onSuccess: async (result: R) => {
       onSuccess?.(result)
-      await Promise.all(stale.map((queryKey) => queries.invalidateQueries({ queryKey })))
+      const keys = typeof stale === 'function' ? stale() : stale
+      await Promise.all(keys.map((queryKey) => queries.invalidateQueries({ queryKey })))
     },
   })
 }

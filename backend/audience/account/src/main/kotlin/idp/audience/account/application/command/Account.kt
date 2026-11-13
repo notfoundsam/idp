@@ -37,7 +37,7 @@ internal fun currentUser(): Actor.User = checkNotNull(SecurityContext.currentOrN
 internal fun currentSession(): UUID = checkNotNull(SecurityContext.currentOrNull()?.sessionId)
 
 /** The role is read from the user on every request, so it is the current one. */
-internal fun currentRole(): UserRole = UserRole.valueOf(checkNotNull(SecurityContext.currentOrNull()).role.name)
+internal fun currentRole(): UserRole = checkNotNull(UserRole.of(checkNotNull(SecurityContext.currentOrNull()).role))
 
 internal fun AuditLog.credentialRefused(
     user: Actor.User,

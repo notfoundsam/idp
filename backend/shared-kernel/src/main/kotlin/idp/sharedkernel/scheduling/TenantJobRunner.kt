@@ -33,10 +33,7 @@ class TenantJobRunner(
                 return
             }
             TenantContext.with(tenant) {
-                runCatching { transaction.execute(block) }.onFailure {
-                    log.error("Job {} failed for tenant {}", job, tenant.tenantId)
-                    failures.record(FailureSource.JOB, it)
-                }
+                runCatching { transaction.execute(block) }.onFailure { failures.record(FailureSource.JOB, it, job) }
             }
         }
     }

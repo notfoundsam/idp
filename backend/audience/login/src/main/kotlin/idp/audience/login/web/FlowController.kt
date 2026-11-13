@@ -24,6 +24,7 @@ import idp.authentication.application.LoginStep
 import idp.authentication.application.SessionCookie
 import idp.identity.application.PasskeyAssertion
 import idp.identity.application.PasskeyAttestation
+import idp.identity.application.PasskeyCeremony
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import jakarta.servlet.http.HttpServletRequest
@@ -41,8 +42,6 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.util.Base64
 import java.util.UUID
-
-private const val USER_VERIFICATION = "required"
 
 class StartFlowRequest(
     val reauthenticate: Boolean = false,
@@ -237,7 +236,7 @@ class FlowController(
         http: HttpServletRequest,
     ): PasskeyLoginOptionsResponse {
         val options = commands.dispatch(BeginPasskeyLogin(access(id, browser)))
-        return PasskeyLoginOptionsResponse(encoded(options.challenge), http.serverName, USER_VERIFICATION)
+        return PasskeyLoginOptionsResponse(encoded(options.challenge), http.serverName, PasskeyCeremony.USER_VERIFICATION)
     }
 
     @PostMapping("/{id}/passkey")
@@ -284,9 +283,9 @@ class FlowController(
             encoded(options.userHandle),
             options.algorithms,
             options.excludeCredentials.map(::encoded),
-            residentKey = "required",
-            userVerification = USER_VERIFICATION,
-            attestation = "none",
+            residentKey = PasskeyCeremony.RESIDENT_KEY,
+            userVerification = PasskeyCeremony.USER_VERIFICATION,
+            attestation = PasskeyCeremony.ATTESTATION,
         )
     }
 

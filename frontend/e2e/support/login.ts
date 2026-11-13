@@ -1,9 +1,10 @@
-import { expect, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test'
+import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
 import { linkFromMail } from './mail'
 import { totp } from './totp'
 
 export const ACME = 'https://acme.idp.test'
+export const CONSOLE = `${ACME}/console/`
 export const GLOBEX = 'https://globex.idp.test'
 export const SP_WHOAMI = 'https://sp.idp.test/simplesaml/whoami.php'
 
@@ -44,6 +45,21 @@ export async function acceptInvitation(page: Page, request: APIRequestContext, c
 export async function atConsole(page: Page, login: string, origin = ACME) {
   await page.waitForURL(`${origin}/console/`)
   await expect(page.getByTestId('account-email')).toHaveText(login)
+}
+
+/** Signs in at `acme` with the password and the second factor [secondFactor] enters, and waits for the console. */
+export async function signIn(page: Page, login: string, password: string, secondFactor: (page: Page) => Promise<void>) {
+  await page.goto(`${ACME}/login/`)
+  await enterLogin(page, login)
+  await enterPassword(page, password)
+  await secondFactor(page)
+  await atConsole(page, login)
+}
+
+/** A browser of its own, without the cookies of the test's page. */
+export async function newBrowser(browser: Browser) {
+  const context = await browser.newContext()
+  return { context, page: await context.newPage() }
 }
 
 /**

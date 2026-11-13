@@ -44,5 +44,5 @@ object AccountSecurityConfig : SecurityConfig {
             Logout::class to null,
         )
 
-    override val roles: Map<Role, Set<Permission>> = UserRole.entries.associate { Role(it.name) to setOf(OWN_ACCOUNT) }
+    override val roles: Map<Role, Set<Permission>> = UserRole.entries.associate { it.role to setOf(OWN_ACCOUNT) }
 }

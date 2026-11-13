@@ -66,7 +66,24 @@ class PlatformGuardsBackfillMigrationTest :
             guards(storedBefore("ops-sso", entityId = { "https://ops.other.test/saml2/metadata" })) shouldBe "false/true"
         }
 
+        fun passkeyPolicy(schema: String) =
+            owner.query("""SELECT passkey_required::text || '/' || version::text FROM "$schema".tenant_policies""")
+
+        test("a service tenant whose admin turned passkeys off gets them back, required and locked, in a new version") {
+            val schema = storedBefore("ops-sso", passkeyRequired = false)
+
+            guards(schema) shouldBe "true/true"
+            passkeyPolicy(schema) shouldBe "true/1"
+        }
+
+        test("a service tenant whose passkeys V18 already locked keeps its version") {
+            passkeyPolicy(storedBefore("ops-sso")) shouldBe "true/0"
+        }
+
         test("a customer tenant keeps its SP and policy open, even under the EntityID of ops") {
             guards(storedBefore("acme")) shouldBe "false/false"
+            val relaxed = storedBefore("acme", passkeyRequired = false)
+            guards(relaxed) shouldBe "false/false"
+            passkeyPolicy(relaxed) shouldBe "false/0"
         }
     })

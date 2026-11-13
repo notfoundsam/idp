@@ -779,7 +779,7 @@ class TotpServiceTest :
                     tenant.acting { issueRecoveryCodes(user, ADMIN) }
                     audit.changes.clear()
 
-                    tenant.acting { remove(user, ADMIN, IP) }
+                    tenant.acting { remove(user, ADMIN, IP, FactorRequirement.NONE) }
 
                     tenant.credential(user).shouldBeNull()
                     tenant.recoveryHashes(user).shouldBeEmpty()
@@ -802,7 +802,7 @@ class TotpServiceTest :
                     tenant.passkey(user)
                     audit.changes.clear()
 
-                    tenant.acting { remove(user, ADMIN) }
+                    tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) }
 
                     tenant.recoveryHashes(user) shouldHaveSize 10
                     audit.changes.single().details shouldBe emptyMap()
@@ -817,8 +817,8 @@ class TotpServiceTest :
                     tenant.acting { issueRecoveryCodes(user, ADMIN) }
                     audit.changes.clear()
 
-                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) } }
-                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, requirement = FactorRequirement.PASSKEY) } }
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.SECOND_FACTOR) } }
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.PASSKEY) } }
 
                     tenant.acting { hasConfirmedTotp(user) } shouldBe true
                     tenant.recoveryHashes(user) shouldHaveSize 10
@@ -833,7 +833,7 @@ class TotpServiceTest :
                     tenant.confirmed(user)
                     tenant.passkey(user)
 
-                    tenant.acting { remove(user, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) }
+                    tenant.acting { remove(user, ADMIN, null, FactorRequirement.SECOND_FACTOR) }
 
                     tenant.acting { hasConfirmedTotp(user) } shouldBe false
                 }
@@ -844,7 +844,7 @@ class TotpServiceTest :
                     val tenant = tenant()
                     val user = tenant.user()
                     val old = tenant.confirmed(user)
-                    tenant.acting { remove(user, ADMIN) }
+                    tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) }
 
                     val renewed = tenant.confirmed(user)
 
@@ -859,8 +859,9 @@ class TotpServiceTest :
                     val user = tenant.user()
                     tenant.enrolled(user)
 
-                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(user, ADMIN) } }
-                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(tenant.user("grace.hopper@acme.test"), ADMIN) } }
+                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) } }
+                    val grace = tenant.user("grace.hopper@acme.test")
+                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(grace, ADMIN, null, FactorRequirement.NONE) } }
 
                     audit.changes.shouldBeEmpty()
                 }
@@ -874,7 +875,7 @@ class TotpServiceTest :
                     tenant.acting { issueRecoveryCodes(user, ADMIN) }
                     audit.failing = true
 
-                    shouldThrow<IllegalStateException> { tenant.acting { remove(user, ADMIN) } }
+                    shouldThrow<IllegalStateException> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) } }
 
                     tenant.acting { hasConfirmedTotp(user) } shouldBe true
                     tenant.recoveryHashes(user) shouldHaveSize 10
@@ -888,7 +889,7 @@ class TotpServiceTest :
                     val other = tenant.user("grace.hopper@acme.test")
                     tenant.confirmed(other)
 
-                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(user, ADMIN) } }
+                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) } }
 
                     tenant.acting { hasConfirmedTotp(other) } shouldBe true
                 }

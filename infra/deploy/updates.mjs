@@ -21,10 +21,15 @@ export function overdueUpdates(pulls, now) {
     })
 }
 
-if (import.meta.main) {
-  const { values } = parseArgs({ options: { pulls: { type: 'string' } } })
+export function parseOptions(argv) {
+  const { values } = parseArgs({ args: argv, options: { pulls: { type: 'string' } } })
   if (!values.pulls) throw new Error('Usage: node updates.mjs --pulls <gh pr list json>')
-  const overdue = overdueUpdates(JSON.parse(await readFile(values.pulls, 'utf8')), Date.now())
+  return { pulls: values.pulls }
+}
+
+if (import.meta.main) {
+  const options = parseOptions(process.argv.slice(2))
+  const overdue = overdueUpdates(JSON.parse(await readFile(options.pulls, 'utf8')), Date.now())
   for (const line of overdue) console.error(process.env.GITHUB_ACTIONS === 'true' ? `::error title=Update past its time frame::${line}` : `FAIL ${line}`)
   if (overdue.length > 0) process.exitCode = 1
   else console.log('No dependency update is past its time frame')

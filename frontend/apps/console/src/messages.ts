@@ -26,9 +26,3 @@ export function messageOf(error: unknown, rejected = REJECTED): string {
       return UNEXPECTED
   }
 }
-
-const dates = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-
-export function dateOf(iso: string): string {
-  return dates.format(new Date(iso))
-}

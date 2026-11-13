@@ -1,37 +1,25 @@
 <script setup lang="ts">
 import { PRECONDITION_FAILED, type VersionedPolicy } from '@idp/api-client'
-import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { reactive, ref, watch } from 'vue'
+import { reactive } from 'vue'
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import { useConsole } from '../../context'
-import { hasStatus, POLICY, TIMEOUTS_REFUSED, usePolicy } from '../admin'
+import { ABSOLUTE_MAX_MINUTES, hasStatus, IDLE_MINUTES, POLICY, TIMEOUTS_REFUSED, usePolicy, useVersionedForm } from '../admin'
 
 const { admin } = useConsole()
-const queries = useQueryClient()
 const policy = usePolicy()
 const form = reactive({ mfaForUsers: true, passkeyRequired: false, idleMinutes: 30, absoluteMinutes: 720 })
-const version = ref<string | null>(null)
-const saved = ref(false)
 
 function fill(read: VersionedPolicy) {
   form.mfaForUsers = read.policy.mfaForUsers
   form.passkeyRequired = read.policy.passkeyRequired
   form.idleMinutes = read.policy.sessionIdleSeconds / 60
   form.absoluteMinutes = read.policy.sessionAbsoluteSeconds / 60
-  version.value = read.version
 }
 
-/** A policy cached from an earlier visit waits for the fresh one, whose version a save would match. */
-watch(
-  () => [policy.data.value, policy.isFetching.value] as const,
-  ([read, fetching]) => {
-    if (read !== undefined && !fetching && version.value === null) fill(read)
-  },
-  { immediate: true },
-)
-
-const save = useMutation({
-  mutationFn: (read: string) =>
+const { version, saved, save, submit, reload } = useVersionedForm(
+  policy,
+  fill,
+  (read) =>
     admin.savePolicy(
       {
         mfaForUsers: form.mfaForUsers,
@@ -41,25 +29,8 @@ const save = useMutation({
       },
       read,
     ),
-  onSuccess: async (next) => {
-    saved.value = true
-    version.value = next
-    await queries.invalidateQueries({ queryKey: POLICY })
-  },
-})
-
-function submit() {
-  saved.value = false
-  if (version.value !== null) save.mutate(version.value)
-}
-
-/** The change of the other admin replaces what this form held, and the admin makes theirs again on top of it. */
-async function reload() {
-  const read = await policy.refetch()
-  if (read.data === undefined) return
-  fill(read.data)
-  save.reset()
-}
+  () => POLICY,
+)
 </script>
 
 <template>
@@ -82,15 +53,15 @@ async function reload() {
     <fieldset>
       <legend>Sessions</legend>
       <label for="idle-minutes">Idle timeout, minutes</label>
-      <input id="idle-minutes" v-model.number="form.idleMinutes" name="idle-minutes" type="number" min="5" max="60" step="any" required />
+      <input id="idle-minutes" v-model.number="form.idleMinutes" name="idle-minutes" type="number" :min="IDLE_MINUTES.min" :max="IDLE_MINUTES.max" step="any" required />
       <label for="absolute-minutes">Session lifetime, minutes</label>
       <input
         id="absolute-minutes"
         v-model.number="form.absoluteMinutes"
         name="absolute-minutes"
         type="number"
-        min="5"
-        max="1440"
+        :min="IDLE_MINUTES.min"
+        :max="ABSOLUTE_MAX_MINUTES"
         step="any"
         required
       />

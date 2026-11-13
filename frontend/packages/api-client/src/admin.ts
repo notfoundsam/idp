@@ -85,8 +85,11 @@ export function createAdminClient(options: ClientOptions) {
       return { policy: body, version: etag }
     },
     /** Answers the new version, or `412` when someone saved the policy since [version] was read. */
-    savePolicy: async (policy: Policy, version: string): Promise<string | null> =>
-      (await call.exchange<undefined>('PUT', '/api/admin/policy', policy, { 'If-Match': version })).etag,
+    savePolicy: async (policy: Policy, version: string): Promise<string> => {
+      const { etag } = await call.exchange<undefined>('PUT', '/api/admin/policy', policy, { 'If-Match': version })
+      if (etag === null) throw new Error('The saved policy came without its version')
+      return etag
+    },
     listServiceProviders: async () =>
       (await call<Schemas['ServiceProviderList']>('GET', '/api/admin/service-providers')).serviceProviders,
     /** Sends only the content of [metadata] under a fixed file name, since the server never reads the one the browser has. */
@@ -102,8 +105,11 @@ export function createAdminClient(options: ClientOptions) {
       return { serviceProvider: body, version: etag }
     },
     /** Answers the new version, or `412` when someone saved the settings since [version] was read. */
-    saveServiceProviderSettings: async (id: string, settings: SpSettings, version: string): Promise<string | null> =>
-      (await call.exchange<undefined>('PUT', sp(id, '/settings'), settings, { 'If-Match': version })).etag,
+    saveServiceProviderSettings: async (id: string, settings: SpSettings, version: string): Promise<string> => {
+      const { etag } = await call.exchange<undefined>('PUT', sp(id, '/settings'), settings, { 'If-Match': version })
+      if (etag === null) throw new Error('The saved settings came without their version')
+      return etag
+    },
     removeServiceProvider: (id: string) => call<undefined>('DELETE', sp(id)),
     listAssignedUsers: async (id: string) => (await call<Schemas['AssignedUsers']>('GET', sp(id, '/users'))).users,
     assignUsers: (id: string, userIds: string[]) => call<undefined>('POST', sp(id, '/users'), { userIds }),

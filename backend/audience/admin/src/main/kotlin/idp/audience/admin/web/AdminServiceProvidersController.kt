@@ -156,20 +156,72 @@ private val FINGERPRINT = HexFormat.ofDelimiter(":").withUpperCase()
 private fun X509Certificate.response() =
     CertificateResponse(FINGERPRINT.formatHex(MessageDigest.getInstance("SHA-256").digest(encoded)), notAfter.toInstant())
 
+private fun NameIdFormat.response() =
+    when (this) {
+        NameIdFormat.PERSISTENT -> SpNameIdFormat.PERSISTENT
+        NameIdFormat.EMAIL -> SpNameIdFormat.EMAIL
+    }
+
+private fun SpNameIdFormat.format() =
+    when (this) {
+        SpNameIdFormat.PERSISTENT -> NameIdFormat.PERSISTENT
+        SpNameIdFormat.EMAIL -> NameIdFormat.EMAIL
+    }
+
+private fun SignedPart.response() =
+    when (this) {
+        SignedPart.ASSERTION -> SpSignedPart.ASSERTION
+        SignedPart.RESPONSE -> SpSignedPart.RESPONSE
+        SignedPart.BOTH -> SpSignedPart.BOTH
+    }
+
+private fun SpSignedPart.part() =
+    when (this) {
+        SpSignedPart.ASSERTION -> SignedPart.ASSERTION
+        SpSignedPart.RESPONSE -> SignedPart.RESPONSE
+        SpSignedPart.BOTH -> SignedPart.BOTH
+    }
+
+private fun SignatureAlgorithm.response() =
+    when (this) {
+        SignatureAlgorithm.RSA_PSS_SHA256 -> SpSignatureAlgorithm.RSA_PSS_SHA256
+        SignatureAlgorithm.RSA_SHA256 -> SpSignatureAlgorithm.RSA_SHA256
+    }
+
+private fun SpSignatureAlgorithm.algorithm() =
+    when (this) {
+        SpSignatureAlgorithm.RSA_PSS_SHA256 -> SignatureAlgorithm.RSA_PSS_SHA256
+        SpSignatureAlgorithm.RSA_SHA256 -> SignatureAlgorithm.RSA_SHA256
+    }
+
+private fun SamlAttribute.response() =
+    when (this) {
+        SamlAttribute.EMAIL -> SpAttribute.EMAIL
+        SamlAttribute.DISPLAY_NAME -> SpAttribute.DISPLAY_NAME
+        SamlAttribute.PHONE -> SpAttribute.PHONE
+    }
+
+private fun SpAttribute.attribute() =
+    when (this) {
+        SpAttribute.EMAIL -> SamlAttribute.EMAIL
+        SpAttribute.DISPLAY_NAME -> SamlAttribute.DISPLAY_NAME
+        SpAttribute.PHONE -> SamlAttribute.PHONE
+    }
+
 private fun SpSettings.response() =
     SpSettingsResponse(
-        SpNameIdFormat.valueOf(nameIdFormat.name),
-        SpSignedPart.valueOf(signedPart.name),
-        SpSignatureAlgorithm.valueOf(signatureAlgorithm.name),
-        attributes.map { SpAttribute.valueOf(it.name) }.sorted(),
+        nameIdFormat.response(),
+        signedPart.response(),
+        signatureAlgorithm.response(),
+        attributes.map { it.response() }.sorted(),
     )
 
 private fun SpSettingsRequest.settings() =
     SpSettings(
-        NameIdFormat.valueOf(nameIdFormat.name),
-        SignedPart.valueOf(signedPart.name),
-        SignatureAlgorithm.valueOf(signatureAlgorithm.name),
-        attributes.map { SamlAttribute.valueOf((it ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST)).name) }.toSet(),
+        nameIdFormat.format(),
+        signedPart.part(),
+        signatureAlgorithm.algorithm(),
+        attributes.map { (it ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST)).attribute() }.toSet(),
     )
 
 private fun ServiceProviderView.response() =

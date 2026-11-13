@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { overdueUpdates } from './updates.mjs'
+import { overdueUpdates, parseOptions as parseUpdateOptions } from './updates.mjs'
 import { checkAcceptances, DEADLINES, emptySboms, findingsOf, judge } from './vulnerabilities.mjs'
 
 const NOW = Date.parse('2026-11-10T00:00:00Z')
@@ -75,4 +75,10 @@ test('a Renovate pull request open past its time frame stops the release, a majo
     '#4 chore(deps): update vite to 9 (major), due 2026-11-09',
   ])
   assert.equal(overdueUpdates([{ number: 5, title: 'x', labels: [] }], NOW).length, 1)
+})
+
+test('the check of the updates reads the pull requests from the file it is given', () => {
+  assert.deepEqual(parseUpdateOptions(['--pulls', 'updates.json']), { pulls: 'updates.json' })
+  assert.throws(() => parseUpdateOptions([]), /Usage/)
+  assert.throws(() => parseUpdateOptions(['--pulls']), /--pulls/)
 })

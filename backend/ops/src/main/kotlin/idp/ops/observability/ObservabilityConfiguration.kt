@@ -1,4 +1,4 @@
-package idp.ops.web
+package idp.ops.observability
 
 import idp.sharedkernel.observability.CorrelationFilter
 import idp.sharedkernel.observability.Failures

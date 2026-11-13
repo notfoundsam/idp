@@ -766,7 +766,7 @@ class PasskeyServiceTest :
                     tenant.recoveryCodes(user)
                     val id = tenant.acting { passkeysOf(user) }.single().id
 
-                    tenant.acting { remove(user, id, ADMIN, IP) }
+                    tenant.acting { remove(user, id, ADMIN, IP, FactorRequirement.NONE) }
 
                     tenant.credentials(user).shouldBeEmpty()
                     tenant.recoveryCodesLeft(user) shouldBe 0
@@ -788,7 +788,7 @@ class PasskeyServiceTest :
                     tenant.recoveryCodes(user)
                     val (first, second) = tenant.acting { passkeysOf(user) }.map { it.id }
 
-                    tenant.acting { remove(user, first, ADMIN) }
+                    tenant.acting { remove(user, first, ADMIN, null, FactorRequirement.NONE) }
 
                     tenant.acting { passkeysOf(user) }.map { it.id } shouldContainExactly listOf(second)
                     tenant.recoveryCodesLeft(user) shouldBe 10
@@ -804,7 +804,7 @@ class PasskeyServiceTest :
                     tenant.recoveryCodes(user)
                     val id = tenant.acting { passkeysOf(user) }.single().id
 
-                    shouldThrow<FactorRequired> { tenant.acting { remove(user, id, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) } }
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, id, ADMIN, null, FactorRequirement.SECOND_FACTOR) } }
 
                     tenant.credentials(user) shouldHaveSize 1
                     tenant.recoveryCodesLeft(user) shouldBe 10
@@ -822,8 +822,8 @@ class PasskeyServiceTest :
                     TenantContext.with(tenant) { totp.confirm(user, code, ADMIN) } shouldBe true
                     val id = tenant.acting { passkeysOf(user) }.single().id
 
-                    shouldThrow<FactorRequired> { tenant.acting { remove(user, id, ADMIN, requirement = FactorRequirement.PASSKEY) } }
-                    tenant.acting { remove(user, id, ADMIN, requirement = FactorRequirement.SECOND_FACTOR) }
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, id, ADMIN, null, FactorRequirement.PASSKEY) } }
+                    tenant.acting { remove(user, id, ADMIN, null, FactorRequirement.SECOND_FACTOR) }
 
                     tenant.credentials(user).shouldBeEmpty()
                 }
@@ -837,8 +837,8 @@ class PasskeyServiceTest :
                     tenant.registered(other)
                     val theirs = tenant.acting { passkeysOf(other) }.single().id
 
-                    shouldThrow<PasskeyNotFound> { tenant.acting { remove(user, theirs, ADMIN) } }
-                    shouldThrow<PasskeyNotFound> { tenant.acting { remove(user, UUID.randomUUID(), ADMIN) } }
+                    shouldThrow<PasskeyNotFound> { tenant.acting { remove(user, theirs, ADMIN, null, FactorRequirement.NONE) } }
+                    shouldThrow<PasskeyNotFound> { tenant.acting { remove(user, UUID.randomUUID(), ADMIN, null, FactorRequirement.NONE) } }
 
                     tenant.credentials(other) shouldHaveSize 1
                     audit.changes.shouldBeEmpty()
@@ -853,7 +853,7 @@ class PasskeyServiceTest :
                     val id = tenant.acting { passkeysOf(user) }.single().id
                     audit.failing = true
 
-                    shouldThrow<IllegalStateException> { tenant.acting { remove(user, id, ADMIN) } }
+                    shouldThrow<IllegalStateException> { tenant.acting { remove(user, id, ADMIN, null, FactorRequirement.NONE) } }
 
                     tenant.credentials(user) shouldHaveSize 1
                 }

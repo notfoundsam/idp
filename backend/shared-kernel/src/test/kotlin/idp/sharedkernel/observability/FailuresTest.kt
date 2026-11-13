@@ -67,6 +67,13 @@ class FailuresTest :
             appender.list.single().formattedMessage shouldContain "tls=true"
         }
 
+        test("a failed job is named in the one line") {
+            failures.record(FailureSource.JOB, IllegalStateException(DETAIL), "retention")
+
+            count("job", "false") shouldBe 1.0
+            appender.list.single().formattedMessage shouldContain "event=failure source=job job=retention tls=false causes="
+        }
+
         test("a cause that points at itself ends the chain") {
             failures.record(FailureSource.JOB, SelfCaused())
 

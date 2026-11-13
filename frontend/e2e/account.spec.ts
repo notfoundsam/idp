@@ -3,6 +3,7 @@ import {
   ACCOUNT_USER,
   acceptInvitation,
   ACME,
+  CONSOLE,
   cspViolations,
   enterLogin,
   enterPassword,
@@ -11,11 +12,11 @@ import {
   newPassword,
   sentToLogin,
   sessionCookie,
+  signIn,
 } from './support/login'
 import { virtualAuthenticator } from './support/passkey'
 import { totp } from './support/totp'
 
-const CONSOLE = `${ACME}/console/`
 const SECOND_BROWSER = 'Mozilla/5.0 (X11; Linux x86_64) e2e-second-browser'
 
 async function shownCodes(page: Page): Promise<string[]> {
@@ -25,15 +26,6 @@ async function shownCodes(page: Page): Promise<string[]> {
   await page.getByRole('button', { name: 'I have saved them' }).click()
   await expect(page.getByTestId('recovery-codes')).toHaveCount(0)
   return shown.map((it) => it.trim())
-}
-
-async function signIn(page: Page, password: string, secondFactor: (page: Page) => Promise<void>) {
-  await page.goto(`${ACME}/login/`)
-  await enterLogin(page, ACCOUNT_USER)
-  await enterPassword(page, password)
-  await secondFactor(page)
-  await page.waitForURL(CONSOLE)
-  await expect(page.getByTestId('account-email')).toHaveText(ACCOUNT_USER)
 }
 
 async function signOut(page: Page) {
@@ -120,10 +112,10 @@ test.describe.serial('the account of a user', () => {
   })
 
   test('lists the sessions, marks this one, and ends another one or all others', async ({ page, browser }) => {
-    await signIn(page, password, (it) => enterTotp(it, secret))
+    await signIn(page, ACCOUNT_USER, password, (it) => enterTotp(it, secret))
     const other = await browser.newContext({ userAgent: SECOND_BROWSER })
     const second = await other.newPage()
-    await signIn(second, password, (it) => enterRecoveryCode(it, codes[0] ?? ''))
+    await signIn(second, ACCOUNT_USER, password, (it) => enterRecoveryCode(it, codes[0] ?? ''))
 
     await page.getByRole('link', { name: 'Sessions' }).click()
     await expect(page).toHaveURL(`${CONSOLE}sessions`)
@@ -137,7 +129,7 @@ test.describe.serial('the account of a user', () => {
     await expect(theOther).toHaveCount(0)
 
     await sentToLogin(second)
-    await signIn(second, password, (it) => enterRecoveryCode(it, codes[1] ?? ''))
+    await signIn(second, ACCOUNT_USER, password, (it) => enterRecoveryCode(it, codes[1] ?? ''))
     await page.reload()
     await expect(theOther).toHaveCount(1)
     await page.getByRole('button', { name: 'Sign out everywhere else' }).click()
@@ -151,7 +143,7 @@ test.describe.serial('the account of a user', () => {
   })
 
   test('a fresh login that the console asks for proves every factor again and leads back to it', async ({ page }) => {
-    await signIn(page, password, (it) => enterRecoveryCode(it, codes[2] ?? ''))
+    await signIn(page, ACCOUNT_USER, password, (it) => enterRecoveryCode(it, codes[2] ?? ''))
     await page.goto(`${ACME}/login/?reauthenticate`)
     await expect(page.getByLabel('Email')).toBeVisible()
     await enterLogin(page, ACCOUNT_USER)
@@ -166,7 +158,7 @@ test.describe.serial('the account of a user', () => {
     page,
     context,
   }) => {
-    await signIn(page, password, (it) => enterRecoveryCode(it, codes[4] ?? ''))
+    await signIn(page, ACCOUNT_USER, password, (it) => enterRecoveryCode(it, codes[4] ?? ''))
     for (const path of ['', 'sessions']) {
       await page.goto(`${CONSOLE}${path}`)
       await expect(page.getByTestId('account-email')).toHaveText(ACCOUNT_USER)

@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
 import {
   acceptInvitation,
@@ -6,16 +6,17 @@ import {
   ADMIN_USER,
   ALICE,
   atConsole,
+  CONSOLE,
   enrollTotp,
   enterLogin,
   enterPassword,
   enterRecoveryCode,
+  newBrowser,
   sentToLogin,
   sessionCookie,
 } from './support/login'
 import { linkFromMail, mailIds } from './support/mail'
 
-const CONSOLE = `${ACME}/console/`
 const CARD = /\/console\/admin\/users\/[0-9a-f-]{36}$/
 
 /** The policy `acme` starts with locally, which the other specs rely on: a second factor for users, no passkeys required. */
@@ -45,12 +46,6 @@ async function restorePolicy(page: Page): Promise<number> {
 async function card(page: Page) {
   await page.reload()
   await expect(page.getByTestId('user-email')).toBeVisible()
-}
-
-/** The new user signs in with a fresh browser, and lands either in the console or at a step of the policy. */
-async function newBrowser(browser: Browser) {
-  const context = await browser.newContext()
-  return { context, page: await context.newPage() }
 }
 
 /** One admin, invited anew before every run, who manages a user invited by the test itself, and then the policy. */

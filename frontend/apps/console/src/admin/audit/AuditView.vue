@@ -3,7 +3,7 @@ import type { AuditEntry, AuditTargetType } from '@idp/api-client'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProblemMessage from '../../components/ProblemMessage.vue'
-import { dateOf } from '../../messages'
+import { dateOf } from '../../format'
 import { actorOf, hasStatus, journalOf, TARGET_TYPES, targetOf, targetTypeOf, useJournal } from '../admin'
 
 const route = useRoute()

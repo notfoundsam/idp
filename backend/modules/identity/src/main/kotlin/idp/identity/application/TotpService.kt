@@ -33,8 +33,6 @@ class TotpAlreadyEnrolled : DomainRuleViolation("TOTP is already enrolled")
 
 class TotpNotEnrolled : NotFound("No TOTP is enrolled")
 
-internal fun removedCodes(removed: Boolean): Map<String, String> = if (removed) mapOf("recovery_codes" to "removed") else emptyMap()
-
 /** Not a data class: `toString` must not print the secret. */
 class TotpEnrollment(
     val secret: String,
@@ -123,8 +121,8 @@ class TotpService(
     fun remove(
         userId: UUID,
         actor: Actor,
-        ip: String? = null,
-        requirement: FactorRequirement = FactorRequirement.NONE,
+        ip: String?,
+        requirement: FactorRequirement,
     ) {
         transaction.execute { dsl ->
             floor.removing(dsl, userId, requirement) {

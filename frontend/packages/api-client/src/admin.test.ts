@@ -103,6 +103,11 @@ describe('the policy', () => {
     expect(sent[0]?.init.body).toBe(JSON.stringify(POLICY))
   })
 
+  test('a save answered without the new version fails, since the next save would have none to send', async () => {
+    const { client } = recording(() => empty())
+    await expect(client.savePolicy(POLICY, '"7"')).rejects.toThrow('without its version')
+  })
+
   test('a save after someone else saved is refused with 412', async () => {
     const { client } = recording(() => new Response(null, { status: PRECONDITION_FAILED }))
     const refused = await client.savePolicy(POLICY, '"6"').catch((error: unknown) => error)
@@ -173,6 +178,12 @@ describe('Service Providers', () => {
     expect(sent[0]?.init.body).toBe(JSON.stringify(settings))
     const refused = await client.saveServiceProviderSettings(SP_ID, settings, '"2"').catch((error: unknown) => error)
     expect((refused as ApiError).status).toBe(412)
+  })
+
+  test('a save of the settings answered without the new version fails', async () => {
+    const { client } = recording(() => empty())
+    const settings = { ...SETTINGS, attributes: [...SETTINGS.attributes] }
+    await expect(client.saveServiceProviderSettings(SP_ID, settings, '"2"')).rejects.toThrow('without their version')
   })
 
   test('users are listed, assigned and revoked by a list of IDs in one request each', async () => {

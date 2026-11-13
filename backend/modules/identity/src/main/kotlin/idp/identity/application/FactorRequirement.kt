@@ -14,7 +14,13 @@ enum class FactorRequirement {
     PASSKEY,
 }
 
+private const val RECOVERY_CODES = "recovery_codes"
+private const val REMOVED = "removed"
+
 class FactorRequired : DomainRuleViolation("The policy needs the factor the user would remove")
+
+/** The details of a removed factor tell whether the recovery codes went with it. */
+internal fun removedCodes(removed: Boolean): Map<String, String> = if (removed) mapOf(RECOVERY_CODES to REMOVED) else emptyMap()
 
 /**
  * Removing the last factor the policy asks for would leave the account behind the password alone, and the next login would let

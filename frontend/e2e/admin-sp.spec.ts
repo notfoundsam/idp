@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { api, contextApi, metadataOf, registerSp, uniqueSp } from './support/admin'
@@ -8,20 +8,22 @@ import {
   ALICE,
   atConsole,
   BOB,
+  CONSOLE,
   enrollTotp,
   enterLogin,
   enterPassword,
   enterRecoveryCode,
   enterTotp,
   GLOBEX,
+  newBrowser,
   newPassword,
   sessionCookie,
+  signIn,
   SP_ADMIN,
   SP_WHOAMI,
 } from './support/login'
 import { linkFromMail } from './support/mail'
 
-const CONSOLE = `${ACME}/console/`
 const SP_CARD = /\/console\/admin\/service-providers\/([0-9a-f-]{36})$/
 const USER_CARD = /\/console\/admin\/users\/([0-9a-f-]{36})$/
 const SAML_METADATA = process.env.SAML_METADATA_DIR ?? '../../dev-tools/simplesamlphp/metadata'
@@ -52,18 +54,8 @@ async function handMetadataToSimpleSaml(request: APIRequestContext): Promise<str
 
 const certificatesIn = (metadata: string) => metadata.match(/<(?:ds:)?X509Certificate>/g)?.length ?? 0
 
-async function signIn(page: Page, password: string, code: string) {
-  await page.goto(`${ACME}/login/`)
-  await enterLogin(page, SP_ADMIN)
-  await enterPassword(page, password)
-  await enterRecoveryCode(page, code)
-  await atConsole(page, SP_ADMIN)
-}
-
-async function newBrowser(browser: Browser) {
-  const context = await browser.newContext()
-  return { context, page: await context.newPage() }
-}
+const signInWithCode = (page: Page, password: string, code: string) =>
+  signIn(page, SP_ADMIN, password, (it) => enterRecoveryCode(it, code))
 
 async function openTestSp(page: Page) {
   await page.goto(`${CONSOLE}admin/service-providers`)
@@ -177,7 +169,7 @@ test.describe.serial('an admin of the tenant', () => {
   })
 
   test('assigns the selected users at once and revokes them at once', async ({ page, context }) => {
-    await signIn(page, password, codes[0] ?? '')
+    await signInWithCode(page, password, codes[0] ?? '')
     const sp = uniqueSp()
     const id = await registerSp(page, sp.name, sp.entityId)
     undo.push(() => removeSp(context, id))
@@ -221,7 +213,7 @@ test.describe.serial('an admin of the tenant', () => {
   })
 
   test('lets a new user sign in to the test SP only while they are assigned to it', async ({ page, request, browser, context }) => {
-    await signIn(page, password, codes[1] ?? '')
+    await signInWithCode(page, password, codes[1] ?? '')
     const invitee = `e2e-${randomBytes(6).toString('hex')}@acme.test`
     let user = ''
     let assigned = false
@@ -277,7 +269,7 @@ test.describe.serial('an admin of the tenant', () => {
   })
 
   test('rotates the signing key while SimpleSAMLphp keeps signing users in', async ({ page, request, browser, context }) => {
-    await signIn(page, password, codes[2] ?? '')
+    await signInWithCode(page, password, codes[2] ?? '')
     undo.push(async () => {
       const keys = await contextApi(context, 'GET', '/api/admin/signing-keys')
       if (keys.body.includes('"NEXT"')) {
@@ -325,7 +317,7 @@ test.describe.serial('an admin of the tenant', () => {
   })
 
   test('reads the journal page by page, by target, and without the data of an erased user', async ({ page }) => {
-    await signIn(page, password, codes[3] ?? '')
+    await signInWithCode(page, password, codes[3] ?? '')
     // A fresh environment may hold less than one page of the default size, so the pages are made small.
     await page.route(/\/api\/admin\/audit\?/, (route) => {
       const url = new URL(route.request().url())
@@ -362,7 +354,7 @@ test.describe.serial('an admin of the tenant', () => {
   })
 
   test('is no admin at another tenant, even with the session of this one', async ({ page, context }) => {
-    await signIn(page, password, codes[4] ?? '')
+    await signInWithCode(page, password, codes[4] ?? '')
     expect((await api(page, 'GET', '/api/admin/service-providers')).status).toBe(200)
     const session = await sessionCookie(context)
     if (session === undefined) throw new Error('No session at acme')

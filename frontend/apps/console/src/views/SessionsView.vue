@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ProblemMessage from '../components/ProblemMessage.vue'
 import { useConsole } from '../context'
-import { dateOf } from '../messages'
+import { dateOf } from '../format'
 import { SESSIONS, useChange, useSessions } from '../queries'
 
 const { client } = useConsole()
