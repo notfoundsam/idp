@@ -49,6 +49,7 @@ private const val MAIL_OID = "urn:oid:0.9.2342.19200300.100.1.3"
 private const val DISPLAY_NAME_OID = "urn:oid:2.16.840.1.113730.3.1.241"
 private const val OUTSIDER = "grace.hopper@acme.test"
 private val TIMEOUT: Duration = Duration.ofSeconds(30)
+private val BOUNCE = Regex("""url=(/saml/sso/[0-9a-f-]{36})""")
 
 /** SimpleSAMLphp with the configuration of the local environment, and the IdP metadata as `app` publishes it. */
 private class SimpleSamlPhp(
@@ -185,20 +186,27 @@ class SamlInteropTest :
             application.close()
         }
 
+        /** Each step names the reply it got, so a step that fails under load says which and why instead of a bare NPE. */
+        fun Reply.step(
+            name: String,
+            status: Int,
+        ): Reply = also { withClue("$name answered $status with: $body") { it.status shouldBe status } }
+
         /** From the page of the SP to the form the IdP hands the browser, or the page that stops it. */
         fun login(email: String): Reply {
             sp.forget()
             val toIdp = sp.get("https://$SP_HOST/simplesaml/whoami.php").location()
             toIdp shouldStartWith "https://$ACME/saml/sso?"
             val browser = Browser(application)
-            val bounce =
-                Regex(
-                    """url=(/saml/sso/[0-9a-f-]{36})""",
-                ).find(browser.get(toIdp.removePrefix("https://$ACME")).body)!!.groupValues[1]
-            val flow = browser.get(bounce).header("Location")!!.substringAfter("flow=")
-            browser.post("/api/flows/$flow/login", loginBody(email))
-            browser.post("/api/flows/$flow/password", passwordBody(PASSWORD))
-            return browser.get(browser.complete(flow).json().text("returnUrl"))
+            val sso = browser.get(toIdp.removePrefix("https://$ACME")).step("The AuthnRequest", 200)
+            val bounce = withClue(sso.body) { BOUNCE.find(sso.body).shouldNotBeNull() }.groupValues[1]
+            val toLogin = browser.get(bounce).step("The bounce", 303)
+            val flow = withClue(toLogin.headers()) { toLogin.header("Location").shouldNotBeNull() }.substringAfter("flow=")
+            browser.post("/api/flows/$flow/login", loginBody(email)).step("The login", 200)
+            browser.post("/api/flows/$flow/password", passwordBody(PASSWORD)).step("The password", 200)
+            val completed = browser.complete(flow).step("The completion", 200)
+            val returnUrl = completed.json().get("returnUrl")
+            return browser.get(withClue("The completion named no returnUrl") { returnUrl.shouldNotBeNull() }.asString())
         }
 
         fun whoAmI(form: Reply): JsonNode {

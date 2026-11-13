@@ -81,6 +81,21 @@ class StoredPlaintextTest :
                 )
         }
 
+        test("finds a value inside a larger blob kept in base64, at every offset of a 3-byte group") {
+            val (database, sql) = probe()
+            listOf("", "x", "xy").forEachIndexed { id, prefix ->
+                val blob = """$prefix{"login":"$EMAIL","relayState":"r"}""".toByteArray()
+                sql.update("INSERT INTO public.probe (id, t) VALUES (?, ?)", id, Base64.getEncoder().encodeToString(blob))
+                sql.update("INSERT INTO public.probe (id, b) VALUES (?, ?)", id, Base64.getUrlEncoder().encodeToString(blob).toByteArray())
+            }
+
+            listOf("", "x", "xy").forEach { prefix ->
+                val blob = Base64.getEncoder().encodeToString("$prefix{\"login\":\"$EMAIL\"}".toByteArray())
+                email.foundIn(blob) shouldBe true
+            }
+            database.scan(listOf(email)).findings shouldBe setOf(Finding("public.probe.t", "email"), Finding("public.probe.b", "email"))
+        }
+
         test("a hash or a ciphertext of the value is no finding") {
             val (database, sql) = probe()
             val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()

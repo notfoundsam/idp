@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.comparables.shouldBeGreaterThan
 import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.longs.shouldBeGreaterThan
+import io.kotest.matchers.shouldBe
 import org.springframework.beans.factory.config.BeanPostProcessor
 import org.springframework.jdbc.datasource.DelegatingDataSource
 import java.lang.reflect.InvocationHandler
@@ -79,16 +80,20 @@ class LoginCostTest :
 
         afterSpec { application.close() }
 
-        /** Clears the delay first: a user inside one skips the check of the password, which would hide a missing hash on either side. */
+        /**
+         * Clears the delay first: a user inside one skips the check of the password, which would hide a missing hash on either side.
+         * Times the spell without a connection, which is the hash: the known login also writes its failed attempt and the journal, and
+         * the time of those writes would decide a comparison of whole requests.
+         */
         fun attempt(login: String): Duration {
             environment.sql.update(
                 "UPDATE ${environment.acme.table("password_credentials")} SET failed_attempts = 0, next_attempt_at = NULL",
             )
             val browser = Browser(application)
             val flow = browser.identified(login)
-            val started = System.nanoTime()
-            browser.password(flow, WRONG_PASSWORD)
-            return Duration.ofNanos(System.nanoTime() - started)
+            Connections.moments.clear()
+            browser.password(flow, WRONG_PASSWORD).status shouldBe 422
+            return Connections.longestFreeSpell()
         }
 
         fun median(login: String): Duration = List(SAMPLES) { attempt(login) }.sorted()[SAMPLES / 2]

@@ -1,5 +1,6 @@
 package idp.sharedkernel.testing
 
+import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
@@ -95,19 +96,45 @@ class OpenApiContract(
                 .asMap(),
         )
 
+    /** Walks into the items of arrays and the properties of nested objects, which the generated client types come from too. */
     fun shouldMatch(
         body: JsonNode,
         schema: Map<String, Any?>,
+    ) = matchObject(body, schema, "$")
+
+    private fun matchObject(
+        body: JsonNode,
+        schema: Map<String, Any?>,
+        path: String,
     ) {
         val properties = schema["properties"].asMap()
-        body.propertyNames().toList().shouldContainExactlyInAnyOrder(properties.keys)
-        (schema["required"] as List<*>).toSet() shouldBe properties.keys
-        properties.forEach { (name, property) ->
-            val value = body.get(name)
-            val alternatives = alternativesOf(resolve(property.asMap()))
-            alternatives.flatMap(::typesOf).toSet() shouldContain typeOf(value)
+        withClue(path) {
+            body.propertyNames().toList().shouldContainExactlyInAnyOrder(properties.keys)
+            (schema["required"] as List<*>).toSet() shouldBe properties.keys
+        }
+        properties.forEach { (name, property) -> matchValue(body.get(name), resolve(property.asMap()), "$path.$name") }
+    }
+
+    private fun matchValue(
+        value: JsonNode,
+        property: Map<String, Any?>,
+        path: String,
+    ) {
+        val alternatives = alternativesOf(property)
+        val type = typeOf(value)
+        withClue(path) {
+            alternatives.flatMap(::typesOf).toSet() shouldContain type
             val values = alternatives.mapNotNull { it["enum"] as List<*>? }
             if (values.isNotEmpty() && !value.isNull) values.flatten() shouldContain value.asString()
+        }
+        val matching = alternatives.first { type in typesOf(it) }
+        val items = matching["items"]
+        when {
+            value.isArray && items != null -> {
+                val item = resolve(items.asMap())
+                value.values().forEachIndexed { index, element -> matchValue(element, item, "$path[$index]") }
+            }
+            value.isObject && matching["properties"] != null -> matchObject(value, matching, path)
         }
     }
 

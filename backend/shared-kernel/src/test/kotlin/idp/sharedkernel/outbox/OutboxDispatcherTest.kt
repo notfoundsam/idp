@@ -70,7 +70,7 @@ private class Outbox {
     val a: UUID = database.tenantSchema()
     val b: UUID = database.tenantSchema()
     val clock = MovableClock()
-    val publisher = OutboxPublisher()
+    val publisher = OutboxPublisher(clock)
     val tenants = TenantTransaction(worker)
     val platform = PlatformTransaction(worker)
     val handlerCalls = AtomicInteger()
@@ -131,7 +131,7 @@ private class Outbox {
     fun fixtureRows(tenant: UUID): String = owner.query("""SELECT count(*) FROM "${TenantSchema(tenant).name}".fixture""")
 
     fun redeliver() {
-        owner.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = now()")
+        owner.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = '${clock.instant()}'")
     }
 
     fun afterRetryDelay() {
@@ -214,6 +214,15 @@ class OutboxDispatcherTest :
                     shouldThrow<DataAccessException> {
                         ops.execute { it.fetchCount(OUTBOX) }
                     }.message shouldContain "permission denied"
+                }
+            }
+
+            test("a new event is due by the clock the dispatcher reads, though the database runs ahead of it") {
+                Outbox().run {
+                    clock.offset = Duration.ofHours(-1)
+                    publish(a)
+
+                    dispatcher(Recording()).dispatch() shouldBe 1
                 }
             }
 

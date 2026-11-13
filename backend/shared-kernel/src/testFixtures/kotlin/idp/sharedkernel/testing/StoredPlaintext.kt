@@ -4,13 +4,19 @@ import java.util.Base64
 import java.util.HexFormat
 
 private const val SHORTEST = 8
+private const val BASE64_GROUP = 3
+private const val BASE64_CHARS = 4
+
+/** By shift into a group, the leading characters that hold bits of the bytes before the value. */
+private val MIXED_PREFIX = intArrayOf(0, 2, 3)
 private val ASCII_UPPER = 'A'.code..'Z'.code
 private val ASCII_CASE = 'a'.code - 'A'.code
 
 /**
  * A value a test gave the application in clear, which no store may keep as it is. A finding names its [label], never the value.
  *
- * A text is found in any case, as UTF-8, base64 or hex. Raw bytes are found as they are, in base64 or hex.
+ * A text is found in any case, as UTF-8, base64 or hex. Raw bytes are found as they are, in base64 or hex. Base64 is found also
+ * where the value is only a part of the encoded blob, at any offset in it.
  */
 class Plaintext private constructor(
     val label: String,
@@ -19,11 +25,26 @@ class Plaintext private constructor(
 ) {
     private val lowered: ByteArray? = text?.lowercase()?.toByteArray()
     private val encodings: List<String> =
-        listOf(Base64.getEncoder().withoutPadding().encodeToString(raw), Base64.getUrlEncoder().withoutPadding().encodeToString(raw))
+        listOf(Base64.getEncoder(), Base64.getUrlEncoder()).flatMap { encoder ->
+            (0 until BASE64_GROUP).map { shift -> stableBase64(encoder, shift) }
+        }
     private val hex: String = HexFormat.of().formatHex(raw)
 
     init {
         require(raw.size >= SHORTEST) { "$label is too short to tell a leak from chance" }
+    }
+
+    /**
+     * The characters that encode the value alone when it starts [shift] bytes into a 3-byte group of a larger blob. Those that also
+     * hold bits of the bytes before or after it differ from blob to blob, so they are left out.
+     */
+    private fun stableBase64(
+        encoder: Base64.Encoder,
+        shift: Int,
+    ): String {
+        val encoded = encoder.withoutPadding().encodeToString(ByteArray(shift) + raw)
+        val complete = (shift + raw.size) / BASE64_GROUP * BASE64_CHARS
+        return encoded.substring(MIXED_PREFIX[shift], complete)
     }
 
     /** A byte array is searched as bytes, anything else as its text. */

@@ -11,6 +11,9 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.slf4j.LoggerFactory
 import java.net.http.HttpRequest
+import java.sql.Timestamp
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.Flow
 
@@ -95,6 +98,13 @@ class LoginLimitsTest :
                 }
 
                 environment.failedAttempts(user) shouldBe ATTEMPTS_BEFORE_DELAY
+                // From the clock of the test, so the delay is still running however slow the next request is.
+                environment.sql.update(
+                    "UPDATE ${environment.acme.table("password_credentials")} SET next_attempt_at = ? " +
+                        "WHERE user_id = ? AND next_attempt_at IS NOT NULL",
+                    Timestamp.from(Instant.now().plus(Duration.ofHours(1))),
+                    user,
+                ) shouldBe 1
                 browser.password(browser.identified("counted@acme.test")).status shouldBe 422
             }
         }

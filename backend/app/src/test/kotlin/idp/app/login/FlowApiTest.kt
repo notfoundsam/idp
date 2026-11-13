@@ -18,6 +18,9 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldBeEmpty
 import io.kotest.matchers.string.shouldNotBeBlank
+import java.sql.Timestamp
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
@@ -535,6 +538,15 @@ class FlowApiTest :
                 val browser = browser()
 
                 repeat(4) { refused(browser.password(browser.identified(email("delayed")), WRONG_PASSWORD)) }
+                val credentials = environment.acme.table("password_credentials")
+                val delayed = sql.queryForObject("SELECT next_attempt_at FROM $credentials WHERE user_id = ?", Timestamp::class.java, user)
+                delayed.shouldNotBeNull()
+                // From the clock of the test, so the delay is still running however slow the next request is.
+                sql.update(
+                    "UPDATE $credentials SET next_attempt_at = ? WHERE user_id = ?",
+                    Timestamp.from(Instant.now().plus(Duration.ofHours(1))),
+                    user,
+                )
 
                 refused(browser.password(browser.identified(email("delayed"))))
                 environment.failedAttempts(user) shouldBe 4
