@@ -81,15 +81,8 @@ test('the types are grouped by type and indented below their placeholder', () =>
   assert.equal(renderTypes('{{content_types}}', { html: 'text/html; charset=utf-8', png: 'image/png' }), 'types {\n    text/html html;\n    image/png png;\n}')
 })
 
-test('a content type nginx or S3 would read differently is refused', () => {
-  for (const value of ['text/html; charset=latin1', 'text/html;charset=utf-8', 'text/html "x"', 'text/$html', 'html', '', 1]) {
-    assert.throws(() => renderTypes('{{content_types}}', { html: value }), /Unusable content type of html/, JSON.stringify(value))
-  }
-  for (const extension of ['HTML', 'j s', '.js', 'js;']) {
-    assert.throws(() => renderTypes('{{content_types}}', { [extension]: 'text/plain' }), /Unusable extension/, extension)
-  }
+test('a type with a charset for some extensions alone, which nginx cannot serve, is refused, as is a template without its line', () => {
   assert.throws(() => renderTypes('{{content_types}}', { htm: 'text/html', html: 'text/html; charset=utf-8' }), /charset only for some/)
-  assert.throws(() => renderTypes('{{content_types}}', {}), /No content types/)
   assert.throws(() => renderTypes('server {}', { png: 'image/png' }), /has no \{\{content_types\}\}/)
   assert.throws(() => renderTypes('x {{content_types}}', { png: 'image/png' }), /line of its own/)
 })

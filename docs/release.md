@@ -4,13 +4,13 @@ How people release, check and roll back an environment. What the workflows do st
 
 ## A release
 
-Run the workflow `Deploy` for the environment. A reviewer of the GitHub environment `<env>` approves the run. The inputs:
+Run the workflow `Deploy` for the environment from `main`: the workflow refuses any other ref, and so does the environment. A reviewer of the GitHub environment `<env>` approves the run. The inputs:
 
 - `full` releases both sides whatever changed, also to roll out what an apply of Terraform registered.
 - `skip-smoke` only for the first release of an environment, which has no synthetic tenant yet. The plan refuses it later.
 - `min-client-version` before a contract step, see ADR-007. Empty keeps the minimum that runs.
 
-The release stops before anything moves when a dependency comes from another registry, when a vulnerability or an update is past its time frame, or when the plan refuses the inputs. After the services moved, a failed step rolls the release back by itself: the smoke test, an alarm that fires in the five minutes after it, a service that does not get healthy, or `migrator`. The summary of the run shows the plan, and the artifact `sbom-<env>-<version>` holds the SBOMs and what Trivy found in them for 90 days.
+The release stops before anything moves when a dependency comes from another registry, when a vulnerability or an update is past its time frame, or when the plan refuses the inputs. After the services moved, a failed step rolls the release back by itself: the smoke test, a critical alarm on the metrics of the services (`modules/alarms` output `release_alarms`) that goes to ALARM between the start of the rollout and five minutes after the smoke test, a service that does not get healthy, or `migrator`. The summary of the run shows the plan, and the artifact `sbom-<env>-<version>` holds the SBOMs and what Trivy found in them for 90 days.
 
 | The run stopped at | Then |
 |---|---|
@@ -19,11 +19,11 @@ The release stops before anything moves when a dependency comes from another reg
 | Updates | Merge the Renovate pull request, or close it with the reason in a comment |
 | KMS check | KMS refuses the platform KEK to the CLI: fix the key policy or the network before releasing again |
 | Smoke SSO | The run names the check that failed. A `410` after the password or the code can be the delay of the synthetic user after failed attempts, which ends within 15 minutes |
-| Alarms | Look at the alarm in CloudWatch: the release is rolled back, and so is what made it fire unless the cause lies elsewhere |
+| Alarms | Look at the alarm in CloudWatch: the release is rolled back, and so is what made it fire unless the cause lies elsewhere. A watched alarm that already fired before the rollout is named as a warning and does not stop the release, nor do warnings, the audit alarms and those of the WAF, which notify the on-call engineers |
 
 ## Rollback
 
-A failed release rolls back by itself. To leave a release that went out, run the workflow `Rollback` for the environment: each run goes one release further back, first the pages, then the revision each service ran before, then the one-off tasks with its images. Migrations stay, since expand is compatible with the old code.
+A failed release rolls back by itself. To leave a release that went out, run the workflow `Rollback` for the environment from `main`: each run goes one release further back, first the pages, then the revision each service ran before, then the one-off tasks with its images. Migrations stay, since expand is compatible with the old code.
 
 ## The synthetic tenant
 

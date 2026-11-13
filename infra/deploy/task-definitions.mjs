@@ -41,7 +41,8 @@ export function environmentOf(definition, name, variable) {
 export const tagsOf = (described) => Object.fromEntries((described.tags ?? []).map(({ key, value }) => [key, value]))
 
 // Every container runs an image of the release, the metadata container of ops too, so each one takes the new tag. Only the
-// variables named here change, and only in the main container, which already sets them.
+// variables named here change, and only in the main container. ECS drops a variable whose value is empty, so an empty value
+// leaves the variable out and a value the described revision lacks is added.
 export function derive(definition, { imageTag, main, environment = {}, tags = {} }) {
   const input = Object.fromEntries(REGISTRATION.filter((key) => definition[key] !== undefined).map((key) => [key, structuredClone(definition[key])]))
   for (const container of input.containerDefinitions) {
@@ -51,9 +52,8 @@ export function derive(definition, { imageTag, main, environment = {}, tags = {}
   }
   const target = containerOf(input, main)
   for (const [name, value] of Object.entries(environment)) {
-    const variable = target.environment?.find((it) => it.name === name)
-    if (variable === undefined) throw new Error(`${main} in ${definition.family} does not set ${name}`)
-    variable.value = value
+    const others = (target.environment ?? []).filter((it) => it.name !== name)
+    target.environment = value === '' ? others : [...others, { name, value }]
   }
   input.tags = Object.entries(tags).map(([key, value]) => ({ key, value }))
   return input

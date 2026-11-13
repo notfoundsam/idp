@@ -19,6 +19,18 @@ variable "throttle_ip_hmac_key_version" {
   default     = 1
 }
 
+variable "db_password_versions" {
+  description = "Version of each generated role password. Raising one writes a new password into its secret, see infra/terraform/README.md."
+  type        = map(number)
+  default     = {}
+}
+
+variable "valkey_auth_token_version" {
+  description = "Version of the generated AUTH token of Valkey. Raising it writes a new token, see infra/terraform/README.md."
+  type        = number
+  default     = 1
+}
+
 variable "origin_header_version" {
   description = "Version of the generated header that CloudFront sends the public ALB. Raising it writes a new value."
   type        = number

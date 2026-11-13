@@ -56,9 +56,3 @@ variable "collector_count" {
   type        = number
   default     = 2
 }
-
-variable "cpu_architecture" {
-  description = "CPU architecture of the image."
-  type        = string
-  default     = "ARM64"
-}

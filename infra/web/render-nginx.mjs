@@ -7,8 +7,6 @@ const NAME = /^[A-Za-z][A-Za-z0-9-]*$/
 // nginx would read a quote or a backslash as syntax and a dollar sign as a variable.
 const VALUE = /^[\x20-\x7e]+$/
 const UNSAFE = /["\\$]/
-const EXTENSION = /^[a-z0-9]+$/
-const CONTENT_TYPE = /^([a-z]+\/[a-z0-9.+-]+)(; charset=utf-8)?$/
 
 function headerLines(headers) {
   const entries = Object.entries(headers)
@@ -20,18 +18,13 @@ function headerLines(headers) {
   })
 }
 
-// The block replaces mime.types, so nginx knows no type that S3 would not get.
+// The block replaces mime.types, so nginx knows no type that S3 would not get. nginx adds a charset per type, not per extension.
 function typeLines(contentTypes) {
-  const entries = Object.entries(contentTypes)
-  if (entries.length === 0) throw new Error('No content types')
   const extensions = new Map()
   const charset = new Map()
-  for (const [extension, value] of entries) {
-    if (!EXTENSION.test(extension)) throw new Error(`Unusable extension: ${extension}`)
-    const match = typeof value === 'string' ? CONTENT_TYPE.exec(value) : null
-    if (match === null) throw new Error(`Unusable content type of ${extension}`)
-    const [, type, withCharset] = match
-    const has = withCharset !== undefined
+  for (const [extension, value] of Object.entries(contentTypes)) {
+    const [type, parameter] = value.split('; ')
+    const has = parameter !== undefined
     if (charset.has(type) && charset.get(type) !== has) throw new Error(`${type} has a charset only for some extensions`)
     charset.set(type, has)
     extensions.set(type, [...(extensions.get(type) ?? []), extension])

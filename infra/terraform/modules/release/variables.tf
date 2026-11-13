@@ -33,17 +33,6 @@ variable "infra_image_tag" {
   type        = string
 }
 
-variable "cpu_architecture" {
-  description = "CPU architecture of the images, as ECS names it."
-  type        = string
-  default     = "ARM64"
-
-  validation {
-    condition     = contains(["ARM64", "X86_64"], var.cpu_architecture)
-    error_message = "ECS runs ARM64 or X86_64."
-  }
-}
-
 variable "services" {
   description = "Name of each ECS service that a release rolls out: app, worker and ops."
   type        = map(string)
@@ -100,6 +89,16 @@ variable "smoke_host" {
   validation {
     condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.smoke_host))
     error_message = "A lowercase DNS name such as release-smoke.idp.example.com."
+  }
+}
+
+variable "watched_alarms" {
+  description = "Alarms in the region of the environment that roll a release back when they go to ALARM during it, from modules/alarms."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.watched_alarms) > 0 && alltrue([for alarm in var.watched_alarms : startswith(alarm, "${var.name}-")])
+    error_message = "A release watches at least one alarm, and only alarms of its environment."
   }
 }
 

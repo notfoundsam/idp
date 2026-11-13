@@ -71,7 +71,7 @@ resource "aws_ecs_task_definition" "this" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = var.cpu_architecture
+    cpu_architecture        = "ARM64"
   }
 
   # The root is read-only, and the image fills this volume, the temporary directory of the JVM.

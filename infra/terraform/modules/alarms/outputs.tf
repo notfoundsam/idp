@@ -11,6 +11,11 @@ output "trail_arn" {
   value       = aws_cloudtrail.this.arn
 }
 
+output "release_alarms" {
+  description = "The critical alarms on the metrics of the services, which a release watches and which roll it back when they go to ALARM."
+  value       = sort([for key, alarm in local.metric_alarms : aws_cloudwatch_metric_alarm.metrics[key].alarm_name if alarm.severity == "critical"])
+}
+
 output "trail_log_group" {
   description = "Log group of the trail, which the audit alarms read and only the on-call engineers query."
   value       = aws_cloudwatch_log_group.trail.name

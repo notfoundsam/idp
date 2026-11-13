@@ -3,30 +3,6 @@ locals {
   roles         = concat(["idp_owner", "provisioner"], local.runtime_roles)
 }
 
-resource "aws_secretsmanager_secret" "role" {
-  for_each = toset(local.roles)
-
-  name                    = "${var.name}/db/${each.key}"
-  description             = "Password of the database role ${each.key}"
-  recovery_window_in_days = 7
-}
-
-# Write-only, so a password never reaches the plan or the state. A new version writes a new one.
-ephemeral "aws_secretsmanager_random_password" "role" {
-  for_each = toset(local.roles)
-
-  password_length     = 40
-  exclude_punctuation = true
-}
-
-resource "aws_secretsmanager_secret_version" "role" {
-  for_each = toset(local.roles)
-
-  secret_id                = aws_secretsmanager_secret.role[each.key].id
-  secret_string_wo         = ephemeral.aws_secretsmanager_random_password.role[each.key].random_password
-  secret_string_wo_version = lookup(var.password_versions, each.key, 1)
-}
-
 locals {
   bootstrap_environment = [
     { name = "PGHOST", value = aws_db_instance.this.address },
@@ -43,16 +19,16 @@ locals {
       user    = var.master_username
       secrets = {
         PGPASSWORD           = "${aws_db_instance.this.master_user_secret[0].secret_arn}:password::"
-        IDP_OWNER_PASSWORD   = aws_secretsmanager_secret.role["idp_owner"].arn
-        PROVISIONER_PASSWORD = aws_secretsmanager_secret.role["provisioner"].arn
+        IDP_OWNER_PASSWORD   = var.role_secret_arns["idp_owner"]
+        PROVISIONER_PASSWORD = var.role_secret_arns["provisioner"]
       }
     }
     role-passwords = {
       command = concat(["/usr/local/lib/idp/set-role-passwords.sh"], local.runtime_roles)
       user    = "idp_owner"
       secrets = merge(
-        { PGPASSWORD = aws_secretsmanager_secret.role["idp_owner"].arn },
-        { for role in local.runtime_roles : "${upper(role)}_PASSWORD" => aws_secretsmanager_secret.role[role].arn },
+        { PGPASSWORD = var.role_secret_arns["idp_owner"] },
+        { for role in local.runtime_roles : "${upper(role)}_PASSWORD" => var.role_secret_arns[role] },
       )
     }
   }
@@ -70,7 +46,7 @@ resource "aws_ecs_task_definition" "bootstrap" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = var.cpu_architecture
+    cpu_architecture        = "ARM64"
   }
 
   volume {

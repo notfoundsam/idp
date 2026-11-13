@@ -148,6 +148,15 @@ run "every_alarm_notifies_the_encrypted_topic_of_its_region" {
   }
 }
 
+run "a_release_watches_the_critical_alarms_of_the_services_alone" {
+  command = plan
+
+  assert {
+    condition     = join(",", output.release_alarms) == "idp-test-backend-tls-failures,idp-test-outbox-lag,idp-test-valkey-failures"
+    error_message = "A release would roll back on a warning, an audit alarm or one of the WAF, which a release does not cause, or miss a critical one."
+  }
+}
+
 run "the_alarms_of_the_waf_live_in_us_east_1" {
   command = plan
 

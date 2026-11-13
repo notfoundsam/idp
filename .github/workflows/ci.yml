@@ -83,10 +83,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      # Old frontends keep calling the backend, so a contract is compared with the last release, not with main.
+      # Old frontends keep calling the backend, so a contract is compared with the last release, not with main: the one of
+      # production, whose frontends are the oldest, or of staging while production has none, see ADR-007.
       - id: release
         run: |
-          tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          tag=$(git describe --tags --abbrev=0 --match 'release/production/*' 2>/dev/null ||
+            git describe --tags --abbrev=0 --match 'release/staging/*' 2>/dev/null || true)
           if [ -z "$tag" ]; then
             echo "::notice title=oasdiff skipped::No release tag yet, so there is no contract to compare with"
           else

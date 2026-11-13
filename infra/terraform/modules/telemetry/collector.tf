@@ -146,7 +146,7 @@ resource "aws_ecs_task_definition" "collector" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = var.cpu_architecture
+    cpu_architecture        = "ARM64"
   }
 
   container_definitions = jsonencode([

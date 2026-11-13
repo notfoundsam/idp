@@ -22,7 +22,7 @@ resource "aws_ecs_task_definition" "pgbouncer" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = var.cpu_architecture
+    cpu_architecture        = "ARM64"
   }
 
   volume {
@@ -48,7 +48,7 @@ resource "aws_ecs_task_definition" "pgbouncer" {
       ]
       secrets = concat(
         [{ name = "CLIENT_TLS_KEY", valueFrom = var.pgbouncer_tls.key_secret_arn }],
-        [for role in local.runtime_roles : { name = "${upper(role)}_PASSWORD", valueFrom = aws_secretsmanager_secret.role[role].arn }],
+        [for role in local.runtime_roles : { name = "${upper(role)}_PASSWORD", valueFrom = var.role_secret_arns[role] }],
       )
       healthCheck = {
         command     = ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-q"]

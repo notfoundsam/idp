@@ -61,6 +61,9 @@ export function fakeEcs({ log = [], failing = new Set(), exits = {} } = {}) {
     },
     registerNow(input) {
       const { tags = [], ...definition } = structuredClone(input)
+      for (const container of definition.containerDefinitions) {
+        if (container.environment) container.environment = container.environment.filter((it) => it.value !== '')
+      }
       const revision = (latest.get(definition.family) ?? 0) + 1
       const taskDefinitionArn = `${ACCOUNT}:task-definition/${definition.family}:${revision}`
       revisions.set(taskDefinitionArn, {

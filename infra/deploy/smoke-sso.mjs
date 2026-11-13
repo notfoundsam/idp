@@ -157,7 +157,7 @@ export async function smoke({ host, login, spMetadata, fetch = globalThis.fetch,
   for (const signature of verified.signatures) {
     log(`ok   ${signature.part} signed with ${signature.algorithm} by ${signature.fingerprint}`)
   }
-  log(`ok   ${login.login} reached ${sp.entityId} through ${host} with MFA`)
+  log(`ok   the synthetic user reached ${sp.entityId} through ${host} with MFA`)
   return verified
 }
 

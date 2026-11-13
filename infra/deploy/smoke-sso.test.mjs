@@ -41,7 +41,8 @@ test('the synthetic user signs in to the test SP and the IdP hands back a Respon
   assert.equal(idp.state.requests[0].issuer, SP.entityId)
   assert.deepEqual(idp.state.calls.slice(0, 2), ['GET /saml/metadata', 'GET /saml/sso'])
   assert.match(idp.state.calls.at(-1), /^GET \/saml\/resume\//)
-  assert.match(lines.at(-1), /smoke@release-smoke.test reached https:\/\/release-smoke.invalid\/saml\/metadata/)
+  assert.match(lines.at(-1), /the synthetic user reached https:\/\/release-smoke.invalid\/saml\/metadata/)
+  assert.ok(lines.every((it) => !it.includes(USER.login)))
 })
 
 test('a code that an earlier run spent in the same window is followed by the code of the next window', async () => {

@@ -50,12 +50,6 @@ variable "db_bootstrap_image" {
   type        = string
 }
 
-variable "cpu_architecture" {
-  description = "CPU architecture of the images."
-  type        = string
-  default     = "ARM64"
-}
-
 variable "internal_ca_pem" {
   description = "Certificate of the internal CA that signed the certificate of PgBouncer. Clients of PgBouncer trust it alone."
   type        = string
@@ -116,10 +110,14 @@ variable "deletion_protection" {
   default     = true
 }
 
-variable "password_versions" {
-  description = "Version of each generated role password. Raising one writes a new password into its secret, see infra/terraform/README.md."
-  type        = map(number)
-  default     = {}
+variable "role_secret_arns" {
+  description = "Secret with the password of each database role, the output db_role_secret_arns of modules/keys."
+  type        = map(string)
+
+  validation {
+    condition     = toset(keys(var.role_secret_arns)) == toset(["idp_owner", "provisioner", "app_runtime", "worker_runtime", "ops_runtime"])
+    error_message = "A secret for each of idp_owner, provisioner, app_runtime, worker_runtime and ops_runtime, and no other."
+  }
 }
 
 variable "pgbouncer_count" {

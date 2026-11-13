@@ -19,7 +19,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The scripts of the rollback come from main alone, as those of a release do, see deploy.yml.
+  ref:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Main only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error title=Rollback::Only main rolls back, not ${GITHUB_REF}"
+          exit 1
+
   rollback:
+    needs: ref
     runs-on: ubuntu-24.04-arm
     environment: ${{ inputs.environment }}
     timeout-minutes: 60

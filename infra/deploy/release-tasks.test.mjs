@@ -60,6 +60,17 @@ test('a release of the frontend alone keeps the images that run', async () => {
   assert.equal(environmentOf(app.definition, 'app', 'APP_VERSION'), '2026.11.9.8')
 })
 
+test('an empty MIN_CLIENT_VERSION, which ECS drops from the revision, stays empty through a release', async () => {
+  const ecs = applied()
+
+  const state = await register(ecs, config, { ...planned, minClientVersion: '' })
+
+  const app = await ecs.taskDefinition(state.next.app)
+  assert.equal(environmentOf(app.definition, 'app', 'MIN_CLIENT_VERSION'), undefined)
+  for (const name of ['app', 'worker', 'ops']) await rollout(ecs, config, name, state.next[name], quick)
+  assert.equal((await live(ecs, config)).minClientVersion, '')
+})
+
 test('a revision that Terraform registered after the running one goes out with the release', async () => {
   const ecs = applied()
   const { definition } = await ecs.taskDefinition('idp-test-worker')

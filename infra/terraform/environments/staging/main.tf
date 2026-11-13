@@ -110,7 +110,7 @@ module "data" {
   internal_ca_pem       = module.pki.ca_cert_pem
   pgbouncer_tls         = module.pki.certificates["pgbouncer"]
   instance_class        = var.db_instance_class
-  password_versions     = var.db_password_versions
+  role_secret_arns      = module.keys.db_role_secret_arns
   log_tampering_actions = module.telemetry.log_tampering_actions
 }
 
@@ -121,6 +121,7 @@ module "valkey" {
   subnet_ids         = module.network.database_subnet_ids
   security_group_ids = module.network.security_group_ids
   node_type          = var.valkey_node_type
+  auth_token         = module.keys.valkey_auth_token
   auth_token_version = lookup(var.credential_versions, "valkey_auth_token", 1)
 }
 
@@ -131,6 +132,8 @@ module "keys" {
   platform_kek_policy          = module.iam.platform_kek_policy
   throttle_ip_hmac_key_version = lookup(var.credential_versions, "throttle_ip_hmac_key", 1)
   origin_header_version        = lookup(var.credential_versions, "origin_header", 1)
+  valkey_auth_token_version    = lookup(var.credential_versions, "valkey_auth_token", 1)
+  db_password_versions         = var.db_password_versions
 }
 
 module "iam" {
@@ -172,7 +175,7 @@ locals {
         CLIENT_IP_HEADER = module.edge.client_ip_header
       }
       secrets = {
-        VALKEY_PASSWORD      = module.valkey.auth_token_secret_arn
+        VALKEY_PASSWORD      = module.keys.valkey_auth_token_secret_arn
         THROTTLE_IP_HMAC_KEY = module.keys.throttle_ip_hmac_key_secret_arn
       }
     }
@@ -208,7 +211,7 @@ locals {
     direct_jdbc_url      = module.data.direct_jdbc_url
     provisioner_jdbc_url = module.data.provisioner_jdbc_url
     direct_tls_ca_pem    = module.data.direct_tls_ca_pem
-    role_secret_arns     = module.data.role_secret_arns
+    role_secret_arns     = module.keys.db_role_secret_arns
   }
 }
 
@@ -266,6 +269,7 @@ module "release" {
   execution_role_arns          = module.app.execution_role_arns
   bootstrap_execution_role_arn = module.data.bootstrap_execution_role_arn
   smoke_host                   = "release-smoke.${var.domain}"
+  watched_alarms               = module.alarms.release_alarms
   role_passwords_task = {
     task_definition = module.data.bootstrap_task_definitions["role-passwords"]
     network = {
@@ -279,4 +283,25 @@ module "release" {
 moved {
   from = aws_iam_role_policy.deploy
   to   = module.release.aws_iam_role_policy.deploy
+}
+
+# The generated secrets live in modules/keys, so the modules that use them plan in terraform test.
+moved {
+  from = module.data.aws_secretsmanager_secret.role
+  to   = module.keys.aws_secretsmanager_secret.db_role
+}
+
+moved {
+  from = module.data.aws_secretsmanager_secret_version.role
+  to   = module.keys.aws_secretsmanager_secret_version.db_role
+}
+
+moved {
+  from = module.valkey.aws_secretsmanager_secret.auth_token
+  to   = module.keys.aws_secretsmanager_secret.valkey_auth_token
+}
+
+moved {
+  from = module.valkey.aws_secretsmanager_secret_version.auth_token
+  to   = module.keys.aws_secretsmanager_secret_version.valkey_auth_token
 }

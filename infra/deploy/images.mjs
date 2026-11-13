@@ -42,10 +42,21 @@ export async function pushImages(images, { tag, platform, exists = imageExists, 
   return pushed
 }
 
+// Every image that runs once the release is live, the backend under its version and infra/ under infra_image_tag, which the
+// release scans for vulnerabilities of their OS packages, see docs/security/dependencies.md.
+export function releasedImages(config, backendTag) {
+  checkVersion(backendTag)
+  checkVersion(config.infra_image_tag)
+  return [
+    ...backendImages(config).map((image) => ({ name: image.name, reference: `${image.repository}:${backendTag}` })),
+    ...infraImages(config).map((image) => ({ name: image.name, reference: `${image.repository}:${config.infra_image_tag}` })),
+  ]
+}
+
 export function parseOptions(argv) {
   const { values } = parseArgs({ args: argv, options: { config: { type: 'string' }, set: { type: 'string' }, tag: { type: 'string' } } })
-  const usage = 'Usage: node images.mjs --config <settings> --set backend --tag <version> | --set infra'
-  if (!values.config || !['backend', 'infra'].includes(values.set) || (values.set === 'backend') !== (values.tag !== undefined)) {
+  const usage = 'Usage: node images.mjs --config <settings> --set backend --tag <version> | --set infra | --set released --tag <backend version>'
+  if (!values.config || !['backend', 'infra', 'released'].includes(values.set) || (values.set !== 'infra') !== (values.tag !== undefined)) {
     throw new Error(usage)
   }
   return values
@@ -54,6 +65,10 @@ export function parseOptions(argv) {
 if (import.meta.main) {
   const options = parseOptions(process.argv.slice(2))
   const config = await readConfig(options.config)
+  if (options.set === 'released') {
+    for (const { name, reference } of releasedImages(config, options.tag)) console.log(`${name} ${reference}`)
+    process.exit(0)
+  }
   const backend = options.set === 'backend'
   const images = backend ? backendImages(config) : infraImages(config)
   const pushed = await pushImages(images, { tag: backend ? options.tag : config.infra_image_tag, platform: config.platform })

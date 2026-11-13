@@ -26,7 +26,7 @@ locals {
     region          = data.aws_region.current.region
     cluster         = var.cluster_name
     bucket          = var.static_bucket
-    platform        = var.cpu_architecture == "ARM64" ? "linux/arm64" : "linux/amd64"
+    platform        = "linux/arm64"
     repositories    = var.repository_urls
     infra_image_tag = var.infra_image_tag
     services        = { for name, service in var.services : name => { service = service, family = var.task_families[name] } }
@@ -35,7 +35,7 @@ locals {
       { role-passwords = { family = local.role_passwords_family, network = var.role_passwords_task.network } },
     )
     smoke  = { host = var.smoke_host, secret = aws_secretsmanager_secret.smoke_login.arn }
-    alarms = { prefix = "${var.name}-", regions = distinct([data.aws_region.current.region, "us-east-1"]) }
+    alarms = { names = var.watched_alarms }
   }
 }
 
@@ -66,13 +66,15 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
 
+  # A release pushes its images and pulls every image that will run, whose OS packages it scans.
   statement {
-    sid = "PushImages"
+    sid = "PushAndScanImages"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:DescribeImages",
+      "ecr:GetDownloadUrlForLayer",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
       "ecr:UploadLayerPart",
@@ -141,11 +143,13 @@ data "aws_iam_policy_document" "deploy" {
     resources = [aws_secretsmanager_secret.smoke_login.arn]
   }
 
-  # The alarms of the WAF of CloudFront live in us-east-1, the others in the region of the environment.
   statement {
-    sid       = "WatchAlarms"
-    actions   = ["cloudwatch:DescribeAlarms"]
-    resources = ["arn:${data.aws_partition.current.partition}:cloudwatch:*:${data.aws_caller_identity.current.account_id}:alarm:${var.name}-*"]
+    sid     = "WatchAlarms"
+    actions = ["cloudwatch:DescribeAlarms"]
+    resources = [
+      for alarm in var.watched_alarms :
+      "arn:${data.aws_partition.current.partition}:cloudwatch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:alarm:${alarm}"
+    ]
   }
 
   statement {

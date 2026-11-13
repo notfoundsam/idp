@@ -1,8 +1,13 @@
 data "aws_region" "current" {}
 
-data "aws_partition" "current" {}
+# SES sends for the domain once the DKIM records of the output dkim_records exist at the DNS host, see infra/terraform/README.md.
+resource "aws_sesv2_email_identity" "domain" {
+  email_identity = var.domain
 
-data "aws_caller_identity" "current" {}
+  dkim_signing_attributes {
+    next_signing_key_length = "RSA_2048_BIT"
+  }
+}
 
 # SES takes SMTP only with credentials derived from the access key of an IAM user. The user may send from one address alone.
 resource "aws_iam_user" "smtp" {
@@ -13,7 +18,7 @@ resource "aws_iam_user" "smtp" {
 data "aws_iam_policy_document" "smtp" {
   statement {
     actions   = ["ses:SendRawEmail"]
-    resources = ["arn:${data.aws_partition.current.partition}:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain}"]
+    resources = [aws_sesv2_email_identity.domain.arn]
 
     condition {
       test     = "StringEquals"

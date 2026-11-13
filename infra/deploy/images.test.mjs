@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { backendImages, infraImages } from './config.mjs'
 import { config } from './fake-ecs.mjs'
-import { imageExists, parseOptions, pushImages, repositoryName } from './images.mjs'
+import { imageExists, parseOptions, pushImages, releasedImages, repositoryName } from './images.mjs'
 
 const REGISTRY = '111111111111.dkr.ecr.eu-central-1.amazonaws.com'
 
@@ -59,10 +59,20 @@ test('ECR answers whether it holds a tag, and any other failure stops the releas
   assert.throws(() => repositoryName('docker.io/library/nginx'), /no ECR repository/)
 })
 
-test('options name the set, and only the backend takes a tag', () => {
+test('options name the set, and only infra takes no tag', () => {
   assert.equal(parseOptions(['--config', 'c', '--set', 'backend', '--tag', '1.0']).tag, '1.0')
   assert.equal(parseOptions(['--config', 'c', '--set', 'infra']).set, 'infra')
+  assert.equal(parseOptions(['--config', 'c', '--set', 'released', '--tag', '1.0']).set, 'released')
   assert.throws(() => parseOptions(['--config', 'c', '--set', 'infra', '--tag', '1.0']), /Usage/)
   assert.throws(() => parseOptions(['--config', 'c', '--set', 'backend']), /Usage/)
+  assert.throws(() => parseOptions(['--config', 'c', '--set', 'released']), /Usage/)
   assert.throws(() => parseOptions(['--config', 'c', '--set', 'frontend']), /Usage/)
+})
+
+test('the scan of a release covers every image that runs after it, the backend of the release and infra/ of the settings', () => {
+  assert.deepEqual(releasedImages(config, '2026.11.9.8'), [
+    ...['app', 'worker', 'ops', 'migrator'].map((name) => ({ name, reference: `${REGISTRY}/idp-test/${name}:2026.11.9.8` })),
+    ...['pgbouncer', 'db-bootstrap', 'otel-collector'].map((name) => ({ name, reference: `${REGISTRY}/idp-test/${name}:0.1.0` })),
+  ])
+  assert.throws(() => releasedImages(config, 'latest; rm'), /Unusable/)
 })

@@ -254,12 +254,6 @@ variable "desired_counts" {
   default = {}
 }
 
-variable "cpu_architecture" {
-  description = "CPU architecture of the images."
-  type        = string
-  default     = "ARM64"
-}
-
 variable "server_tls" {
   description = "Server certificate of app and ops from modules/pki and the secret that holds its key. Both ports serve it to the ALB."
   type = map(object({

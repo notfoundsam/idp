@@ -13,6 +13,17 @@ output "from" {
   value       = var.from
 }
 
+output "dkim_records" {
+  description = "CNAME records of Easy DKIM, which the DNS host of the domain serves before SES sends anything."
+  value = [
+    for token in aws_sesv2_email_identity.domain.dkim_signing_attributes[0].tokens : {
+      name  = "${token}._domainkey.${var.domain}"
+      type  = "CNAME"
+      value = "${token}.dkim.amazonses.com"
+    }
+  ]
+}
+
 output "credentials_secret_arn" {
   description = "Secret with the keys username and password, MAIL_USERNAME and MAIL_PASSWORD of worker."
   value       = aws_secretsmanager_secret.smtp.arn

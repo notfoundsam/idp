@@ -88,6 +88,7 @@ variables {
   execution_role_arns = { for name in ["app", "worker", "ops", "cli", "migrator", "recovery"] : name => "arn:aws:iam::111111111111:role/idp-test-${name}-execution" }
 
   bootstrap_execution_role_arn = "arn:aws:iam::111111111111:role/idp-test-db-bootstrap-execution"
+  watched_alarms               = ["idp-test-backend-tls-failures", "idp-test-outbox-lag"]
 }
 
 # Statements are compared as "effect actions -> resources", with actions and resources sorted.
@@ -117,7 +118,7 @@ run "the_release_reads_its_settings_from_one_parameter" {
         host   = "release-smoke.idp.example.com"
         secret = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/release/smoke-login-AbCdEf"
       }
-      alarms = { prefix = "idp-test-", regions = ["eu-central-1", "us-east-1"] }
+      alarms = { names = ["idp-test-backend-tls-failures", "idp-test-outbox-lag"] }
     }))
     error_message = "The settings miss what infra/deploy reads, or name the recovery run."
   }
@@ -211,11 +212,11 @@ run "the_release_pushes_images_writes_the_static_files_and_reads_its_settings" {
       ]) == toset([
       "ssm:GetParameter -> arn:aws:ssm:eu-central-1:111111111111:parameter/idp-test/release",
       "ecr:GetAuthorizationToken -> *",
-      "ecr:BatchCheckLayerAvailability,ecr:BatchGetImage,ecr:CompleteLayerUpload,ecr:DescribeImages,ecr:InitiateLayerUpload,ecr:PutImage,ecr:UploadLayerPart -> ${join(",", sort(values(var.repository_arns)))}",
+      "ecr:BatchCheckLayerAvailability,ecr:BatchGetImage,ecr:CompleteLayerUpload,ecr:DescribeImages,ecr:GetDownloadUrlForLayer,ecr:InitiateLayerUpload,ecr:PutImage,ecr:UploadLayerPart -> ${join(",", sort(values(var.repository_arns)))}",
       "s3:ListBucket -> arn:aws:s3:::idp-test-static-111111111111",
       "s3:DeleteObject,s3:GetObject,s3:PutObject -> arn:aws:s3:::idp-test-static-111111111111/*",
       "secretsmanager:GetSecretValue -> arn:aws:secretsmanager:eu-central-1:111111111111:secret:idp-test/release/smoke-login-AbCdEf",
-      "cloudwatch:DescribeAlarms -> arn:aws:cloudwatch:*:111111111111:alarm:idp-test-*",
+      "cloudwatch:DescribeAlarms -> arn:aws:cloudwatch:eu-central-1:111111111111:alarm:idp-test-backend-tls-failures,arn:aws:cloudwatch:eu-central-1:111111111111:alarm:idp-test-outbox-lag",
     ])
     error_message = "A release reaches another parameter, repository, bucket, secret or alarm, or may change more than the files of the frontend."
   }
@@ -245,17 +246,24 @@ run "a_smoke_host_that_is_no_dns_name_refused" {
   expect_failures = [var.smoke_host]
 }
 
-run "x86_images_build_for_amd64" {
+run "an_alarm_of_another_environment_refused" {
   command = plan
 
   variables {
-    cpu_architecture = "X86_64"
+    watched_alarms = ["idp-production-outbox-lag"]
   }
 
-  assert {
-    condition     = jsondecode(aws_ssm_parameter.release.value).platform == "linux/amd64"
-    error_message = "The images would be built for another architecture than ECS runs."
+  expect_failures = [var.watched_alarms]
+}
+
+run "a_release_without_alarms_to_watch_refused" {
+  command = plan
+
+  variables {
+    watched_alarms = []
   }
+
+  expect_failures = [var.watched_alarms]
 }
 
 run "a_release_without_one_of_the_services_refused" {

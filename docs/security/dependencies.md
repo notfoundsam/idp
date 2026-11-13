@@ -20,6 +20,7 @@ Every release writes CycloneDX 1.6 SBOMs of what it ships into `build/sbom`, `ma
 
 - `backend.cdx.json`: the runtime classpath of `app`, `worker`, `ops` and `migrator` as Gradle resolves it for each jar, by the plugin `org.cyclonedx.bom` of the version catalog. Tests and build tools stay out.
 - `idp-login.cdx.json` and `idp-console.cdx.json`: the production packages of each app from the lockfile, by `pnpm sbom` of the pnpm pinned in `frontend/package.json`, in the `frontend` container.
+- `image-<name>.cdx.json`: every image that runs once the release is live, the backend images of the release and those of `infra/` under `infra_image_tag`, with the OS packages of their base images, by `make image-sbom` with Trivy from ECR. The images exist only after the build, so the release scans them after pushing them and before any revision names them.
 
 The run keeps them with the reports of Trivy as the artifact `sbom-<env>-<version>` for 90 days, the most GitHub keeps an artifact of a public repository. The git tag `release/<env>/<version>` names the commit, from which `make sbom` writes the same lists again.
 
@@ -54,4 +55,4 @@ Renovate opens a pull request for every new version at least 7 days old and labe
 
 ## What else watches
 
-Pull requests run `dependency-review`, which fails on a new dependency with a vulnerability of high severity or above, and every push to `main` sends the dependency graph to GitHub for its alerts. ECR scans every image on push, which covers the base images of `backend/Dockerfile` and `infra/`. These cover the build tools and tests, which the SBOMs leave out.
+Pull requests run `dependency-review`, which fails on a new dependency with a vulnerability of high severity or above, and every push to `main` sends the dependency graph to GitHub for its alerts. ECR scans every image on push and stops nothing, the release gate above covers the images. These cover the build tools and tests, which the SBOMs leave out.

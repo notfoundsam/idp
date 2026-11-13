@@ -13,10 +13,8 @@ export const CONTENT_TYPES = {
 
 const EXTENSION = /\.([A-Za-z0-9]+)$/
 
-export function contentTypeOf(path, types = CONTENT_TYPES) {
-  const name = path.slice(path.lastIndexOf('/') + 1)
-  const extension = EXTENSION.exec(name)?.[1].toLowerCase()
-  const type = extension === undefined ? undefined : Object.hasOwn(types, extension) ? types[extension] : undefined
-  if (type === undefined) throw new Error(`No Content-Type for ${path}`)
-  return type
+export function contentTypeOf(path) {
+  const extension = EXTENSION.exec(path.slice(path.lastIndexOf('/') + 1))?.[1].toLowerCase()
+  if (extension === undefined || !Object.hasOwn(CONTENT_TYPES, extension)) throw new Error(`No Content-Type for ${path}`)
+  return CONTENT_TYPES[extension]
 }

@@ -2,10 +2,11 @@ FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 TERRAFORM := docker compose run --rm terraform
 TERRAFORM_ROOTS := bootstrap environments/staging environments/production
-TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/edge modules/iam modules/network modules/release modules/static modules/telemetry
+TERRAFORM_TESTED_MODULES := modules/alarms modules/app modules/cluster modules/data modules/edge modules/iam modules/mail modules/network modules/pki modules/registry \
+  modules/release modules/static modules/telemetry modules/valkey
 TFLINT := docker compose run --rm tflint --config /repo/infra/terraform/.tflint.hcl
 
-.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install web-release deploy-install check-registries sbom vulnerabilities release-smoke smoke-sso
+.PHONY: install up up-observability stop clean cleanup dns-mapping setup-ssl smoke jars build test test-backend test-frontend test-deploy test-infra test-e2e load lint lint-backend lint-frontend lint-infra frontend-install web-release deploy-install check-registries sbom image-sbom vulnerabilities release-smoke smoke-sso
 
 install: dns-mapping setup-ssl frontend-install jars
 
@@ -61,9 +62,11 @@ web-release: frontend-install
 	docker compose run --rm --no-deps -e APP_VERSION=$(APP_VERSION) -e WEB_OUT_DIR=/app/frontend/release frontend \
 	  corepack pnpm -r --filter '!e2e' --if-present build
 
-# The release scripts against fakes of S3, ECS and the IdP, in the image of the frontend with the packages of infra/deploy alone.
+# The release scripts against fakes of S3, ECS and the IdP, in the image of the frontend with the packages of infra/deploy alone,
+# and the check that the roots of staging and production stay alike.
 test-deploy: deploy-install
-	docker compose run --rm --no-deps frontend node --test '/app/infra/deploy/*.test.mjs'
+	docker compose run --rm --no-deps -v "$(CURDIR)/infra/terraform/environments:/app/infra/terraform/environments:ro" frontend \
+	  node --test '/app/infra/deploy/*.test.mjs'
 
 # infra/deploy is a pnpm project of its own, so the smoke test brings no package into the pages, see docs/release.md.
 deploy-install:
@@ -81,6 +84,15 @@ sbom:
 	cp backend/build/reports/cyclonedx/bom.json build/sbom/backend.cdx.json
 	docker compose run --rm --no-deps -v "$(CURDIR)/build/sbom:/sbom" frontend corepack pnpm --filter './apps/*' sbom \
 	  --sbom-format cyclonedx --sbom-type application --sbom-spec-version 1.6 --prod --lockfile-only --out '/sbom/%s.cdx.json'
+
+# The CycloneDX SBOM of an image in a registry with its OS packages, into build/sbom for `vulnerabilities`, as deploy.yml makes
+# one of every image a release runs: `make image-sbom NAME=app IMAGE=<repository>:<tag>`, with TRIVY_USERNAME and TRIVY_PASSWORD
+# for a private registry.
+image-sbom:
+	$(if $(and $(NAME),$(IMAGE)),,$(error NAME and IMAGE are required))
+	mkdir -p build/sbom
+	docker compose run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD trivy image --quiet --image-src remote --platform linux/arm64 \
+	  --format cyclonedx --output "build/sbom/image-$(NAME).cdx.json" "$(IMAGE)"
 
 vulnerabilities:
 	for bom in build/sbom/*.cdx.json; do \

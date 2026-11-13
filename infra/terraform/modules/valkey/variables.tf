@@ -41,8 +41,15 @@ variable "nodes" {
   }
 }
 
+variable "auth_token" {
+  description = "AUTH token, the output valkey_auth_token of modules/keys, which ElastiCache takes write-only."
+  type        = string
+  ephemeral   = true
+  sensitive   = true
+}
+
 variable "auth_token_version" {
-  description = "Version of the generated AUTH token. Raising it writes a new token, see infra/terraform/README.md."
+  description = "Version of the AUTH token in modules/keys. Raising it hands ElastiCache the new token, see infra/terraform/README.md."
   type        = number
   default     = 1
 }
@@ -51,15 +58,4 @@ variable "maintenance_window" {
   description = "Weekly window of ElastiCache maintenance, in UTC."
   type        = string
   default     = "sun:04:30-sun:05:30"
-}
-
-variable "trusted_roots" {
-  description = "Roots of Amazon Trust Services that app trusts for the certificate of ElastiCache."
-  type        = list(string)
-  default     = ["AmazonRootCA1", "AmazonRootCA2", "AmazonRootCA3", "AmazonRootCA4"]
-
-  validation {
-    condition     = length(var.trusted_roots) > 0 && alltrue([for root in var.trusted_roots : contains(["AmazonRootCA1", "AmazonRootCA2", "AmazonRootCA3", "AmazonRootCA4"], root)])
-    error_message = "One or more of AmazonRootCA1 to AmazonRootCA4."
-  }
 }

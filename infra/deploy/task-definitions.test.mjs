@@ -52,10 +52,23 @@ test('only the named variables of the main container change, and the described r
   assert.equal(imageTagOf(input, 'app'), '2.0')
 })
 
-test('a variable the main container does not set yet is refused, as are a missing container and an image without a tag', () => {
+test('a variable that ECS dropped as empty is added again, and an empty value leaves the variable out as ECS would', () => {
+  const definition = described(definitionOf('app', '1.0', { APP_VERSION: '1.0', DB_USERNAME: 'app_runtime' }))
+
+  const raised = derive(definition, { imageTag: '2.0', main: 'app', environment: { MIN_CLIENT_VERSION: '1.2' } })
+  assert.equal(environmentOf(raised, 'app', 'MIN_CLIENT_VERSION'), '1.2')
+  assert.equal(environmentOf(raised, 'app', 'DB_USERNAME'), 'app_runtime')
+
+  const lowered = derive(described(raised), { imageTag: '3.0', main: 'app', environment: { MIN_CLIENT_VERSION: '' } })
+  assert.deepEqual(
+    lowered.containerDefinitions[0].environment.map((it) => it.name),
+    ['APP_VERSION', 'DB_USERNAME'],
+  )
+})
+
+test('a missing container and an image without a tag are refused', () => {
   const definition = described(definitionOf('worker', '1.0'))
 
-  assert.throws(() => derive(definition, { imageTag: '2.0', main: 'worker', environment: { APP_VERSION: '2.0' } }), /does not set APP_VERSION/)
   assert.throws(() => derive(definition, { imageTag: '2.0', main: 'app' }), /has no container app/)
   definition.containerDefinitions[0].image = '111111111111.dkr.ecr.eu-central-1.amazonaws.com/idp-test/worker@sha256:abc'
   assert.throws(() => derive(definition, { imageTag: '2.0', main: 'worker' }), /has no tag/)

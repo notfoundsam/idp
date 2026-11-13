@@ -18,11 +18,6 @@ output "master_user_secret_arn" {
   value       = aws_db_instance.this.master_user_secret[0].secret_arn
 }
 
-output "role_secret_arns" {
-  description = "Secret with the password of each database role."
-  value       = { for role, secret in aws_secretsmanager_secret.role : role => secret.arn }
-}
-
 output "pooled_jdbc_url" {
   description = "DB_URL of app, worker and ops: PgBouncer with verify-full against the certificate in DB_TLS_CA."
   value       = "jdbc:postgresql://pgbouncer.${var.namespace}:5432/${aws_db_instance.this.db_name}?prepareThreshold=0&${local.tls_factory}&sslfactoryarg=env:DB_TLS_CA"

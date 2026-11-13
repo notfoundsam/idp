@@ -23,6 +23,11 @@ output "certificate_validation_records" {
   value       = module.edge.certificate_validation_records
 }
 
+output "dkim_records" {
+  description = "DNS records of the DKIM keys of SES, to create at the DNS host before the first invitation, see infra/terraform/README.md."
+  value       = module.mail.dkim_records
+}
+
 output "static_bucket" {
   description = "Bucket of the frontend files."
   value       = module.static.bucket

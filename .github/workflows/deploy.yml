@@ -32,7 +32,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Only main is released. The environments admit main alone as well, see infra/terraform/README.md, and this job fails before a
+  # reviewer is asked or a token of the environment exists.
+  ref:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Main only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error title=Release::Only main is released, not ${GITHUB_REF}"
+          exit 1
+
   release:
+    needs: ref
     # The tasks run on ARM64, so the images are built on it.
     runs-on: ubuntu-24.04-arm
     environment: ${{ inputs.environment }}
@@ -88,13 +101,6 @@ jobs:
         run: make sbom
       - name: Vulnerabilities
         run: make vulnerabilities
-      - name: Keep the SBOMs
-        if: always() && steps.sbom.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sbom-${{ inputs.environment }}-${{ steps.plan.outputs.version }}
-          path: build/sbom/
-          retention-days: 90
       - name: Updates
         env:
           GH_TOKEN: ${{ github.token }}
@@ -132,6 +138,34 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: release-${{ github.run_number }}-rollout
+      # The OS packages of every image that runs after the release, with the same time frames, before anything moves. Pushed
+      # images run nowhere until a revision names them.
+      - name: Vulnerabilities of the images
+        if: steps.plan.outputs.rollout == 'true'
+        env:
+          BACKEND_VERSION: ${{ steps.plan.outputs.backend-version }}
+        run: |
+          TRIVY_USERNAME=AWS
+          TRIVY_PASSWORD=$(aws ecr get-login-password)
+          echo "::add-mask::$TRIVY_PASSWORD"
+          export TRIVY_USERNAME TRIVY_PASSWORD
+          node infra/deploy/images.mjs --config "$RUNNER_TEMP/release-config.json" --set released --tag "$BACKEND_VERSION" > "$RUNNER_TEMP/images.txt"
+          while read -r name image; do
+            make image-sbom NAME="$name" IMAGE="$image" < /dev/null
+          done < "$RUNNER_TEMP/images.txt"
+          make vulnerabilities
+      - name: Keep the SBOMs
+        if: always() && steps.sbom.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ inputs.environment }}-${{ steps.plan.outputs.version }}
+          path: build/sbom/
+          retention-days: 90
+      # An alarm that went to ALARM before this time does not stop the release, see infra/deploy/alarms.mjs.
+      - name: Start
+        id: start
+        if: steps.plan.outputs.rollout == 'true'
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Register the revisions
         id: register
         if: steps.plan.outputs.rollout == 'true'
@@ -194,15 +228,19 @@ jobs:
           secret=$(jq -er .smoke.secret "$RUNNER_TEMP/release-config.json")
           host=$(jq -er .smoke.host "$RUNNER_TEMP/release-config.json")
           SMOKE_LOGIN=$(aws secretsmanager get-secret-value --secret-id "$secret" --query SecretString --output text)
+          login=$(jq -er .login <<<"$SMOKE_LOGIN")
           password=$(jq -er .password <<<"$SMOKE_LOGIN")
           totp_secret=$(jq -er .totpSecret <<<"$SMOKE_LOGIN")
+          echo "::add-mask::$login"
           echo "::add-mask::$password"
           echo "::add-mask::$totp_secret"
           export SMOKE_LOGIN
           node infra/deploy/smoke-sso.mjs --host "$host" --app-version "$APP_VERSION"
       - name: Alarms
         if: steps.plan.outputs.rollout == 'true'
-        run: node infra/deploy/alarms.mjs --config "$RUNNER_TEMP/release-config.json" --minutes 5
+        env:
+          SINCE: ${{ steps.start.outputs.at }}
+        run: node infra/deploy/alarms.mjs --config "$RUNNER_TEMP/release-config.json" --since "$SINCE" --minutes 5
       - name: Verified
         id: verified
         if: steps.plan.outputs.rollout == 'true'
@@ -213,7 +251,7 @@ jobs:
         if: failure() && steps.register.outcome == 'success' && steps.verified.outcome != 'success'
         run: node infra/deploy/rollback.mjs --config "$RUNNER_TEMP/release-config.json" --state "$RUNNER_TEMP/release-state.json"
 
-      # The api-contract job of CI compares a contract with the last tag it reaches.
+      # The api-contract job of CI compares a contract with the last tag of production it reaches, see ADR-007.
       - name: Tag
         if: steps.plan.outputs.rollout == 'true'
         env:

@@ -4,8 +4,10 @@ import idp.sharedkernel.testing.TestCa
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.ints.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.postgresql.util.PSQLException
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.Network
@@ -69,7 +71,7 @@ class ProductionDatabaseTest :
                         "-c",
                         "install -o postgres -m 0600 /tls/server.key /tmp/server.key && exec docker-entrypoint.sh postgres " +
                             "-c fsync=off -c ssl=on -c ssl_min_protocol_version=TLSv1.2 -c ssl_cert_file=/tls/server.crt " +
-                            "-c ssl_key_file=/tmp/server.key -c hba_file=/tls/pg_hba.conf",
+                            "-c ssl_key_file=/tmp/server.key -c hba_file=/tls/pg_hba.conf -c log_statement=ddl",
                     ).waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2))
             }
         val bootstrapImage = ImageFromDockerfile().withFileFromPath(".", infra.resolve("db-bootstrap"))
@@ -248,6 +250,13 @@ class ProductionDatabaseTest :
 
             direct("provisioner", passwords.getValue("provisioner")).single("SELECT current_user") shouldBe "provisioner"
             shouldThrow<PSQLException> { direct("provisioner", old).close() }
+        }
+
+        "both steps send SCRAM verifiers, so the statements that Postgres logs hold no password" {
+            val statements = postgres.logs.lines().filter { "ALTER USER" in it || "ALTER ROLE" in it }
+
+            statements.filter { "PASSWORD 'SCRAM-SHA-256$" in it }.size shouldBeGreaterThanOrEqual 2 + RUNTIME_ROLES.size
+            (passwords.values + OWNER_PASSWORD).forEach { password -> postgres.logs shouldNotContain password }
         }
 
         "both steps refuse a missing password and change nothing" {

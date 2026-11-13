@@ -146,8 +146,8 @@ resource "aws_iam_role_policy_attachment" "execution" {
 
 locals {
   execution_secrets = {
-    pgbouncer      = concat([var.pgbouncer_tls.key_secret_arn], [for role in local.runtime_roles : aws_secretsmanager_secret.role[role].arn])
-    "db-bootstrap" = concat([aws_db_instance.this.master_user_secret[0].secret_arn], [for secret in aws_secretsmanager_secret.role : secret.arn])
+    pgbouncer      = concat([var.pgbouncer_tls.key_secret_arn], [for role in local.runtime_roles : var.role_secret_arns[role]])
+    "db-bootstrap" = concat([aws_db_instance.this.master_user_secret[0].secret_arn], [for role in local.roles : var.role_secret_arns[role]])
   }
 }
 

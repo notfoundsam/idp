@@ -17,11 +17,11 @@ Terraform for staging and production. Each environment lives in an AWS account o
 | `modules/pki` | The internal CA and the server certificates it issues to PgBouncer, `app`, `ops` and the collector, their keys in Secrets Manager |
 | `modules/telemetry` | The OpenTelemetry Collector of `infra/otel-collector`, the log groups of OTLP and of spans with their retention, Transaction Search of X-Ray and the read policy of the on-call engineers |
 | `modules/alarms` | The CloudTrail trail of the account with its bucket and log group, the alarms on the metrics of the services, on the trail and on the WAF, and the encrypted topics they notify |
-| `modules/data` | RDS, the role passwords, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
-| `modules/valkey` | ElastiCache Valkey with TLS and an AUTH token, reachable from `app` alone |
-| `modules/keys` | The platform KEK, the HMAC key of Throttle and the origin header of CloudFront |
+| `modules/data` | RDS, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
+| `modules/valkey` | ElastiCache Valkey with TLS and the AUTH token of `modules/keys`, reachable from `app` alone |
+| `modules/keys` | The platform KEK and the generated secrets: the role passwords, the AUTH token of Valkey, the HMAC key of Throttle and the origin header of CloudFront. Its ephemeral resources keep it out of `make test-infra`, so the modules that use the secrets plan there |
 | `modules/erasure-journal` | The bucket of the erasure journal under Object Lock, see `docs/security/restore-runbook.md` |
-| `modules/mail` | The SMTP credentials of SES for one sender |
+| `modules/mail` | The domain identity of SES with its DKIM keys and the SMTP credentials for one sender |
 
 The region and the domain are variables, and only the `*.example` files hold placeholders. Both must be chosen before the first customer: passkeys are bound to the domain, so changing it later locks every user out.
 
@@ -30,12 +30,14 @@ The region and the domain are variables, and only the `*.example` files hold pla
 ## Setting up an environment
 
 1. In the account of the environment, apply `bootstrap/` with a copy of `terraform.tfvars.example`. Its state stays local: it holds no secret, and every resource in it can be imported again.
-2. In GitHub, create the environments `<env>-infra` for the `terraform` role and `<env>` for the `deploy` role, both with required reviewers. A token of one environment cannot assume the role of the other. Give `<env>` the variables `AWS_REGION` and `AWS_DEPLOY_ROLE_ARN`, the ARN of the role named by the output `deploy_role_name`.
-3. Write `environments/<env>/backend.hcl` from `backend.hcl.example` with the outputs of the bootstrap, and `terraform.tfvars` from its example. Then `terraform -chdir=environments/<env> init -backend-config=backend.hcl`.
-4. Apply `module.registry` alone with `-target`, build `infra/pgbouncer`, `infra/db-bootstrap` and `infra/otel-collector` for ARM64, push them to ECR under `infra_image_tag`, and apply the environment. Later releases push a new `infra_image_tag` themselves.
-5. Run the `owner` step of the database bootstrap, below.
-6. Run the workflow `Deploy` with `skip-smoke`, which only the first release of an environment may set. It runs `migrator` and `role-passwords`, the other two steps of the bootstrap, and replaces the revisions that the apply gave the services.
-7. Set up the synthetic tenant of the smoke test as [docs/release.md](../../docs/release.md#the-synthetic-tenant) describes. Every later release signs in there.
+2. In GitHub, create the environments `<env>-infra` for the `terraform` role and `<env>` for the `deploy` role, both with required reviewers and with the deployment branch `main` alone. The OIDC trust checks only the environment, so this rule and the ref check of `Deploy` and `Rollback` keep a branch with a changed workflow away from the roles. A token of one environment cannot assume the role of the other. Give `<env>` the variables `AWS_REGION` and `AWS_DEPLOY_ROLE_ARN`, the ARN of the role named by the output `deploy_role_name`.
+3. Write `environments/<env>/backend.hcl` from `backend.hcl.example` with the outputs of the bootstrap, and `terraform.tfvars` from its example with `desired_counts = { ops = 0 }`: `ops` cannot start before the service tenant exists, see Services. Then `terraform -chdir=environments/<env> init -backend-config=backend.hcl`.
+4. Apply `module.registry` alone with `-target`, build `infra/pgbouncer`, `infra/db-bootstrap` and `infra/otel-collector` for ARM64, and push them to ECR under `infra_image_tag`. Create the certificates as the section Edge describes, then apply the environment. Later releases push a new `infra_image_tag` themselves.
+5. Create the records of the output `dkim_records` at the DNS host, which verify the domain at SES, and request production access for SES in the region of the environment. Until both are done SES sends only to verified addresses, and no invitation reaches a customer.
+6. Run the `owner` step of the database bootstrap, below.
+7. Run the workflow `Deploy` with `skip-smoke`, which only the first release of an environment may set. It runs `migrator` and `role-passwords`, the other two steps of the bootstrap, and replaces the revisions that the apply gave the services. `ops` takes its revision with no task.
+8. Bootstrap the service tenant and store its metadata as Services describes, then remove `ops` from `desired_counts` and apply, which starts `ops`.
+9. Set up the synthetic tenant of the smoke test as [docs/release.md](../../docs/release.md#the-synthetic-tenant) describes. Every later release signs in there.
 
 ## Edge
 
@@ -90,7 +92,7 @@ The ALBs check the health of `app` and `ops` over HTTPS on the management port 8
 
 1. Run the CLI `bootstrap`, below, and wait until the service tenant is active.
 2. Store its metadata: `aws secretsmanager put-secret-value --secret-id <idp_metadata_secret_arn> --secret-string file://metadata.xml`, with the file from `https://ops-sso.<domain>/saml/metadata`.
-3. Start `ops` again: `aws ecs update-service --cluster <cluster_name> --service ops --force-new-deployment`.
+3. Start `ops` again: `aws ecs update-service --cluster <cluster_name> --service ops --force-new-deployment`, or on a new environment apply with the default `desired_counts`.
 
 After a key rotation at the service tenant, store the new metadata and redeploy `ops` between starting and completing the rotation.
 
@@ -110,7 +112,7 @@ The workflow `Deploy` of `.github/workflows/deploy.yml` releases to the GitHub e
 - **Revisions:** a release registers a revision of `app`, `worker`, `ops`, `migrator` and `cli` from the latest one of each family, with the images of the release, so a change that an apply registered goes out with the next release, or at once with the input `full`. Only the image tags, and in `app` `APP_VERSION` and `MIN_CLIENT_VERSION`, change. Terraform never deregisters a revision.
 - **What is live:** the revision of `app` tells it. Its images are the backend, `APP_VERSION` the frontend in place, and its tags the release, the commits of both sides and, as on every revision of a service, the revision the service ran before.
 - **Paths:** a side goes out when one of its paths changed since its live commit. The frontend alone keeps the images that run and still rolls the services out for `APP_VERSION`, the backend alone keeps the pages, whose version `app` goes on naming.
-- **Order:** the checks of `docs/security/dependencies.md` on the registries, the SBOMs and the time frames, the images of `infra/` under `infra_image_tag` when ECR lacks them, `cli kms-check` with the new image, which encrypts with the platform KEK and stops the release while KMS is unusable, `migrator`, `role-passwords`, the new files, `app`, `worker` and `ops` one after the other, `migrator` again, the pages, the smoke test of [docs/release.md](../../docs/release.md#the-synthetic-tenant), five minutes without an alarm of the environment in its region and in `us-east-1`, the git tag `release/<env>/<version>` and the pruning of old files. The deployment circuit breaker rolls a failed service back, and the workflow then rolls back what moved.
+- **Order:** the checks of `docs/security/dependencies.md` on the registries, the SBOMs and the time frames, the images of `infra/` under `infra_image_tag` when ECR lacks them, the same time frames for the OS packages of every image that will run, `cli kms-check` with the new image, which encrypts with the platform KEK and stops the release while KMS is unusable, `migrator`, `role-passwords`, the new files, `app`, `worker` and `ops` one after the other, `migrator` again, the pages, the smoke test of [docs/release.md](../../docs/release.md#the-synthetic-tenant), five minutes in which no alarm of the output `release_alarms` of `modules/alarms` goes to ALARM after the rollout started, the git tag `release/<env>/<version>` and the pruning of old files. The deployment circuit breaker rolls a failed service back, and the workflow then rolls back what moved.
 - **Rollback:** first the pages of the previous release, then the revision each service ran before, then the one-off tasks with its images. Migrations stay, expand is compatible with the old code.
 - **Shutdown:** ECS drains a task from its target group for 30 seconds, then stops it and kills it 60 seconds later. `app` and `ops` finish their requests within 20 seconds, `worker` its requests and running jobs within 40.
 
@@ -140,7 +142,7 @@ They match principals by `aws:PrincipalArn`, which still matches a role created 
 
 Every task role denies every call of CloudWatch Logs, X-Ray and CloudWatch, so no task reads, shortens or deletes what it logged, see Telemetry. Every task role denies `ecs:ExecuteCommand`, and `ops` and `cli` deny every call of Secrets Manager, so neither opens a shell in `app` or reads the password of `app_runtime`, whatever is granted later. `migrator` runs every release with no rights in AWS: only `recovery` may destroy KEKs and read the journal, and `modules/app` refuses `REAPPLY_ERASURES` on any other task.
 
-The role `deploy` of a release reads its parameter, pushes to the repositories of the environment, writes the static bucket, registers and tags revisions, updates `app`, `worker` and `ops`, runs `migrator`, `cli` and `role-passwords` in the cluster, reads the secret `<name>/release/smoke-login` of the smoke test and the state of the alarms named `<name>-*`, and passes only the task and execution roles of those tasks, to ECS tasks alone (`release.tftest.hcl`). It passes neither the role of `recovery` nor its own, nor that of `terraform`, and it deregisters no revision.
+The role `deploy` of a release reads its parameter, pushes to the repositories of the environment and pulls from them for the scan of the images, writes the static bucket, registers and tags revisions, updates `app`, `worker` and `ops`, runs `migrator`, `cli` and `role-passwords` in the cluster, reads the secret `<name>/release/smoke-login` of the smoke test and the state of the alarms it watches, and passes only the task and execution roles of those tasks, to ECS tasks alone (`release.tftest.hcl`). It passes neither the role of `recovery` nor its own, nor that of `terraform`, and it deregisters no revision. Rolling out `worker` already runs a new image with the role of `worker`, so whoever holds `deploy` holds what `worker` may do: only a run from `main` in the environment, approved by a reviewer, gets the role.
 
 ## Database bootstrap
 
@@ -177,7 +179,7 @@ To replace a database password, raise its version and apply. Then run `owner` fo
 
 To replace another credential, raise its version, apply and redeploy the service that reads it:
 
-- **Valkey token:** ElastiCache accepts the new token beside the previous one, so `app` keeps working while it redeploys. A leaked token stays valid until the next replacement, so raise the version twice, with a redeploy of `app` in between.
+- **Valkey token:** ElastiCache accepts the new token beside the previous one (`ROTATE`), so `app` keeps working while it redeploys. The previous token stays valid until it is removed, so once `app` runs on the new one, set the token of the secret alone: `aws elasticache modify-replication-group --replication-group-id <env> --auth-token-update-strategy SET --apply-immediately --cli-input-json file://token.json`, with `{"AuthToken": "<the value of <env>/valkey/auth-token>"}` in a file that is deleted afterwards. Terraform keeps `ROTATE` for the next replacement and sees no change.
 - **HMAC key:** the counters start over, nothing else depends on the key.
 - **SMTP credentials:** the old access key is deleted in the same apply, so redeploy `worker` right after it. Until then sends fail and the outbox retries them.
 - **Origin header:** the listener takes the new value at once, while CloudFront needs some minutes to deploy it to every edge, and the ALB refuses the API and SAML with `403` meanwhile. Nothing redeploys, but replace it only after a leak and outside working hours.
