@@ -53,8 +53,12 @@ export const routes = [
 ]
 
 export function createConsole({ client, admin, release, browser, history }: ConsoleDependencies) {
+  // The page sends several requests at once; a second navigation to the login would abort the first.
+  let leaving = false
   const signIn = (error: unknown) => {
-    if (error instanceof ApiError && error.status === 401) browser.assign(LOGIN_PATH)
+    if (leaving || !(error instanceof ApiError && error.status === 401)) return
+    leaving = true
+    browser.assign(LOGIN_PATH)
   }
   const queries = new QueryClient({
     queryCache: new QueryCache({ onError: signIn }),

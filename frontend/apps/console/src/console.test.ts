@@ -37,12 +37,12 @@ describe('every page', () => {
     expect(hasButton(wrapper, 'Sign out')).toBe(true)
   })
 
-  test('without a session the browser goes to the login', async () => {
+  test('without a session the browser goes to the login once, however many requests are refused', async () => {
     const page = await consoleAt('/')
     page.answer('getFactors', refused(401))
     page.answer('getSessions', refused(401))
     await start(page)
-    expect(page.browser.assigned).toContain('/login/')
+    expect(page.browser.assigned).toEqual(['/login/'])
   })
 
   test('a server that cannot be reached is named, and no account is shown', async () => {
