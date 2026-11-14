@@ -356,8 +356,12 @@ services:
     image: hashicorp/terraform:1.16.7
     profiles: [infra]
     working_dir: /repo/infra/terraform
+    # One copy of each provider for every root and module instead of one per `.terraform`.
+    environment:
+      TF_PLUGIN_CACHE_DIR: /root/.terraform.d/plugin-cache
     volumes:
       - .:/repo
+      - idp-terraform-plugins:/root/.terraform.d/plugin-cache
 
   # `make lint-infra` checks the workflows with it, the shell of their steps through its shellcheck.
   actionlint:
@@ -494,4 +498,5 @@ volumes:
   idp-web:
   idp-nginx-config:
   idp-tflint-plugins:
+  idp-terraform-plugins:
   idp-trivy-cache:
