@@ -1,0 +1,36 @@
+name: CI jobs
+description: Decides which jobs a change needs, from the paths it changed; a push to main, the schedule or a manual run needs all.
+
+outputs:
+  backend:
+    value: ${{ steps.jobs.outputs.backend }}
+  frontend:
+    value: ${{ steps.jobs.outputs.frontend }}
+  infra:
+    value: ${{ steps.jobs.outputs.infra }}
+  contracts:
+    value: ${{ steps.jobs.outputs.contracts }}
+  e2e:
+    value: ${{ steps.jobs.outputs.e2e }}
+  codeql:
+    description: The CodeQL languages to analyze, as a JSON list.
+    value: ${{ steps.jobs.outputs.codeql }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24.22.2
+    # The checkout of a pull request is its merge commit, whose first parent is the base it is compared with.
+    - id: jobs
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        if [ "$EVENT" = pull_request ]; then
+          git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed-paths"
+          node infra/deploy/ci-jobs.mjs --paths "$RUNNER_TEMP/changed-paths"
+        else
+          node infra/deploy/ci-jobs.mjs --all
+        fi

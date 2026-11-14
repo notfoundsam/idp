@@ -47,6 +47,7 @@ A multi-tenant SAML Identity Provider for B2B customers. `docs/architecture.md` 
 - A module with tests goes into `TERRAFORM_TESTED_MODULES` of the `Makefile`. Its tests plan against `mock_provider "aws"`, which has no ephemeral resources, so generated secrets live in untested modules such as `modules/keys`.
 - `infra/deploy` is a pnpm project of its own, tested with `node:test` against the fakes of S3, ECS and the IdP. No test calls AWS.
 - A new route of the apps goes into `infra/web/spa-routes.json`, `spa-rewrite.js` and `nginx.conf.template` together.
+- A pull request runs only the CI jobs whose paths it changed, see `infra/deploy/ci-jobs.mjs`. A job that starts reading a path outside its folder, such as a backend test reading `infra/`, adds the path there with a test.
 
 ## Commands
 
