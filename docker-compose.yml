@@ -109,7 +109,7 @@ services:
       - traefik.http.services.mail.loadbalancer.server.port=8025
 
   simplesamlphp:
-    image: cirrusid/simplesamlphp:v2.5.3.1
+    image: cirrusid/simplesamlphp:v2.5.3.1.20261023T014150
     environment:
       SSP_ADMIN_PASSWORD: admin
       SSP_SECRET_SALT: local-development-only

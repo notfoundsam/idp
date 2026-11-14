@@ -4,7 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.string.shouldContain
 import tools.jackson.databind.json.JsonMapper
-import java.io.File
+import java.nio.file.Files
 
 private val CONTRACT =
     """
@@ -43,7 +43,7 @@ private val CONTRACT =
 
 class OpenApiContractTest :
     FunSpec({
-        val file = File.createTempFile("contract", ".yaml").apply { writeText(CONTRACT) }
+        val file = Files.createTempFile("contract", ".yaml").toFile().apply { writeText(CONTRACT) }
         afterSpec { file.delete() }
         val contract = OpenApiContract(file)
         val page = contract.schema("Page")
