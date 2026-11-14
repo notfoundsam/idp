@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # Runner images of GitHub that actionlint 1.7.12 does not know yet. Drop one once actionlint knows it.
+  labels:
+    - ubuntu-26.04

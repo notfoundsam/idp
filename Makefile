@@ -152,6 +152,7 @@ lint-infra:
 	$(TFLINT) --init
 	$(TFLINT) --recursive
 	docker compose run --rm actionlint
+	@if git grep -n 'ubuntu-latest' -- .github; then echo 'Pin the runner image: ubuntu-latest moves to a new Ubuntu without a change here' >&2; exit 1; fi
 
 frontend-install:
 	$(FRONTEND) install --frozen-lockfile
