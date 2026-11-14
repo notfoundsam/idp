@@ -5,16 +5,22 @@ import idp.sharedkernel.web.BusExceptionAdvice
 import idp.sharedkernel.web.ClientIpFilter
 import idp.sharedkernel.web.ClientIpResolver
 import idp.sharedkernel.web.SecurityHeadersFilter
+import idp.sharedkernel.web.TlsGuard
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.env.Environment
 import org.springframework.util.unit.DataSize
 
 private const val API = "/api/*"
+private const val METADATA_UPLOAD = "/api/admin/service-providers"
 
 @Configuration(proxyBeanMethods = false)
 class WebConfiguration {
+    @Bean
+    fun tlsGuard(environment: Environment) = TlsGuard(environment, serves = true)
+
     @Bean
     fun securityHeadersFilter() = SecurityHeadersFilter()
 
@@ -35,7 +41,8 @@ class WebConfiguration {
     @Bean
     fun requestSizeFilter(
         @Value("\${idp.login.max-request-size}") maxSize: DataSize,
-    ) = FilterRegistrationBean(RequestSizeFilter(maxSize.toBytes())).apply {
+        @Value("\${idp.admin.max-upload-size}") maxUpload: DataSize,
+    ) = FilterRegistrationBean(RequestSizeFilter(maxSize.toBytes(), mapOf(METADATA_UPLOAD to maxUpload.toBytes()))).apply {
         order = RequestSizeFilter.ORDER
         addUrlPatterns(API, "/saml/*")
     }

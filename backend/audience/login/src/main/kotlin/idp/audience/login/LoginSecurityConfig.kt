@@ -54,5 +54,5 @@ object LoginSecurityConfig : SecurityConfig {
             RequestEmailChange::class to CHANGE_EMAIL,
         )
 
-    override val roles: Map<Role, Set<Permission>> = UserRole.entries.associate { Role(it.name) to setOf(CHANGE_EMAIL) }
+    override val roles: Map<Role, Set<Permission>> = UserRole.entries.associate { it.role to setOf(CHANGE_EMAIL) }
 }

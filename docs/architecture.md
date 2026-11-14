@@ -12,8 +12,13 @@ A map of the code: where things live and how a request moves through them. Decis
 | `backend/audience/<audience>` | `login`, `account`, `admin`, `operator`: commands, queries, controllers, `*SecurityConfig`, `*ThrottleConfig`, responses |
 | `backend/{app,ops,worker,migrator}` | Deployables, see below |
 | `backend/architecture-tests` | ArchUnit rules, the build graph and `tableOwners` |
-| `contracts/openapi` | `auth.yaml` for `app`, `ops.yaml` for `ops` |
-| `frontend` | Apps `login` and `console`, packages `api-client` and `ui`, end-to-end tests in `e2e` |
+| `contracts/openapi` | `auth.yaml`, `account.yaml` and `admin.yaml` for `app`, `ops.yaml` for `ops` |
+| `frontend` | Apps `login` and `console`, packages `api-client` with types generated from `contracts/openapi` and `ui`, end-to-end tests in `e2e` |
+| `infra/web` | Security headers of the static files in `security-headers.json`, their types in `content-types.mjs`, the local nginx config rendered from both, the CloudFront Function `spa-rewrite.js` and the routes it shares with nginx in `spa-routes.json` |
+| `infra/deploy` | Release scripts that `.github/workflows/deploy.yml` and `rollback.yml` call: the frontend files into S3 with their manifests in `release-assets.mjs`, their pruning in `prune-assets.mjs`, what goes out in `plan-release.mjs` and `changes.mjs`, images in `images.mjs`, revisions in `task-definitions.mjs`, one-off runs and rollouts in `release-tasks.mjs`, the rollback in `rollback.mjs`, the smoke test in `smoke-sso.mjs` and `saml.mjs`, the alarms after it in `alarms.mjs`, the checks of `docs/security/dependencies.md` in `registries.mjs`, `vulnerabilities.mjs` and `updates.mjs`, and the CodeQL gate of pull requests in `code-scanning.mjs`. A pnpm project of its own, see `docs/release.md` |
+| `infra/terraform` | AWS environments, see `infra/terraform/README.md` |
+| `infra/pgbouncer`, `infra/db-bootstrap` | Images of PgBouncer and of the database bootstrap in AWS. The role step also sets the passwords locally |
+| `infra/otel-collector` | The image of the OpenTelemetry Collector in AWS, see `docs/security/logging.md` |
 | `dev-tools`, `docker-compose.yml` | Local environment, see `dev-tools/README.md` |
 
 ## Deployables
@@ -28,7 +33,7 @@ A map of the code: where things live and how a request moves through them. Decis
 ## A request in `app`
 
 1. **Filters**, in order: `ClientVersionFilter` (`426` for an outdated frontend), `RequestSizeFilter`, `TenantFilter`, `SessionFilter`, then `CsrfFilter` and `SamlThrottleFilter`.
-2. **Tenant:** `TenantFilter` looks up the full `Host` in `platform.tenant_domains` through a cache. Only an `ACTIVE` tenant passes, and its id is bound to `TenantContext` for the rest of the request.
+2. **Tenant:** `TenantFilter` looks up the full `Host` in `platform.tenant_domains` through a cache. Only an `ACTIVE` tenant passes, and its id is bound to `TenantContext` for the rest of the request. In AWS that `Host` is the one of the viewer, which CloudFront passes on to the ALB (`modules/edge`).
 3. **Session:** `SessionFilter` reads the session cookie and calls `AuthenticationService.resolveSession` in the tenant's schema. A found session puts a `Principal` into the security context. Without a cookie the database is not touched.
 4. **Controller and bus:** a controller in an audience dispatches one message. The bus runs Throttle, Security, Logger, Transaction and the handler, in that order.
 5. **Transaction:** `TenantTransaction` takes the schema name from the tenant UUID and runs `SET LOCAL ROLE` and `SET LOCAL search_path`. jOOQ queries carry no schema, so they hit that tenant's tables.
@@ -51,13 +56,15 @@ A `Principal` pairs an `Actor` with a role. Service methods that write audit rec
 ## Where things go
 
 - **New table:** a new `V<n>__*.sql` in `backend/db/src/main/resources/db/platform` or `db/tenant`, an entry in `tableOwners`, access only from the owner's `adapters/persistence`.
-- **New endpoint:** the contract in `contracts/openapi` first, then the message, its `*SecurityConfig` entry and the controller in the audience.
+- **New endpoint:** the contract in `contracts/openapi` first, then the message, its `*SecurityConfig` entry, the controller and its request and response types in the audience, and its row in `docs/security/authorization.md`. A context type never goes over HTTP.
 - **Sensitive action:** a record through `AuditLog`.
 - **Security control:** its row in `docs/security/asvs-l2.md`.
 - **Work without a user:** a handler or job in `worker` that calls services.
 
 ## Other documents
 
-- `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility
-- `docs/security/`: ASVS map, authentication, sessions, limits, data protection, crypto inventory and runbooks
+- `docs/adr/`: 001 baseline, 002 audiences and bus, 003 password hashing, 004 SAML library and keys, 005 database roles and connections, 006 state and consistency, 007 release compatibility, 008 versions over HTTP, 009 AWS infrastructure
+- `docs/security/`: ASVS map, authorization, authentication, sessions, limits, input validation, data protection, crypto inventory, logging, communications, dependencies and runbooks
 - `docs/testing.md`: test layers, tools and fixtures
+- `docs/release.md`: releases and rollbacks of an environment
+- `docs/portability.md`: what replaces each AWS service on premises, and the order of a move

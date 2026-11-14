@@ -2,6 +2,8 @@ package idp.identity.application
 
 import idp.identity.adapters.persistence.PasskeyChallenges
 import idp.identity.adapters.persistence.Passkeys
+import idp.identity.adapters.persistence.RecoveryCodes
+import idp.identity.adapters.persistence.Totps
 import idp.identity.adapters.persistence.Users
 import idp.identity.adapters.webauthn.AssertionCheck
 import idp.identity.adapters.webauthn.PasskeyVerifier
@@ -11,19 +13,34 @@ import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.domain.DomainRuleViolation
+import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.tenant.TenantTransaction
 import java.security.SecureRandom
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 private const val PASSKEY_REGISTERED = "user.passkey_registered"
 private const val PASSKEY_COUNTER_REGRESSED = "user.passkey_counter_regressed"
+private const val PASSKEY_REMOVED = "user.passkey_removed"
+private const val PASSKEY = "passkey"
 
 private const val CHALLENGE_BYTES = 32
 
 /** The same answer for every refusal: what exactly failed helps only someone forging a response. */
 class PasskeyNotValid : DomainRuleViolation("The passkey is not valid")
+
+class PasskeyNotFound(
+    id: UUID,
+) : NotFound("No passkey $id")
+
+class PasskeyView(
+    val id: UUID,
+    val createdAt: Instant,
+    val lastUsedAt: Instant?,
+    val backedUp: Boolean,
+)
 
 class PasskeyRegistrationOptions(
     val challenge: ByteArray,
@@ -49,9 +66,16 @@ class PasskeyAssertion(
     val signature: ByteArray,
 )
 
+/** What [PasskeyService] verifies, so the options of both audiences ask the browser for the same. */
+object PasskeyCeremony {
+    const val RESIDENT_KEY = "required"
+    const val USER_VERIFICATION = "required"
+    const val ATTESTATION = "none"
+}
+
 /**
  * Passkeys are discoverable, so a login starts before anyone is known. The caller passes the host the tenant was resolved from, it
- * is the relying party. The browser must get `residentKey: required`, `userVerification: required` and `attestation: none`.
+ * is the relying party. The browser must get the options of [PasskeyCeremony].
  */
 class PasskeyService(
     private val transaction: TenantTransaction,
@@ -61,7 +85,9 @@ class PasskeyService(
 ) {
     private val users = Users()
     private val passkeys = Passkeys()
+    private val recoveryCodes = RecoveryCodes()
     private val challenges = PasskeyChallenges()
+    private val floor = FactorFloor(users, Totps(), passkeys)
     private val verifier = PasskeyVerifier()
     private val random = SecureRandom()
 
@@ -110,6 +136,33 @@ class PasskeyService(
     }
 
     fun hasPasskey(userId: UUID): Boolean = transaction.execute { dsl -> passkeys.credentialIds(dsl, userId).isNotEmpty() }
+
+    /** The oldest first. */
+    fun passkeysOf(userId: UUID): List<PasskeyView> =
+        transaction.execute { dsl ->
+            passkeys.ofUser(dsl, userId).map { PasskeyView(it.id, it.createdAt, it.lastUsedAt, it.backedUp) }
+        }
+
+    /**
+     * A passkey of someone else reads as missing. Recovery codes go when this was the last second factor. [requirement] refuses a
+     * removal that would leave the user below it.
+     */
+    fun remove(
+        userId: UUID,
+        passkeyId: UUID,
+        actor: Actor,
+        ip: String?,
+        requirement: FactorRequirement,
+    ) {
+        transaction.execute { dsl ->
+            floor.removing(dsl, userId, requirement) {
+                if (!passkeys.delete(dsl, userId, passkeyId)) throw PasskeyNotFound(passkeyId)
+            }
+            val codesRemoved = recoveryCodes.deleteWithoutSecondFactor(dsl, userId)
+            val details = mapOf(PASSKEY to passkeyId.toString()) + removedCodes(codesRemoved)
+            audit.recordChange(AuditRecord(actor, PASSKEY_REMOVED, AuditTarget.user(userId), ip, details))
+        }
+    }
 
     fun beginAuthentication(): PasskeyAuthenticationOptions =
         transaction.execute { dsl ->

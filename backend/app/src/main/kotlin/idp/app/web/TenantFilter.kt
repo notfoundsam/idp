@@ -1,5 +1,7 @@
 package idp.app.web
 
+import idp.sharedkernel.observability.LogFields
+import idp.sharedkernel.observability.UnexpectedErrorFilter
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantResolver
 import idp.sharedkernel.tenant.TenantStatus
@@ -31,6 +33,7 @@ class TenantFilter(
                 ServerHttpObservationFilter.findObservationContext(request).ifPresent {
                     it.addHighCardinalityKeyValue(KeyValue.of(TENANT_ID, context.tenantId.toString()))
                 }
+                request.setAttribute(UnexpectedErrorFilter.TENANT_ATTRIBUTE, context.tenantId.toString())
                 TenantContext.with(context) { chain.doFilter(request, response) }
             }
             TenantStatus.SUSPENDED, TenantStatus.OFFBOARDING -> response.status = HttpServletResponse.SC_FORBIDDEN
@@ -42,6 +45,6 @@ class TenantFilter(
         /** After the checks that need no tenant, so an outdated client or an oversized request costs no lookup. */
         const val ORDER = RequestSizeFilter.ORDER + 1
 
-        const val TENANT_ID = "tenant_id"
+        const val TENANT_ID = LogFields.TENANT_ID
     }
 }

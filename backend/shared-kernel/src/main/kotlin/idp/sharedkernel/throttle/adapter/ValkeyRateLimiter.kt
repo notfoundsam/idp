@@ -12,6 +12,8 @@ import io.lettuce.core.ClientOptions
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisURI
 import io.lettuce.core.SocketOptions
+import io.lettuce.core.SslOptions
+import io.lettuce.core.SslVerifyMode
 import io.lettuce.core.TimeoutOptions
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.codec.ByteArrayCodec
@@ -20,13 +22,18 @@ import io.lettuce.core.codec.StringCodec
 import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
+import java.security.KeyStore
+import java.security.cert.CertificateException
+import java.security.cert.CertificateFactory
 import java.time.Clock
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicLong
+import javax.net.ssl.TrustManagerFactory
 
 private const val FAILURES = "idp.throttle.failures"
 private const val CLOSED = 0L
 private const val MAX_CAS_RETRIES = 3
+private val TLS_PROTOCOLS = arrayOf("TLSv1.3", "TLSv1.2")
 private val KEEP_AFTER_REFILL: Duration = Duration.ofMinutes(1)
 
 private val log = LoggerFactory.getLogger(ValkeyRateLimiter::class.java)
@@ -51,6 +58,29 @@ private class Breaker(
     fun close() = openUntil.set(CLOSED)
 }
 
+/** A `rediss://` server is trusted through the certificates of [tlsCa] alone, and its name must match the URL. */
+private fun tlsOptions(tlsCa: String): SslOptions {
+    val certificates =
+        try {
+            CertificateFactory.getInstance("X.509").generateCertificates(tlsCa.byteInputStream())
+        } catch (failure: CertificateException) {
+            throw IllegalArgumentException("VALKEY_TLS_CA holds no certificate", failure)
+        }
+    require(certificates.isNotEmpty()) { "VALKEY_TLS_CA holds no certificate" }
+    val anchors =
+        KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+            certificates.forEachIndexed { index, certificate -> setCertificateEntry("ca-$index", certificate) }
+        }
+    val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(anchors) }
+    return SslOptions
+        .builder()
+        .jdkSslProvider()
+        .trustManager(trust)
+        .protocols(*TLS_PROTOCOLS)
+        .build()
+}
+
 /**
  * Fails open: Postgres keeps the counters that must not be lost, and this limiter only sheds load.
  * Connecting has its own timeout: TLS and AUTH on a cold JVM outlast a command, and only one probe waits for them.
@@ -62,9 +92,23 @@ class ValkeyRateLimiter(
     cooldown: Duration,
     registry: MeterRegistry,
     clock: Clock = Clock.systemUTC(),
+    password: String = "",
+    tlsCa: String = "",
 ) : RateLimiter,
     AutoCloseable {
-    private val uri: RedisURI = RedisURI.create(url).also { it.setTimeout(connectTimeout) }
+    private val uri: RedisURI =
+        RedisURI.create(url).also {
+            it.setTimeout(connectTimeout)
+            if (password.isNotEmpty()) it.setAuthentication(password)
+            if (it.isSsl) it.setVerifyPeer(SslVerifyMode.FULL)
+        }
+
+    init {
+        require(uri.isSsl == tlsCa.isNotBlank()) {
+            if (uri.isSsl) "A rediss:// VALKEY_URL needs VALKEY_TLS_CA" else "VALKEY_TLS_CA needs a rediss:// VALKEY_URL"
+        }
+    }
+
     private val client: RedisClient =
         RedisClient.create().also {
             it.options =
@@ -73,6 +117,7 @@ class ValkeyRateLimiter(
                     .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
                     .socketOptions(SocketOptions.builder().connectTimeout(connectTimeout).build())
                     .timeoutOptions(TimeoutOptions.enabled(timeout))
+                    .apply { if (uri.isSsl) sslOptions(tlsOptions(tlsCa)) }
                     .build()
         }
     private val breaker = Breaker(cooldown, clock)

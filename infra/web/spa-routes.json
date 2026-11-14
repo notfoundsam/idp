@@ -1,0 +1,33 @@
+{
+  "cacheControl": {
+    "pages": "no-cache",
+    "assets": "public, max-age=31536000, immutable"
+  },
+  "cases": [
+    { "uri": "/", "status": 302, "location": "/console/" },
+    { "uri": "/login", "status": 301, "location": "/login/" },
+    { "uri": "/console", "status": 301, "location": "/console/" },
+    { "uri": "/login/", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/login/index.html", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/login/forgot-password", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/login/assets", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/console/", "file": "/console/index.html", "cache": "pages" },
+    { "uri": "/console/admin/users/0b4f3c1e-7a52-4d9e-9a3c-5f0e2d8b6a41", "file": "/console/index.html", "cache": "pages" },
+    { "uri": "/console/signed-out", "file": "/console/index.html", "cache": "pages" },
+    { "uri": "/invite", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/reset-password", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/confirm-email", "file": "/login/index.html", "cache": "pages" },
+    { "uri": "/login/assets/", "file": "/login/assets/", "missing": true },
+    { "uri": "/console/assets/", "file": "/console/assets/", "missing": true },
+    { "uri": "/login/assets/gone-00000000.js", "file": "/login/assets/gone-00000000.js", "missing": true },
+    { "uri": "/console/assets/nested/", "file": "/console/assets/nested/", "missing": true },
+    { "uri": "/invite/", "status": 404 },
+    { "uri": "/invite/extra", "status": 404 },
+    { "uri": "/loginx", "status": 404 },
+    { "uri": "/Login/", "status": 404 },
+    { "uri": "/index.html", "status": 404 },
+    { "uri": "/assets/index.js", "status": 404 },
+    { "uri": "/favicon.ico", "status": 404 },
+    { "uri": "/admin/", "status": 404 }
+  ]
+}

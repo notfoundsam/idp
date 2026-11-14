@@ -3,8 +3,12 @@ package idp.ops
 import idp.sharedkernel.crypto.KeyManagementService
 import idp.sharedkernel.crypto.KeyManagementUnavailableException
 import idp.sharedkernel.migration.TenantSchema
+import idp.sharedkernel.testing.Plaintext
+import idp.sharedkernel.testing.scan
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.comparables.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -135,6 +139,19 @@ class OpsAccessBoundaryTest :
                 response.body shouldNotContain CONTACT
                 response.body shouldNotContain "hcvault"
                 response.body.lowercase() shouldNotContain "kek"
+            }
+
+            test("no table keeps a contact in clear, of an application or of a new admin") {
+                val tenant = api.tenantOf(api.submit("stored"))
+                environment.sql.update("UPDATE platform.tenants SET status = 'ACTIVE', version = version + 1 WHERE id = ?", tenant)
+                api.post("/api/tenants/$tenant/admin-reinvite", """{"contact":"$CONTACT"}""").status shouldBe 202
+
+                val stored = environment.database.scan(listOf(Plaintext.text("contact", CONTACT)))
+
+                stored.findings.shouldBeEmpty()
+                stored.rows.getValue("platform.tenant_applications") shouldBeGreaterThan 0
+                stored.rows.getValue("platform.admin_reinvites") shouldBeGreaterThan 0
+                stored.rows.getValue("platform.operator_audit") shouldBeGreaterThan 0
             }
 
             test("the audit keeps no contact") {

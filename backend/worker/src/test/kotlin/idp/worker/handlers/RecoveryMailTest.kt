@@ -23,6 +23,9 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.springframework.boot.runApplication
 import org.springframework.context.ConfigurableApplicationContext
+import java.sql.Timestamp
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -65,22 +68,22 @@ class RecoveryMailTest :
 
         beforeTest { mailpit.clear() }
 
-        suspend fun mails(count: Int): List<ReceivedMail> {
-            lateinit var received: List<ReceivedMail>
+        /** No event waits or runs, those planned for much later aside, so a duplicate delivery has arrived by now if it ever does. */
+        suspend fun settled() {
             eventually(30.seconds) {
-                received = mailpit.messages()
-                received shouldHaveSize count
+                environment.jdbc.queryForObject(
+                    "SELECT count(*) FROM platform.outbox WHERE status = 'PENDING' AND available_at < ?",
+                    Int::class.java,
+                    Timestamp.from(Instant.now().plus(Duration.ofHours(1))),
+                ) shouldBe 0
             }
-            return received
         }
 
-        /** The invitation of the user is drained first, so a test sees only its own mail. */
-        suspend fun TenantContext.active(email: String = EMAIL): UUID {
-            val user = TenantContext.with(this) { identity.invite(email, UserRole.USER, Actor.System) }
-            val invitation = mails(1).single()
-            TenantContext.with(this) { identity.acceptInvitation(tokenOf(invitation), Actor.Anonymous) }
-            mailpit.clear()
-            return user
+        /** Counted again once the outbox settled, because it delivers at least once and a late repeat must not pass unseen. */
+        suspend fun mails(count: Int): List<ReceivedMail> {
+            eventually(30.seconds) { mailpit.messages() shouldHaveSize count }
+            settled()
+            return mailpit.messages().also { it shouldHaveSize count }
         }
 
         /** Every event of the tenant has been handled, so a mail that did not come will not come. */
@@ -92,6 +95,16 @@ class RecoveryMailTest :
                     tenantId,
                 ) shouldBe 0
             }
+        }
+
+        /** The invitation of the user is drained first, so a test sees only its own mail. */
+        suspend fun TenantContext.active(email: String = EMAIL): UUID {
+            val user = TenantContext.with(this) { identity.invite(email, UserRole.USER, Actor.System) }
+            val invitation = mails(1).single()
+            TenantContext.with(this) { identity.acceptInvitation(tokenOf(invitation), Actor.Anonymous) }
+            drained()
+            mailpit.clear()
+            return user
         }
 
         fun TenantContext.table(name: String) = "\"${TenantSchema(tenantId).name}\".$name"

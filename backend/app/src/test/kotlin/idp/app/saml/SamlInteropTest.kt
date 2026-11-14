@@ -17,6 +17,8 @@ import idp.federation.application.SpSettings
 import idp.identity.application.IdentityService
 import idp.identity.application.ProfileChange
 import idp.sharedkernel.audit.Actor
+import idp.sharedkernel.testing.TestCa
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -30,20 +32,16 @@ import org.testcontainers.images.builder.Transferable
 import org.testcontainers.utility.MountableFile
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
-import java.net.Socket
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Path
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLEngine
-import javax.net.ssl.X509ExtendedTrustManager
+import javax.net.ssl.SSLHandshakeException
 
 private const val SP_HOST = "sp.idp.test"
 private const val SSP = "/var/simplesamlphp"
@@ -51,62 +49,21 @@ private const val MAIL_OID = "urn:oid:0.9.2342.19200300.100.1.3"
 private const val DISPLAY_NAME_OID = "urn:oid:2.16.840.1.113730.3.1.241"
 private const val OUTSIDER = "grace.hopper@acme.test"
 private val TIMEOUT: Duration = Duration.ofSeconds(30)
-
-/**
- * The container serves a self-signed certificate for another name, and the test only needs to reach it, not to trust it. An extended
- * manager, because JSSE checks the host name itself around a plain one.
- */
-private val trustAll: SSLContext =
-    SSLContext.getInstance("TLS").apply {
-        val manager =
-            object : X509ExtendedTrustManager() {
-                override fun checkClientTrusted(
-                    chain: Array<out X509Certificate>,
-                    authType: String,
-                ) = Unit
-
-                override fun checkClientTrusted(
-                    chain: Array<out X509Certificate>,
-                    authType: String,
-                    socket: Socket,
-                ) = Unit
-
-                override fun checkClientTrusted(
-                    chain: Array<out X509Certificate>,
-                    authType: String,
-                    engine: SSLEngine,
-                ) = Unit
-
-                override fun checkServerTrusted(
-                    chain: Array<out X509Certificate>,
-                    authType: String,
-                ) = Unit
-
-                override fun checkServerTrusted(
-                    chain: Array<out X509Certificate>,
-                    authType: String,
-                    socket: Socket,
-                ) = Unit
-
-                override fun checkServerTrusted(
-                    chain: Array<out X509Certificate>,
-                    authType: String,
-                    engine: SSLEngine,
-                ) = Unit
-
-                override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-            }
-        init(null, arrayOf(manager), SecureRandom())
-    }
+private val BOUNCE = Regex("""url=(/saml/sso/[0-9a-f-]{36})""")
 
 /** SimpleSAMLphp with the configuration of the local environment, and the IdP metadata as `app` publishes it. */
 private class SimpleSamlPhp(
     idpMetadata: String,
 ) : AutoCloseable {
+    private val ca = TestCa("Test SimpleSAMLphp CA")
+    private val certificate = ca.issue("localhost")
     private val config = Path.of(System.getProperty("idp.simplesamlphp.config"))
     private val container: GenericContainer<*> =
         GenericContainer(System.getProperty("idp.simplesamlphp.image"))
             .withExposedPorts(443)
+            .withEnv("APACHE_CERT_NAME", CERT_NAME)
+            .withCopyToContainer(Transferable.of(certificate.first, READABLE), "/etc/ssl/certs/$CERT_NAME.pem")
+            .withCopyToContainer(Transferable.of(certificate.second, OWNER_ONLY), "/etc/ssl/private/$CERT_NAME.key")
             .withEnv("SSP_ADMIN_PASSWORD", "admin")
             .withEnv("SSP_SECRET_SALT", "interop-test")
             .withCopyToContainer(file("authsources.php"), "$SSP/config/authsources.php")
@@ -116,11 +73,22 @@ private class SimpleSamlPhp(
             .waitingFor(Wait.forHttps("/simplesaml/module.php/core/welcome").allowInsecure().forPort(443))
             .also { it.start() }
 
-    private val http = HttpClient.newBuilder().sslContext(trustAll).build()
-    private val base = "https://${container.host}:${container.getMappedPort(443)}"
+    private val http = HttpClient.newBuilder().sslContext(ca.trust()).build()
+    private val base = "https://localhost:${container.getMappedPort(443)}"
     private val cookies = ConcurrentHashMap<String, String>()
 
     fun get(url: String): HttpResponse<String> = send(request(url).GET())
+
+    fun trust(): SSLContext = ca.trust()
+
+    /** The welcome page through a client of its own, which trusts only what [context] trusts. */
+    fun welcome(context: SSLContext): Int =
+        HttpClient
+            .newBuilder()
+            .sslContext(context)
+            .build()
+            .send(request("https://$SP_HOST/simplesaml/module.php/core/welcome").GET().build(), HttpResponse.BodyHandlers.discarding())
+            .statusCode()
 
     /** A new visitor of the SP, so the SP has no session and sends the browser to the IdP again. */
     fun forget() = cookies.clear()
@@ -170,6 +138,8 @@ private class SimpleSamlPhp(
 
     companion object {
         const val READABLE = 0b110_100_100
+        const val OWNER_ONLY = 0b110_000_000
+        const val CERT_NAME = "interop"
         const val LOG_LINES = 40
     }
 }
@@ -216,20 +186,27 @@ class SamlInteropTest :
             application.close()
         }
 
+        /** Each step names the reply it got, so a step that fails under load says which and why instead of a bare NPE. */
+        fun Reply.step(
+            name: String,
+            status: Int,
+        ): Reply = also { withClue("$name answered $status with: $body") { it.status shouldBe status } }
+
         /** From the page of the SP to the form the IdP hands the browser, or the page that stops it. */
         fun login(email: String): Reply {
             sp.forget()
             val toIdp = sp.get("https://$SP_HOST/simplesaml/whoami.php").location()
             toIdp shouldStartWith "https://$ACME/saml/sso?"
             val browser = Browser(application)
-            val bounce =
-                Regex(
-                    """url=(/saml/sso/[0-9a-f-]{36})""",
-                ).find(browser.get(toIdp.removePrefix("https://$ACME")).body)!!.groupValues[1]
-            val flow = browser.get(bounce).header("Location")!!.substringAfter("flow=")
-            browser.post("/api/flows/$flow/login", loginBody(email))
-            browser.post("/api/flows/$flow/password", passwordBody(PASSWORD))
-            return browser.get(browser.complete(flow).json().text("returnUrl"))
+            val sso = browser.get(toIdp.removePrefix("https://$ACME")).step("The AuthnRequest", 200)
+            val bounce = withClue(sso.body) { BOUNCE.find(sso.body).shouldNotBeNull() }.groupValues[1]
+            val toLogin = browser.get(bounce).step("The bounce", 303)
+            val flow = withClue(toLogin.headers()) { toLogin.header("Location").shouldNotBeNull() }.substringAfter("flow=")
+            browser.post("/api/flows/$flow/login", loginBody(email)).step("The login", 200)
+            browser.post("/api/flows/$flow/password", passwordBody(PASSWORD)).step("The password", 200)
+            val completed = browser.complete(flow).step("The completion", 200)
+            val returnUrl = completed.json().get("returnUrl")
+            return browser.get(withClue("The completion named no returnUrl") { returnUrl.shouldNotBeNull() }.asString())
         }
 
         fun whoAmI(form: Reply): JsonNode {
@@ -292,5 +269,10 @@ class SamlInteropTest :
             reply.status shouldBe 403
             reply.body shouldContain "do not have access"
             reply.body shouldNotContain "SAMLResponse"
+        }
+
+        test("the SP is reached over TLS that is verified, so a client trusting another CA is refused") {
+            sp.welcome(sp.trust()) shouldBe 200
+            shouldThrow<SSLHandshakeException> { sp.welcome(TestCa("Test other CA").trust()) }
         }
     })

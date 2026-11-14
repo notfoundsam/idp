@@ -21,8 +21,8 @@ Everything travels over TLS: browsers to CloudFront and the ALB, services to Pos
 
 - Never leaves KMS as a KEK. The tenant key is stored wrapped by the tenant KEK, user keys and SAML keys wrapped by keys below it.
 - Unwrapped keys live only in memory, at most for the cache TTL of `KeyHierarchy`.
-- Destroying a key is how data is erased: a user key goes with the user, the tenant KEKs with the tenant. After a move to another KMS a tenant keeps its previous KEK for 35 days, so backups taken before the move still open, see [crypto-inventory.md](crypto-inventory.md).
-- Only `app`, `worker` and `migrator` restoring a backup may call `Decrypt` on tenant KEKs. `ops` may only `Encrypt` with the platform KEK.
+- Destroying a key is how data is erased: a user key goes with the user, the tenant KEKs with the tenant. After a move to another KMS a tenant keeps its previous KEK for `KMS_PREVIOUS_KEK_RETENTION`, 35 days by default and 45 in AWS, so backups taken before the move still open, see [crypto-inventory.md](crypto-inventory.md).
+- Only `app`, `worker` and the recovery run of `migrator` after a restore may call `Decrypt` on tenant KEKs, and only `worker` and the recovery run may delete one. `ops` and the CLI may only `Encrypt` with the platform KEK, which only `worker` decrypts.
 - Never logged, never in an event, never in an API response.
 
 ### Credentials

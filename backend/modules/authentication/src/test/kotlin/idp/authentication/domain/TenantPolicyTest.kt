@@ -39,7 +39,31 @@ class TenantPolicyTest :
 
         test("an idle timeout cannot outlast the absolute one") {
             shouldThrow<SessionTimeoutsNotValid> {
-                TenantPolicy(sessionIdleTimeout = Duration.ofHours(2), sessionAbsoluteTimeout = Duration.ofHours(1))
+                TenantPolicy(sessionIdleTimeout = Duration.ofMinutes(50), sessionAbsoluteTimeout = Duration.ofMinutes(40))
             }
+        }
+
+        test("an idle timeout may equal the absolute one") {
+            val policy = TenantPolicy(sessionIdleTimeout = Duration.ofMinutes(20), sessionAbsoluteTimeout = Duration.ofMinutes(20))
+
+            policy.sessionAbsoluteTimeout shouldBe policy.sessionIdleTimeout
+        }
+
+        test("an idle timeout stays between 5 minutes and the 1 hour of AAL2") {
+            TenantPolicy(sessionIdleTimeout = Duration.ofMinutes(5)).sessionIdleTimeout shouldBe Duration.ofMinutes(5)
+            TenantPolicy(sessionIdleTimeout = Duration.ofHours(1)).sessionIdleTimeout shouldBe Duration.ofHours(1)
+            shouldThrow<SessionTimeoutsNotValid> { TenantPolicy(sessionIdleTimeout = Duration.ofMinutes(5).minusSeconds(1)) }
+            shouldThrow<SessionTimeoutsNotValid> { TenantPolicy(sessionIdleTimeout = Duration.ofHours(1).plusSeconds(1)) }
+        }
+
+        test("an absolute timeout stays within the 24 hours of AAL2") {
+            TenantPolicy(sessionAbsoluteTimeout = Duration.ofHours(24)).sessionAbsoluteTimeout shouldBe Duration.ofHours(24)
+            shouldThrow<SessionTimeoutsNotValid> { TenantPolicy(sessionAbsoluteTimeout = Duration.ofHours(24).plusSeconds(1)) }
+        }
+
+        test("no value relaxes MFA for TENANT_ADMIN, and none sets an expiry of the password") {
+            val fields = TenantPolicy::class.java.declaredFields.map { it.name }
+            fields.toSet() shouldBe
+                setOf("mfaForUsers", "passkeyRequired", "sessionIdleTimeout", "sessionAbsoluteTimeout", "version")
         }
     })

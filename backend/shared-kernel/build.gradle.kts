@@ -19,11 +19,14 @@ dependencies {
     implementation(libs.lettuce.core)
     implementation(libs.bucket4j.lettuce)
     implementation(libs.micrometer.core)
+    implementation(libs.opentelemetry.api)
+    compileOnly(libs.logback.classic)
     compileOnly(libs.spring.web)
     compileOnly(libs.spring.context)
     compileOnly(libs.jakarta.servlet.api)
 
     testImplementation(libs.logback.classic)
+    testImplementation(libs.testcontainers)
 
     testFixturesApi(platform(libs.spring.boot.bom))
     testFixturesApi(libs.postgresql)
@@ -31,6 +34,9 @@ dependencies {
     testFixturesImplementation(libs.jackson.databind)
     testFixturesImplementation(libs.kotest.assertions)
     testFixturesImplementation(libs.snakeyaml)
+    testFixturesImplementation(libs.lettuce.core)
+    testFixturesImplementation(libs.bouncycastle)
+    testFixturesImplementation(libs.bouncycastle.pkix)
     // Compile only: on the runtime classpath of `worker` tests it would turn their application into a web one.
     testFixturesCompileOnly(libs.spring.webmvc)
     testFixturesCompileOnly(libs.spring.web)

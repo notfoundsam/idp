@@ -2,6 +2,19 @@
 
 Every limit a client can reach. Limits in Postgres survive anything. Limits in Valkey stop being enforced when Valkey fails, and the failure raises an alert, so the Postgres limits are the ones that protect an account.
 
+## Limits at the edge
+
+The WAF of CloudFront counts every request by the address of the viewer, across tenants, over a sliding window of five minutes, and answers `429` beyond a limit until the rate drops below it again.
+
+| Requests | Per address in 5 minutes |
+|---|---|
+| All, the files of S3 included | 20,000 |
+| `/api/*` and `/saml/*` | 10,000 |
+
+They stop floods before `app` and leave the fine limits to the tables below, so a company behind one NAT address must not reach them. The limits of `app` let one address start 30 flows a minute, 150 logins in the window at about 15 requests each, and a signed-in user of the console makes a few requests a minute: 10,000 leaves room for that load and hundreds of users working at once behind the same address. A single client reaching 33 requests a second to `app` is not a person. The limits live in `modules/edge` and `edge.tftest.hcl` holds them to this table.
+
+`app` counts by the same address: CloudFront sends it as `CloudFront-Viewer-Address`, the one header `app` trusts, and the ALB takes only requests of the distribution, so nobody can skip the WAF or name another address. The `prod` profile refuses to start with an empty `CLIENT_IP_HEADER`, under which every client would share the address of the ALB, and with `X-Forwarded-For` or `Forwarded`, which keep what the client sent.
+
 ## Limits by caller
 
 Valkey counts these in `app`, one bucket per message, and every key holds the tenant, so tenants share nothing. An address is stored as a keyed HMAC. A message checks the address first, so a blocked address spends nothing of its tenant.
@@ -11,13 +24,16 @@ Valkey counts these in `app`, one bucket per message, and every key holds the te
 | Starting a flow, entering a login, asking for a challenge or an enrollment | 30 a minute | 6,000 a minute |
 | Password, TOTP, recovery code, passkey, confirming an enrollment, using a token from a mail | 10 a minute | 1,000 a minute |
 | Asking for a password reset or an email change | 5 an hour | 500 an hour |
+| In the account: the current password, confirming a TOTP or a passkey | 10 a minute, per user | None, only a session gets here |
+| In the admin area: inviting a user | 100 an hour, per admin | None, only an admin session gets here |
+| In the admin area: resending an invitation | 10 an hour, per admin | None, only an admin session gets here |
 | Any other message | 300 a minute, per user with a session, per address without | None |
 | SAML SSO, two requests for each login through an SP | 30 a minute | 6,000 a minute |
 | SAML metadata | 120 a minute | None, so nobody can keep the SPs of a tenant from it |
 
 SAML does not pass the bus, so `SamlThrottleFilter` counts its requests on the same port, after the tenant and the session are known.
 
-`THROTTLE_ENABLED=false` removes these for load tests, and `app` refuses to start that way in the `prod` profile. `ops` and the operator CLI have no such limits: VPN and IAM stand in front of them.
+`THROTTLE_ENABLED=false` removes these for load tests, and `THROTTLE_MULTIPLIER` multiplies every capacity in this table and keeps its period. The local environment sets the multiplier to 100, because every local request comes from one address. `app` refuses to start in the `prod` profile with either setting changed, and a multiplier below 1 is refused everywhere. Staging runs the `staging` profile, which checks everything that `prod` does and lets a load test set `THROTTLE_ENABLED=false`, never the multiplier. `ops` and the operator CLI have no such limits: VPN and IAM stand in front of them.
 
 A mail is limited by the caller and not by the mailbox, because a limit per login would tell that the login exists. So many addresses can still send one person many reset mails, up to the tenant bucket, and each new mail cancels the link of the previous one. Nobody gets into the account this way.
 
@@ -46,6 +62,9 @@ A flow lives for 15 minutes and is one of the few rows an anonymous caller can a
 | Subject | Limit | Beyond it |
 |---|---|---|
 | Body of an API or SAML request | 32 KiB, the same on every tenant | `413` |
+| Upload of SP metadata, `POST /api/admin/service-providers` | 160 KiB for the form, kept in memory. The importer refuses a file over 128 KiB | `413`, then `422` |
+| Users in one assignment or revocation | 500 | `400` |
+| Records in one page of the journal, `GET /api/admin/audit` | 100, 50 when not asked | `400` |
 | Body without a length | Refused, a browser always sends one | `411` |
 | Client version | At least `MIN_CLIENT_VERSION`, when set | `426` |
 | AuthnRequest, decoded and inflated | 32 KiB, counted while inflating | Error page |

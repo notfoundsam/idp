@@ -11,6 +11,12 @@ spring:
       # Every parallel Flyway run takes two connections, and the schema lock takes one.
       maximum-pool-size: 12
 
+# One JSON object per line, in UTC. See docs/security/logging.md.
+logging:
+  structured:
+    format:
+      console: ecs
+
 # Read only after a restore, with REAPPLY_ERASURES=true. A release needs none of it.
 idp:
   erasures:

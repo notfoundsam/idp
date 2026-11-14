@@ -1,0 +1,137 @@
+{
+  "uid": "idp-overview",
+  "title": "IdP overview",
+  "description": "Failed logins, refusals, failures, the outbox, certificates and load tests. The alerts of dev-tools/lgtm/alerts.yaml watch the same queries.",
+  "tags": ["idp"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    { "type": "row", "title": "Logins", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1, "panels": [] },
+    {
+      "type": "timeseries",
+      "title": "Failed logins per minute, by factor",
+      "id": 2,
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (factor) (rate(idp_login_failures_total[$__rate_interval])) * 60", "legendFormat": "{{factor}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Throttle refusals per minute",
+      "description": "Lines of the logger idp.security with event=throttle.rejected, from the bus and the SAML filter.",
+      "id": 3,
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "sum(count_over_time({service_name=\"app\"} |= \"event=throttle.rejected\" [1m]))", "legendFormat": "refused" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Valkey failures",
+      "description": "Throttle fails open while Valkey is down, so this is the only sign that the limits are off.",
+      "id": 4,
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service_name) (increase(idp_throttle_failures_total[$__rate_interval]))", "legendFormat": "{{service_name}}" }
+      ]
+    },
+    { "type": "row", "title": "Failures", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "id": 5, "panels": [] },
+    {
+      "type": "timeseries",
+      "title": "Unexpected failures, by source and TLS",
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name, source, tls) (increase(idp_failures_total[$__rate_interval]))",
+          "legendFormat": "{{service_name}} {{source}} tls={{tls}}"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Errors",
+      "id": 7,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "targets": [{ "refId": "A", "expr": "{service_name=~\"app|worker|ops\"} | severity_text=\"ERROR\"" }]
+    },
+    { "type": "row", "title": "Background work", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }, "id": 8, "panels": [] },
+    {
+      "type": "timeseries",
+      "title": "Outbox lag past available_at",
+      "id": 9,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "max(idp_outbox_lag_seconds)", "legendFormat": "lag" }]
+    },
+    {
+      "type": "stat",
+      "title": "Dead outbox events",
+      "id": 10,
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } },
+        "overrides": []
+      },
+      "targets": [{ "refId": "A", "expr": "max(idp_outbox_dead)" }]
+    },
+    {
+      "type": "stat",
+      "title": "Days until a signing certificate expires",
+      "id": 11,
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 30 }, { "color": "green", "value": 90 }]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [{ "refId": "A", "expr": "(min(idp_saml_certificate_expiry_seconds) - time()) / 86400" }]
+    },
+    { "type": "row", "title": "Load tests", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }, "id": 12, "panels": [] },
+    {
+      "type": "timeseries",
+      "title": "k6 requests per second, by status",
+      "id": 13,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (testid, status) (rate(k6_http_reqs_total[$__rate_interval]))", "legendFormat": "{{testid}} {{status}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "k6 request duration, 95th percentile",
+      "id": 14,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, testid, name) (rate(k6_http_req_duration_milliseconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{testid}} {{name}}"
+        }
+      ]
+    }
+  ]
+}

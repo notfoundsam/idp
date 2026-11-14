@@ -22,6 +22,13 @@ class CsrfCookieTest :
             attributes.drop(1).shouldContainExactlyInAnyOrder("Path=/", "Secure", "SameSite=Strict")
         }
 
+        test("clearing keeps the attributes, because a browser matches a __Host- cookie by them") {
+            val attributes = CsrfCookie.clear().split("; ")
+
+            attributes.first() shouldBe "${CsrfCookie.NAME}="
+            attributes.drop(1).shouldContainExactlyInAnyOrder("Path=/", "Secure", "SameSite=Strict", "Max-Age=0")
+        }
+
         test("the token comes from the session alone, so it survives a restart and needs no storage") {
             CsrfCookie.tokenFor(SESSION) shouldBe CsrfCookie.tokenFor(SESSION)
         }

@@ -80,11 +80,23 @@ internal class Sessions {
         return revoke(dsl, SSO_SESSIONS.ID.`in`(overflow), now)
     }
 
+    /** The ones seen last first. A session past a timeout is not revoked, so the caller still checks the policy. */
+    fun notRevokedOfUser(
+        dsl: DSLContext,
+        userId: UUID,
+    ): List<SsoSession> =
+        dsl
+            .selectFrom(SSO_SESSIONS)
+            .where(SSO_SESSIONS.USER_ID.eq(userId), SSO_SESSIONS.REVOKED_AT.isNull)
+            .orderBy(SSO_SESSIONS.LAST_SEEN_AT.desc(), SSO_SESSIONS.ID)
+            .fetch(::toSession)
+
     fun revokeOfUser(
         dsl: DSLContext,
         userId: UUID,
         now: Instant,
-    ): Int = revoke(dsl, SSO_SESSIONS.USER_ID.eq(userId), now)
+        kept: UUID? = null,
+    ): Int = revoke(dsl, SSO_SESSIONS.USER_ID.eq(userId).and(kept?.let { SSO_SESSIONS.ID.ne(it) } ?: DSL.noCondition()), now)
 
     fun revokeAll(
         dsl: DSLContext,

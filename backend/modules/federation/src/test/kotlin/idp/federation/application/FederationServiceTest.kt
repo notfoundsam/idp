@@ -14,6 +14,7 @@ import idp.identity.application.UserNotFound
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.FieldDecryptionException
+import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.tenant.TenantContext
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -246,6 +247,26 @@ class FederationServiceTest :
                     audit.of("saml.key_rotation_completed").shouldBeEmpty()
                 }
             }
+
+            test("shows the keys in the order of metadata, the next one marked") {
+                Federation().run {
+                    val tenant = tenant()
+                    val active = tenant.acting { signingKeys() }.single()
+                    active.next shouldBe false
+
+                    val next = tenant.acting { startKeyRotation(ADMIN) }
+
+                    val keys = tenant.acting { signingKeys() }
+                    keys.map { it.id } shouldBe listOf(active.id, next)
+                    keys.map { it.next } shouldBe listOf(false, true)
+                    keys.map { it.certificate } shouldBe certificatesOf(tenant.acting { metadata() }.shouldNotBeNull())
+                    tenant.acting { completeKeyRotation(ADMIN) }
+                    tenant.acting { signingKeys() }.single().run {
+                        id shouldBe next
+                        this.next shouldBe false
+                    }
+                }
+            }
         }
 
         context("registering a Service Provider") {
@@ -415,6 +436,35 @@ class FederationServiceTest :
                     shouldThrow<ServiceProviderNotFound> {
                         tenant.acting { changeSettings(UUID.randomUUID(), SpSettings(NameIdFormat.EMAIL), ADMIN) }
                     }
+                }
+            }
+
+            test("saved with the version read answer the next one") {
+                Federation().run {
+                    val tenant = tenant()
+                    val id = tenant.register()
+
+                    tenant.acting { changeSettings(id, SpSettings(NameIdFormat.EMAIL), ADMIN, version = 0) } shouldBe 1
+                    tenant.acting { changeSettings(id, SpSettings(NameIdFormat.EMAIL), ADMIN, version = 1) } shouldBe 1
+                    tenant.acting { serviceProvider(id) }.shouldNotBeNull().version shouldBe 1
+                }
+            }
+
+            test("saved with a version that is no longer current change nothing, even when they are the same") {
+                Federation().run {
+                    val tenant = tenant()
+                    val id = tenant.register()
+                    tenant.acting { changeSettings(id, SpSettings(NameIdFormat.EMAIL), ADMIN, version = 0) }
+
+                    shouldThrow<VersionConflictException> {
+                        tenant.acting { changeSettings(id, SpSettings(signedPart = SignedPart.BOTH), ADMIN, version = 0) }
+                    }
+                    shouldThrow<VersionConflictException> {
+                        tenant.acting { changeSettings(id, SpSettings(NameIdFormat.EMAIL), ADMIN, version = 0) }
+                    }
+
+                    tenant.acting { serviceProvider(id) }.shouldNotBeNull().settings shouldBe SpSettings(NameIdFormat.EMAIL)
+                    audit.of("sp.settings_changed") shouldHaveSize 1
                 }
             }
         }
@@ -593,6 +643,47 @@ class FederationServiceTest :
             test("of a missing SP fails") {
                 Federation().run {
                     shouldThrow<ServiceProviderNotFound> { tenant().acting { removeServiceProvider(UUID.randomUUID(), ADMIN) } }
+                }
+            }
+
+            test("of an SP the platform manages, or a change of its settings, is refused to an admin and left to the system") {
+                Federation().run {
+                    val tenant = tenant()
+                    val managed =
+                        tenant.acting {
+                            registerServiceProvider("ops", spMetadata().toByteArray(), Actor.System, managed = true)
+                        }
+                    val own = tenant.register(spMetadata(entityId = "https://crm.example/saml"))
+                    audit.changes.clear()
+
+                    shouldThrow<ServiceProviderManaged> { tenant.acting { removeServiceProvider(managed, ADMIN) } }
+                    shouldThrow<ServiceProviderManaged> {
+                        tenant.acting { changeSettings(managed, SpSettings(nameIdFormat = NameIdFormat.PERSISTENT), ADMIN) }
+                    }
+                    tenant.acting { serviceProvider(managed) }.shouldNotBeNull()
+                    audit.changes.shouldBeEmpty()
+
+                    tenant.acting { changeSettings(managed, SpSettings(nameIdFormat = NameIdFormat.EMAIL), Actor.System) }
+                    tenant.acting { removeServiceProvider(own, ADMIN) }
+                    tenant.acting { removeServiceProvider(managed, Actor.System) }
+                    tenant.acting { serviceProvider(managed) }.shouldBeNull()
+                }
+            }
+
+            test("of an SP the system flags as managed later is refused to an admin, and the flag is left to the system") {
+                Federation().run {
+                    val tenant = tenant()
+                    val sp = tenant.register()
+                    audit.changes.clear()
+
+                    shouldThrow<IllegalStateException> { tenant.acting { manageServiceProvider(sp, ADMIN) } }
+                    shouldThrow<ServiceProviderNotFound> { tenant.acting { manageServiceProvider(UUID.randomUUID(), Actor.System) } }
+                    tenant.acting { manageServiceProvider(sp, Actor.System) }
+                    tenant.acting { manageServiceProvider(sp, Actor.System) }
+
+                    shouldThrow<ServiceProviderManaged> { tenant.acting { removeServiceProvider(sp, ADMIN) } }
+                    tenant.acting { serviceProvider(sp) }.shouldNotBeNull()
+                    audit.changes.shouldBeEmpty()
                 }
             }
 

@@ -109,7 +109,7 @@ services:
       - traefik.http.services.mail.loadbalancer.server.port=8025
 
   simplesamlphp:
-    image: cirrusid/simplesamlphp:v2.5.3.1
+    image: cirrusid/simplesamlphp:v2.5.3.1.20261023T014150
     environment:
       SSP_ADMIN_PASSWORD: admin
       SSP_SECRET_SALT: local-development-only
@@ -174,18 +174,19 @@ services:
 
   role-passwords:
     image: postgres:18.6-alpine3.24
-    entrypoint: ["sh", "/set-role-passwords.sh"]
+    entrypoint: ["sh", "/set-role-passwords.sh", "app_runtime", "worker_runtime", "ops_runtime", "provisioner"]
     environment:
       PGHOST: postgres
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: idp
+      PGSSLMODE: disable
       APP_RUNTIME_PASSWORD: app_runtime
       WORKER_RUNTIME_PASSWORD: worker_runtime
       OPS_RUNTIME_PASSWORD: ops_runtime
       PROVISIONER_PASSWORD: provisioner
     volumes:
-      - ./dev-tools/set-role-passwords.sh:/set-role-passwords.sh:ro
+      - ./infra/db-bootstrap/set-role-passwords.sh:/set-role-passwords.sh:ro
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -195,12 +196,16 @@ services:
     environment:
       <<: *otel-environment
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      # Traefik terminates TLS locally. In AWS both ports serve the certificate of the internal CA.
+      SERVER_TLS_ENABLED: "false"
       # Without server-side prepared statements, because PgBouncer shares connections between clients.
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: app_runtime
       DB_PASSWORD: app_runtime
       VALKEY_URL: redis://valkey:6379
       THROTTLE_IP_HMAC_KEY: local-throttle-key
+      # Every local request comes from the one address below, the e2e tests included. THROTTLE_MULTIPLIER=1 restores the real limits.
+      THROTTLE_MULTIPLIER: ${THROTTLE_MULTIPLIER:-100}
       CLIENT_IP_HEADER: CloudFront-Viewer-Address
       KMS_NEW_KEYS: hcvault
       OPENBAO_ADDRESS: http://openbao:8200
@@ -265,6 +270,8 @@ services:
       JAVA_TOOL_OPTIONS: -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
       # The CLI names its caller local-operator instead of asking IAM. The API needs a SAML login through ops-sso either way.
       SPRING_PROFILES_ACTIVE: local
+      # Traefik terminates TLS locally. In AWS both ports serve the certificate of the internal CA.
+      SERVER_TLS_ENABLED: "false"
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: ops_runtime
       DB_PASSWORD: ops_runtime
@@ -316,17 +323,165 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - idp-lgtm:/data
+      - ./dev-tools/lgtm/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/idp.yaml:ro
+      - ./dev-tools/lgtm/dashboards:/idp/dashboards:ro
+      - ./dev-tools/lgtm/alerts.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/idp.yaml:ro
 
+  # Load scenarios of dev-tools/k6, see dev-tools/README.md. Their metrics go to LGTM, so `make load` needs `make up-observability`.
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: [load]
+    working_dir: /scripts
+    environment:
+      # Go reads the CA of mkcert from here, so the tenants are trusted as in a browser of a developer.
+      SSL_CERT_FILE: /certs/rootCA.pem
+      K6_NO_USAGE_REPORT: "true"
+      K6_OTEL_EXPORTER_PROTOCOL: http/protobuf
+      K6_OTEL_HTTP_EXPORTER_ENDPOINT: lgtm:4318
+      K6_OTEL_HTTP_EXPORTER_INSECURE: "true"
+      K6_OTEL_FLUSH_INTERVAL: 1s
+      K6_OTEL_EXPORT_INTERVAL: 5s
+      K6_OTEL_SERVICE_NAME: k6
+      K6_OTEL_METRIC_PREFIX: k6_
+    extra_hosts:
+      - acme.idp.test:host-gateway
+      - globex.idp.test:host-gateway
+      - sp.idp.test:host-gateway
+    volumes:
+      - ./dev-tools/k6:/scripts:ro
+      - ./dev-tools/certs:/certs:ro
+
+  # `make lint-infra` formats, validates and lints infra/terraform with them. Neither talks to AWS.
+  terraform:
+    image: hashicorp/terraform:1.16.7
+    profiles: [infra]
+    working_dir: /repo/infra/terraform
+    volumes:
+      - .:/repo
+
+  # `make lint-infra` checks the workflows with it, the shell of their steps through its shellcheck.
+  actionlint:
+    image: rhysd/actionlint:1.7.12
+    profiles: [infra]
+    working_dir: /repo
+    volumes:
+      - .:/repo:ro
+
+  tflint:
+    image: ghcr.io/terraform-linters/tflint:v0.65.0
+    profiles: [infra]
+    working_dir: /repo/infra/terraform
+    environment:
+      # Downloads the AWS ruleset from GitHub, which limits anonymous calls.
+      GITHUB_TOKEN:
+    volumes:
+      - .:/repo
+      - idp-tflint-plugins:/root/.tflint.d
+
+  # Builds the apps into idp-web on every change. `make` runs its other commands in one-off containers of the same service.
   frontend:
     image: node:24.22.2-alpine
-    profiles: [tools]
     working_dir: /app/frontend
+    command:
+      - sh
+      - -c
+      - corepack pnpm install --frozen-lockfile && WEB_OUT_DIR=/srv/web exec corepack pnpm -r --parallel --if-present build:watch
     environment:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /srv/web/login/index.html && test -f /srv/web/console/index.html"]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+    volumes:
+      - ./frontend:/app/frontend
+      - ./contracts:/app/contracts:ro
+      - ./infra/web:/app/infra/web:ro
+      - ./infra/deploy:/app/infra/deploy:ro
+      - idp-frontend-node-modules:/app/frontend/node_modules
+      - idp-corepack-cache:/root/.cache/node/corepack
+      - idp-web:/srv/web
+
+  # The browsers of the image belong to one Playwright version, the one of @playwright/test in frontend/e2e. The tenants resolve to
+  # Traefik on the host, as in a browser of a developer.
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    profiles: [e2e]
+    working_dir: /app/frontend/e2e
+    entrypoint: ["node", "node_modules/@playwright/test/cli.js"]
+    command: ["test"]
+    ipc: host
+    environment:
+      CI:
+      CERTS_DIR: /certs
+      NODE_EXTRA_CA_CERTS: /certs/rootCA.pem
+      SAML_METADATA_DIR: /saml-metadata
+    extra_hosts:
+      - acme.idp.test:host-gateway
+      - globex.idp.test:host-gateway
+      - ops.idp.test:host-gateway
+      - ops-sso.idp.test:host-gateway
+      - mail.idp.test:host-gateway
+      - sp.idp.test:host-gateway
     volumes:
       - ./frontend:/app/frontend
       - idp-frontend-node-modules:/app/frontend/node_modules
-      - idp-corepack-cache:/root/.cache/node/corepack
+      - ./dev-tools/certs:/certs:ro
+      # A test that rotates the signing key of acme hands SimpleSAMLphp the new metadata, as fetch-idp-metadata.sh does.
+      - ./dev-tools/simplesamlphp/metadata:/saml-metadata
+
+  # The smoke test of a release and the setup of its synthetic tenant against the local environment, see dev-tools/README.md.
+  release-smoke:
+    image: node:24.22.2-alpine
+    profiles: [release]
+    working_dir: /repo
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/rootCA.pem
+      SMOKE_LOGIN:
+    extra_hosts:
+      - release-smoke.idp.test:host-gateway
+      - mail.idp.test:host-gateway
+    volumes:
+      - ./infra/deploy:/repo/infra/deploy:ro
+      - ./dev-tools:/repo/dev-tools
+      - ./dev-tools/certs:/certs:ro
+
+  # Matches the SBOMs of a release with known vulnerabilities, see docs/security/dependencies.md. The database is downloaded once a
+  # day into its volume.
+  trivy:
+    image: aquasec/trivy:0.76.1
+    profiles: [release]
+    working_dir: /repo
+    environment:
+      TRIVY_CACHE_DIR: /cache
+    volumes:
+      - ./build/sbom:/repo/build/sbom
+      - idp-trivy-cache:/cache
+
+  nginx-config:
+    image: node:24.22.2-alpine
+    command: ["node", "/infra/web/render-nginx.mjs", "/etc/nginx/conf.d/default.conf"]
+    volumes:
+      - ./infra/web:/infra/web:ro
+      - idp-nginx-config:/etc/nginx/conf.d
+
+  # Stands in for S3 behind CloudFront: the same headers, caching and SPA fallback.
+  nginx:
+    image: nginx:1.30.6-alpine3.24
+    volumes:
+      - idp-web:/usr/share/nginx/html:ro
+      - idp-nginx-config:/etc/nginx/conf.d:ro
+    depends_on:
+      nginx-config:
+        condition: service_completed_successfully
+      frontend:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=HostRegexp(`^[a-z0-9-]+\.idp\.test$`) && (Path(`/`) || PathPrefix(`/login`) || PathPrefix(`/console`) || Path(`/invite`) || Path(`/reset-password`) || Path(`/confirm-email`))
+      # Below the hosts of the tools and ops, whose routers take every path.
+      - traefik.http.routers.web.priority=10
+      - traefik.http.services.web.loadbalancer.server.port=80
 
 volumes:
   idp-postgres:
@@ -336,3 +491,7 @@ volumes:
   idp-lgtm:
   idp-frontend-node-modules:
   idp-corepack-cache:
+  idp-web:
+  idp-nginx-config:
+  idp-tflint-plugins:
+  idp-trivy-cache:

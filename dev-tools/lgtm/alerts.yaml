@@ -1,0 +1,190 @@
+# The alerts of docs/security/logging.md, on the queries of the IdP overview dashboard. Thresholds are local guesses: staging sets the
+# real ones. Locally they only fire in Grafana, nothing is sent anywhere. infra/terraform/modules/alarms holds the same alerts for
+# AWS, so a change here goes there too.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: idp
+    folder: IdP
+    interval: 1m
+    rules:
+      - uid: idp-unexpected-failures
+        title: Unexpected failures
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: A request, an outbox event or a job failed in a way no code handles. The line event=failure names the causes.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'sum by (service_name, source) (increase(idp_failures_total{tls="false"}[5m]))' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+
+      - uid: idp-backend-tls-failures
+        title: TLS failures to a backend
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: A connection to Postgres, Valkey, the KMS or SMTP failed in TLS. A certificate, a proxy or an endpoint changed.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'sum by (service_name, source) (increase(idp_failures_total{tls="true"}[5m]))' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+
+      - uid: idp-valkey-failures
+        title: Valkey failures, rate limits are off
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: Throttle fails open while Valkey fails, so only the counters in Postgres still hold.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'sum(increase(idp_throttle_failures_total[5m]))' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+
+      - uid: idp-failed-logins
+        title: Many failed logins
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: More than 100 failed logins a minute over all tenants. The journal of each tenant names the users.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'sum(rate(idp_login_failures_total[5m])) * 60' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [100] } }]
+
+      - uid: idp-throttle-refusals
+        title: Many throttle refusals
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: More than 300 refusals in 5 minutes in the log of security events. The lines name the scope, the dimension and the tenant.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: loki
+            queryType: instant
+            model:
+              refId: A
+              queryType: instant
+              expr: 'sum(count_over_time({service_name="app"} |= "event=throttle.rejected" [5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [300] } }]
+
+      - uid: idp-outbox-lag
+        title: Outbox events overdue
+        condition: C
+        for: 5m
+        noDataState: Alerting
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: A pending event waits more than 5 minutes past its available_at. No worker runs, or one died holding claims.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'max(idp_outbox_lag_seconds)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [300] } }]
+
+      - uid: idp-outbox-dead
+        title: Dead outbox events
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: An event ran out of attempts and needs a person, see the lines "is dead" of worker.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'max(idp_outbox_dead)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+
+      - uid: idp-certificate-expiry
+        title: A signing certificate expires within 30 days
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: SPs that check the dates will refuse the responses. Rotate the signing key of the tenant.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: '(min(idp_saml_certificate_expiry_seconds) - time()) / 86400' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: lt, params: [30] } }]

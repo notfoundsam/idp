@@ -1,0 +1,46 @@
+# Rendered by render-nginx.mjs with the types of content-types.mjs. nginx drops inherited add_header lines in a block that sets its own, so such a block repeats them.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    server_tokens off;
+    autoindex off;
+    absolute_redirect off;
+    charset utf-8;
+    {{content_types}}
+
+    {{security_headers}}
+
+    location = / {
+        return 302 /console/;
+    }
+
+    location ~ ^/(login|console)$ {
+        return 301 /$1/;
+    }
+
+    # A missing chunk is a 404, not the page, so an open tab of an old release learns that it has to reload.
+    location ~ ^/(login|console)/assets/ {
+        {{security_headers}}
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    location ~ ^/(login|console)/ {
+        {{security_headers}}
+        add_header Cache-Control "no-cache";
+        try_files $uri /$1/index.html =404;
+    }
+
+    # Links in mails, kept short. The login app serves them, and the token stays in the fragment.
+    location ~ ^/(invite|reset-password|confirm-email)$ {
+        {{security_headers}}
+        add_header Cache-Control "no-cache";
+        try_files /login/index.html =404;
+    }
+
+    location / {
+        return 404;
+    }
+}

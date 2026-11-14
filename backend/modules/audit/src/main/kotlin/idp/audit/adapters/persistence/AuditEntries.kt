@@ -37,14 +37,17 @@ internal class AuditEntries {
         dsl: DSLContext,
         limit: Int,
         before: AuditCursor?,
+        target: AuditTarget?,
     ): List<AuditEntry> {
         val position =
             before?.let {
                 DSL.row(AUDIT_ENTRIES.OCCURRED_AT, AUDIT_ENTRIES.ID).lessThan(it.occurredAt.atOffset(ZoneOffset.UTC), it.id)
             }
+        val about = target?.let { AUDIT_ENTRIES.TARGET_TYPE.eq(it.type).and(AUDIT_ENTRIES.TARGET_ID.eq(it.id)) }
         return dsl
             .selectFrom(AUDIT_ENTRIES)
             .where(position ?: DSL.noCondition())
+            .and(about ?: DSL.noCondition())
             .orderBy(AUDIT_ENTRIES.OCCURRED_AT.desc(), AUDIT_ENTRIES.ID.desc())
             .limit(limit)
             .fetch(::toEntry)

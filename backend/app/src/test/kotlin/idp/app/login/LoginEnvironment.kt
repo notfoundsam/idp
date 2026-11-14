@@ -22,6 +22,7 @@ import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.jdbc.core.JdbcTemplate
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
+import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -93,6 +94,7 @@ class LoginEnvironment {
         SpringApplication(AppApplication::class.java, *sources).run(
             "--server.port=0",
             "--management.server.port=0",
+            "--SERVER_TLS_ENABLED=false",
             "--spring.datasource.url=${database.pooledUrl()}",
             "--spring.datasource.username=app_runtime",
             "--spring.datasource.password=app_runtime",
@@ -148,10 +150,11 @@ class Reply(
     fun cookies(): List<String> = response.headers().allValues("Set-Cookie")
 }
 
-/** Keeps cookies and echoes the CSRF cookie the way the page does. Each instance is one browser. */
+/** Keeps cookies and echoes the CSRF cookie the way the page does. Each instance is one browser. [defaultHeaders] go with every request. */
 class Browser(
     private val application: ConfigurableApplicationContext,
     val host: String = ACME,
+    private val defaultHeaders: List<String> = emptyList(),
 ) {
     val cookies: MutableMap<String, String> = ConcurrentHashMap()
     private val http = HttpClient.newHttpClient()
@@ -172,6 +175,15 @@ class Browser(
         return send(request.POST(body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody()))
     }
 
+    fun delete(
+        path: String,
+        echoCsrf: Boolean = true,
+    ): Reply {
+        val request = request(path)
+        if (echoCsrf) cookies[CsrfCookie.NAME]?.let { request.header(CsrfCookie.HEADER, it) }
+        return send(request.DELETE())
+    }
+
     /** A form as an SP page posts it, so no CSRF header and no JSON. */
     fun form(
         path: String,
@@ -185,6 +197,17 @@ class Browser(
         vararg headers: String,
     ) = send(request(path, *headers).header("Content-Type", "application/json").method(method, publisher))
 
+    /** A form with files, as `FormData` of a page sends it, with the CSRF token echoed. */
+    fun multipart(
+        path: String,
+        form: MultipartForm,
+        echoCsrf: Boolean = true,
+    ): Reply {
+        val request = request(path).header("Content-Type", form.contentType)
+        if (echoCsrf) cookies[CsrfCookie.NAME]?.let { request.header(CsrfCookie.HEADER, it) }
+        return send(request.POST(HttpRequest.BodyPublishers.ofByteArray(form.body())))
+    }
+
     private fun request(
         path: String,
         vararg headers: String,
@@ -196,7 +219,7 @@ class Browser(
                 .header("Host", host)
                 .header("User-Agent", USER_AGENT)
                 .timeout(REQUEST_TIMEOUT)
-        headers.toList().chunked(2).forEach { (name, value) -> request.header(name, value) }
+        (defaultHeaders + headers).chunked(2).forEach { (name, value) -> request.header(name, value) }
         if (cookies.isNotEmpty()) request.header("Cookie", cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" })
         return request
     }
@@ -237,6 +260,40 @@ class Browser(
     }
 }
 
+/** The parts of a `multipart/form-data` body, written by hand so a test can name any file name. */
+class MultipartForm {
+    private val boundary = "----idp-test-${UUID.randomUUID()}"
+    private val out = ByteArrayOutputStream()
+
+    val contentType: String get() = "multipart/form-data; boundary=$boundary"
+
+    fun field(
+        name: String,
+        value: String,
+    ) = apply { part("""form-data; name="$name"""", null, value.toByteArray()) }
+
+    fun file(
+        name: String,
+        fileName: String,
+        content: ByteArray,
+        type: String = "text/xml",
+    ) = apply { part("""form-data; name="$name"; filename="$fileName"""", type, content) }
+
+    fun body(): ByteArray = out.toByteArray() + "--$boundary--\r\n".toByteArray()
+
+    private fun part(
+        disposition: String,
+        type: String?,
+        content: ByteArray,
+    ) {
+        out.write("--$boundary\r\nContent-Disposition: $disposition\r\n".toByteArray())
+        type?.let { out.write("Content-Type: $it\r\n".toByteArray()) }
+        out.write("\r\n".toByteArray())
+        out.write(content)
+        out.write("\r\n".toByteArray())
+    }
+}
+
 fun loginBody(login: String) = """{"login":"$login"}"""
 
 fun passwordBody(password: String) = """{"password":"$password"}"""
@@ -256,7 +313,7 @@ fun JsonNode.text(name: String): String = get(name).asString()
 
 fun JsonNode.strings(name: String): List<String> = get(name).values().map { it.asString() }
 
-private fun decodeBase32(value: String): ByteArray {
+fun decodeBase32(value: String): ByteArray {
     var buffer = 0
     var bits = 0
     val bytes = mutableListOf<Byte>()

@@ -21,6 +21,7 @@ import idp.sharedkernel.security.SecurityContext
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantTransaction
+import idp.sharedkernel.testing.TestCa
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestOpenBao
 import idp.sharedkernel.testing.TestValkey
@@ -54,6 +55,11 @@ private const val HOST = "acme.idp.test"
 private const val LIMIT = 2
 private const val VIEWER_HEADER = "CloudFront-Viewer-Address"
 private const val DEAD_VALKEY = "redis://127.0.0.1:1"
+private const val TLS_VALKEY = "rediss://127.0.0.1:1"
+private const val PROD = "--spring.profiles.active=prod"
+private const val STAGING = "--spring.profiles.active=staging"
+private const val PASSWORD = "--VALKEY_PASSWORD=valkey-secret"
+private const val EDGE = "--CLIENT_IP_HEADER=$VIEWER_HEADER"
 private val READ = Permission("read")
 
 private class Ping : Query<String> {
@@ -108,6 +114,10 @@ class ThrottleApplicationTest :
     FunSpec({
         val database = TestDatabase.migrated()
         val owner = database.owner()
+        val valkeyCa = TestCa("Test ElastiCache CA").pem
+        // The deployed profiles refuse a server without TLS.
+        val serverCa = TestCa("Test internal CA")
+        val (serverCertificate, serverKey) = serverCa.issue("localhost")
 
         // Not from the pool: limits are counted per tenant in a Valkey that outlives this spec.
         val tenant: UUID = UUID.randomUUID()
@@ -128,15 +138,18 @@ class ThrottleApplicationTest :
         fun start(
             vararg overrides: String,
             valkey: String = TestValkey.shared.url,
+            ipHmacKey: String = UUID.randomUUID().toString(),
         ): ConfigurableApplicationContext =
             SpringApplication(AppApplication::class.java, ProbeMessages::class.java, ProbeEndpoints::class.java).run(
                 "--server.port=0",
                 "--management.server.port=0",
+                "--SERVER_TLS_CERT=$serverCertificate",
+                "--SERVER_TLS_KEY=$serverKey",
                 "--spring.datasource.url=${database.url}",
                 "--spring.datasource.username=app_runtime",
                 "--spring.datasource.password=app_runtime",
                 "--VALKEY_URL=$valkey",
-                "--THROTTLE_IP_HMAC_KEY=${UUID.randomUUID()}",
+                "--THROTTLE_IP_HMAC_KEY=$ipHmacKey",
                 "--KMS_NEW_KEYS=hcvault",
                 "--OPENBAO_ADDRESS=${TestOpenBao.address}",
                 "--OPENBAO_TOKEN=${TestOpenBao.TOKEN}",
@@ -151,9 +164,13 @@ class ThrottleApplicationTest :
             vararg headers: String,
             port: String? = environment.getProperty("local.server.port"),
         ): HttpResponse<String> {
-            val request = HttpRequest.newBuilder(URI("http://localhost:$port$path")).header("Host", HOST)
+            val request = HttpRequest.newBuilder(URI("https://localhost:$port$path")).header("Host", HOST)
             headers.toList().chunked(2).forEach { (name, value) -> request.header(name, value) }
-            return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString())
+            return HttpClient
+                .newBuilder()
+                .sslContext(serverCa.trust())
+                .build()
+                .send(request.build(), HttpResponse.BodyHandlers.ofString())
         }
 
         fun ConfigurableApplicationContext.management(path: String) = get(path, port = environment.getProperty("local.management.port"))
@@ -215,15 +232,117 @@ class ThrottleApplicationTest :
         }
 
         test("the prod profile refuses THROTTLE_ENABLED=false") {
-            val failure = shouldThrow<Exception> { start("--spring.profiles.active=prod", "--THROTTLE_ENABLED=false") }
+            val failure = shouldThrow<Exception> { start(PROD, "--THROTTLE_ENABLED=false") }
 
             NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_ENABLED=false"
         }
 
-        test("the prod profile starts with limits on") {
-            start("--spring.profiles.active=prod").use { application ->
+        test("THROTTLE_MULTIPLIER raises the limits, which still hold") {
+            start("--THROTTLE_MULTIPLIER=2").use { application ->
+                repeat(LIMIT * 2) { application.get("/probe/ping").statusCode() shouldBe 200 }
+
+                application.get("/probe/ping").statusCode() shouldBe 429
+            }
+        }
+
+        test("the prod profile refuses THROTTLE_MULTIPLIER") {
+            val failure = shouldThrow<Exception> { start(PROD, "--THROTTLE_MULTIPLIER=100") }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_MULTIPLIER=100"
+        }
+
+        test("the prod profile starts with limits on, Valkey over TLS with a password and the address from the edge") {
+            start(PROD, PASSWORD, EDGE, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY).use { application ->
+                application.getBean(ThrottleDecorator::class.java).shouldNotBeNull()
+
+                val response = application.get("/probe/ip", VIEWER_HEADER, "[2001:db8::7]:50000", "X-Forwarded-For", "198.51.100.9")
+                response.body() shouldBe "2001:db8:0:0:0:0:0:7"
+            }
+        }
+
+        test("the prod profile refuses to start without CLIENT_IP_HEADER") {
+            val failure = shouldThrow<Exception> { start(PROD, PASSWORD, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY) }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "empty CLIENT_IP_HEADER"
+        }
+
+        test("the prod profile refuses a CLIENT_IP_HEADER that a proxy appends to") {
+            listOf("X-Forwarded-For", "forwarded").forEach { header ->
+                val failure =
+                    shouldThrow<Exception> {
+                        start(PROD, PASSWORD, "--CLIENT_IP_HEADER=$header", "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY)
+                    }
+
+                NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "CLIENT_IP_HEADER=$header"
+            }
+        }
+
+        test("the prod profile refuses a VALKEY_URL without TLS") {
+            val failure = shouldThrow<Exception> { start(PROD, PASSWORD) }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "VALKEY_URL without TLS"
+        }
+
+        test("the prod profile refuses Valkey without a password") {
+            val failure = shouldThrow<Exception> { start(PROD, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY) }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "empty VALKEY_PASSWORD"
+        }
+
+        test("the prod profile refuses the short HMAC key of the local environment") {
+            val failure =
+                shouldThrow<Exception> {
+                    start(PROD, PASSWORD, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY, ipHmacKey = "local-throttle-key")
+                }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "THROTTLE_IP_HMAC_KEY shorter"
+        }
+
+        test("the staging profile starts with the limits off for a load test") {
+            val settings = arrayOf(STAGING, PASSWORD, EDGE, "--VALKEY_TLS_CA=$valkeyCa", "--THROTTLE_ENABLED=false")
+            start(*settings, valkey = TLS_VALKEY).use { application ->
+                application.getBeansOfType(ThrottleDecorator::class.java).shouldBeEmpty()
+
+                repeat(LIMIT + 1) { application.get("/probe/ping").statusCode() shouldBe 200 }
+            }
+        }
+
+        test("the staging profile starts with limits on like the prod one") {
+            start(STAGING, PASSWORD, EDGE, "--VALKEY_TLS_CA=$valkeyCa", valkey = TLS_VALKEY).use { application ->
                 application.getBean(ThrottleDecorator::class.java).shouldNotBeNull()
             }
+        }
+
+        test("the staging profile refuses THROTTLE_MULTIPLIER") {
+            val failure = shouldThrow<Exception> { start(STAGING, "--THROTTLE_MULTIPLIER=100") }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain
+                "THROTTLE_MULTIPLIER=100 is refused in the staging profile"
+        }
+
+        test("the staging profile keeps the checks of the deployment with the limits off") {
+            val settings = arrayOf(STAGING, "--THROTTLE_ENABLED=false", "--VALKEY_TLS_CA=$valkeyCa")
+            val failures =
+                listOf(
+                    shouldThrow<Exception> { start(*settings, PASSWORD, EDGE) } to "VALKEY_URL without TLS",
+                    shouldThrow<Exception> { start(*settings, EDGE, valkey = TLS_VALKEY) } to "empty VALKEY_PASSWORD",
+                    shouldThrow<Exception> { start(*settings, PASSWORD, valkey = TLS_VALKEY) } to "empty CLIENT_IP_HEADER",
+                    shouldThrow<Exception> {
+                        start(*settings, PASSWORD, EDGE, valkey = TLS_VALKEY, ipHmacKey = "local-throttle-key")
+                    } to "THROTTLE_IP_HMAC_KEY shorter",
+                )
+
+            failures.forEach { (failure, refusal) ->
+                val message = NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull()
+                message shouldContain refusal
+                message shouldContain "staging profile"
+            }
+        }
+
+        test("a rediss:// VALKEY_URL without VALKEY_TLS_CA does not start") {
+            val failure = shouldThrow<Exception> { start(valkey = TLS_VALKEY) }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain "needs VALKEY_TLS_CA"
         }
 
         test("a forged X-Forwarded-For does not change the client address") {

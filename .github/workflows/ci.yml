@@ -37,7 +37,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make lint-frontend
       - run: make test-frontend
+
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make lint-infra
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: make test-infra
+      - run: make test-deploy
+      - run: make check-registries
+
+  # The local environment of dev-tools/README.md, set up on the runner as on a laptop: tenants in /etc/hosts, the mkcert CA trusted.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: corretto
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends mkcert
+      - run: make dns-mapping setup-ssl
+      - run: make up
+      - run: make smoke
+      - run: make test-e2e
+      - if: failure()
+        run: docker compose logs --no-color --tail 300 app worker ops nginx traefik
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: frontend/e2e/playwright-report/
+          retention-days: 7
 
   api-contract:
     if: github.event_name == 'pull_request'
@@ -46,10 +83,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      # Old frontends keep calling the backend, so a contract is compared with the last release, not with main.
+      # Old frontends keep calling the backend, so a contract is compared with the last release, not with main: the one of
+      # production, whose frontends are the oldest, or of staging while production has none, see ADR-007.
       - id: release
         run: |
-          tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          tag=$(git describe --tags --abbrev=0 --match 'release/production/*' 2>/dev/null ||
+            git describe --tags --abbrev=0 --match 'release/staging/*' 2>/dev/null || true)
           if [ -z "$tag" ]; then
             echo "::notice title=oasdiff skipped::No release tag yet, so there is no contract to compare with"
           else
@@ -67,6 +106,18 @@ jobs:
         with:
           base: .release/contracts/openapi/auth.yaml
           revision: contracts/openapi/auth.yaml
+          fail-on: ERR
+      - if: steps.release.outputs.tag != '' && hashFiles('.release/contracts/openapi/account.yaml') != ''
+        uses: oasdiff/oasdiff-action/breaking@9e56cf8b3aff7edb326d5767d3d23f96127e20c3 # v0.1.21
+        with:
+          base: .release/contracts/openapi/account.yaml
+          revision: contracts/openapi/account.yaml
+          fail-on: ERR
+      - if: steps.release.outputs.tag != '' && hashFiles('.release/contracts/openapi/admin.yaml') != ''
+        uses: oasdiff/oasdiff-action/breaking@9e56cf8b3aff7edb326d5767d3d23f96127e20c3 # v0.1.21
+        with:
+          base: .release/contracts/openapi/admin.yaml
+          revision: contracts/openapi/admin.yaml
           fail-on: ERR
 
   dependency-review:

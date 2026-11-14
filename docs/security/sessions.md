@@ -15,6 +15,8 @@ Both timeouts come from the tenant policy and are read on every request, so tigh
 
 The default login is multi-factor, so AAL2 is the bar. Both defaults stay within it. The absolute timeout also meets AAL3 and covers a working day, so people log in about once a day. The idle timeout is half the AAL2 limit, because a workforce IdP is often left open on a shared desk. It is deliberately above the 15 minutes of AAL3, which would interrupt anyone reading a long page in an SP.
 
+A tenant admin may change both, but only within AAL2: the idle timeout from 5 minutes to 1 hour, and the absolute timeout from the idle one to 24 hours. Longer values would take the tenant outside the Level 2 claim, so the policy refuses them. The idle timeout cannot go below 5 minutes, because the last seen time moves once a minute and a shorter one would end sessions in use, the admin's own too. A change needs a login at most 10 minutes old and is audited with the new values.
+
 After the absolute timeout the user logs in with all required factors. After the idle timeout the same happens: no shortcut with a single factor exists.
 
 The last seen time is written at most once a minute, so a busy session does not write on every request. The idle timeout can therefore end up to a minute early, and never late.
@@ -49,6 +51,18 @@ A flow that continues a session does not count: it keeps the login time, so it c
 
 A user holds at most 10 live sessions, roughly one per browser and device. A login beyond that revokes the session seen longest ago and notes this in the `session.opened` audit record. The new login always succeeds, so nobody can lock a user out by filling the limit.
 
+## Logout
+
+Logging out revokes the session on the server, so its token opens nothing even if a copy survives in the browser. The answer clears `__Host-session` and `__Host-csrf` with `Set-Cookie` and sends `Clear-Site-Data: "cache", "storage"`. The header leaves out `"cookies"`, because browsers clear those for the whole registrable domain, and tenants share one, so a logout would empty the cookies of every other tenant in that browser. Logging out is public and answers the same without a live session, so a browser whose session is already gone still clears itself. A live session needs the CSRF token for it like for any other change.
+
+## Sessions in the account
+
+A user sees their live sessions with the time of the login, the last activity, and the IP and User-Agent of the login, opened with the user's key. The current one is marked, and no session of someone else is listed: an id of one reads as missing.
+
+Ending one other session or all of them needs a login at most 10 minutes old, like a change of a factor, so a stolen session cannot end the one of its owner. Ending all of them also ends the logins in progress, like a password reset. The current session ends only by logging out.
+
+After a change of a factor the client offers to end the other sessions. Adding or removing a factor already needed a fresh login, so the offer works at once. A password change needs the current password instead, so it takes `endOtherSessions` and ends them in the same transaction as the new password.
+
 ## Revocation
 
 Revoking joins the caller's transaction: a block or a password reset that rolls back leaves the sessions alone, and one that commits ends them together with the change. A revoked row stays until the hourly cleanup removes it.
@@ -75,7 +89,8 @@ What this means for revoking access:
 | Action of an admin | IdP session | SP sessions already open |
 |---|---|---|
 | Withdrawing an SP assignment | Unchanged | Run on. The next login to that SP is refused |
-| Blocking a user or resetting a password | Revoked at once | Run on until the SP ends them or `SessionNotOnOrAfter` passes |
+| Blocking a user, resetting their MFA or password, or ending their sessions | Revoked at once | Run on until the SP ends them or `SessionNotOnOrAfter` passes |
+| Ending every session of the tenant | Revoked at once, the admin's own too | Run on, as above |
 | Suspending a tenant | Revoked at once, every request refused | Run on, as above |
 
 Removing access at the SP at once needs the SP's own tools until Single Logout or SCIM exists.

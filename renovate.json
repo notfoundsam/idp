@@ -5,9 +5,24 @@
   "labels": ["dependencies"],
   "packageRules": [
     {
+      "description": "A major update gets 90 days instead of 30 before it stops a release, see docs/security/dependencies.md.",
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["major"]
+    },
+    {
       "description": "CodeQL analyzes Kotlin only up to this version. Raise it when CodeQL supports a newer one.",
       "matchPackageNames": ["/^org\\.jetbrains\\.kotlin/"],
       "allowedVersions": "<=2.4.20"
+    },
+    {
+      "description": "The browsers of the Playwright image belong to one version of @playwright/test.",
+      "matchPackageNames": ["@playwright/test", "mcr.microsoft.com/playwright"],
+      "groupName": "playwright"
+    },
+    {
+      "description": "The Terraform image runs the version that every root requires.",
+      "matchPackageNames": ["hashicorp/terraform"],
+      "groupName": "terraform"
     }
   ]
 }

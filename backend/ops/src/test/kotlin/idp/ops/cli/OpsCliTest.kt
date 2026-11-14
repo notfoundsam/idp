@@ -9,6 +9,7 @@ import idp.ops.OpsEnvironment
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
+import idp.sharedkernel.crypto.KeyManagementService
 import idp.sharedkernel.security.AccessDeniedException
 import idp.sharedkernel.security.CallerIdentity
 import idp.sharedkernel.security.Principal
@@ -45,7 +46,9 @@ class OpsCliTest :
         val sql = environment.sql
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
-        val cli = OpsCli(commands, queries, CallerIdentity { IAM_ACTOR }, PrintStream(out), PrintStream(err))
+        val kms = application.getBean(KeyManagementService::class.java)
+        val usePlatformKek: () -> Unit = { kms.wrap(environment.platformKekUri, ByteArray(32)) }
+        val cli = OpsCli(commands, queries, CallerIdentity { IAM_ACTOR }, usePlatformKek, PrintStream(out), PrintStream(err))
 
         afterSpec { application.close() }
 
@@ -210,6 +213,7 @@ class OpsCliTest :
                 listOf("reinvite", "not-an-id", CONTACT),
                 listOf("offboard"),
                 listOf("cancel-offboarding", "not-an-id"),
+                listOf("kms-check", "extra"),
             ).forEach { arguments ->
                 test("'${arguments.joinToString(" ")}' exits with 2 and prints the usage") {
                     cli.run(arguments) shouldBe 2
@@ -222,7 +226,7 @@ class OpsCliTest :
 
         context("identity") {
             test("a failure to prove the actor stops the operation") {
-                val anonymous = OpsCli(commands, queries, { error("STS is down") }, PrintStream(out), PrintStream(err))
+                val anonymous = OpsCli(commands, queries, { error("STS is down") }, usePlatformKek, PrintStream(out), PrintStream(err))
 
                 shouldThrow<IllegalStateException> { anonymous.run(listOf("submit", "Acme", "unproven", CONTACT)) }
 
@@ -244,6 +248,7 @@ class OpsCliTest :
                     other.getBean(CommandBus::class.java),
                     other.getBean(QueryBus::class.java),
                     CallerIdentity { IAM_ACTOR },
+                    {},
                     PrintStream(out),
                     PrintStream(err),
                 )
@@ -281,6 +286,37 @@ class OpsCliTest :
                 err.toString().trim() shouldBe "refused: SubdomainTaken"
                 fresh.events(tenant).shouldHaveSize(2)
                 fresh.sql.queryForObject("SELECT count(*) FROM platform.tenants", Int::class.java) shouldBe 1
+            }
+        }
+
+        context("kms check") {
+            test("encrypts with the platform KEK, without proving an actor or writing to the audit") {
+                val unproven = OpsCli(commands, queries, { error("STS is down") }, usePlatformKek, PrintStream(out), PrintStream(err))
+
+                unproven.run(listOf("kms-check")) shouldBe 0
+
+                printed() shouldBe "platform KEK usable"
+                environment.audit().shouldBeEmpty()
+            }
+
+            test("a KEK the CLI may not use exits with 3 and names the failure alone") {
+                val other = environment.root.createKey("other-${UUID.randomUUID()}")
+                val usesOther: () -> Unit = { kms.wrap(other, ByteArray(32)) }
+                val refused = OpsCli(commands, queries, CallerIdentity { IAM_ACTOR }, usesOther, PrintStream(out), PrintStream(err))
+
+                refused.run(listOf("kms-check")) shouldBe 3
+
+                err.toString().trim() shouldBe "kms unavailable: KeyManagementUnavailableException"
+                printed() shouldBe ""
+            }
+
+            test("a one-off run reaches the platform KEK, and exits with 3 while KMS is unreachable") {
+                val local = "--spring.profiles.active=local"
+                val unreachable =
+                    environment.settings.filterNot { it.startsWith("--OPENBAO_ADDRESS=") } + "--OPENBAO_ADDRESS=http://127.0.0.1:1"
+
+                runCli(listOf("kms-check"), *environment.settings, local) shouldBe 0
+                runCli(listOf("kms-check"), *unreachable.toTypedArray(), local) shouldBe 3
             }
         }
 

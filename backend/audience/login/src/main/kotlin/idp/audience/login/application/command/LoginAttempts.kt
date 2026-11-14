@@ -10,10 +10,14 @@ import idp.sharedkernel.audit.AuditRecord
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.domain.DomainRuleViolation
 import idp.sharedkernel.web.ClientIp
+import io.micrometer.core.instrument.MeterRegistry
 import java.util.UUID
 
 private const val LOGIN_FAILED = "login.failed"
 private const val FACTOR = "factor"
+
+/** No tenant tag: hundreds of tenants would make a series each, and the journal of each tenant already tells them apart. */
+private const val FAILURES = "idp.login.failures"
 
 /** The one refusal for a wrong credential, a running delay, an unknown login and a user who may not log in. */
 class LoginRejected : DomainRuleViolation("The login data is not valid, or the next attempt has to wait")
@@ -24,6 +28,7 @@ internal fun clientIp(): String? = ClientIp.currentOrNull()?.address
 class LoginAttempts(
     private val authentication: AuthenticationService,
     private val audit: AuditLog,
+    private val registry: MeterRegistry,
 ) {
     /** [check] answers null to refuse. */
     fun <T : Any> step(
@@ -64,6 +69,7 @@ class LoginAttempts(
         audit.recordDenial(
             AuditRecord(Actor.Anonymous, LOGIN_FAILED, userId?.let(AuditTarget::user), clientIp(), mapOf(FACTOR to factor.name)),
         )
+        registry.counter(FAILURES, FACTOR, factor.name).increment()
         throw LoginRejected()
     }
 }

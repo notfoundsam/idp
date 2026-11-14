@@ -403,6 +403,37 @@ class IdentityServiceTest :
                 }
             }
 
+            test("resending leaves an event for a new link and an audit record") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.invite()
+
+                    tenant.acting { resendInvitation(user, ADMIN, IP) }
+
+                    tenant.events().filter { it["event_type"] == IdentityEvents.INVITED }.map { it["aggregate_id"] } shouldBe
+                        listOf(user, user)
+                    val record = audit.changes.last()
+                    record.action shouldBe "user.invitation_resent"
+                    record.actor shouldBe ADMIN
+                    record.target shouldBe AuditTarget.user(user)
+                    record.ip shouldBe IP
+                }
+            }
+
+            test("resending is refused for a user who already accepted, and for one who is not there") {
+                Identity().run {
+                    val tenant = tenant()
+                    val user = tenant.active()
+                    val before = tenant.events().size
+
+                    shouldThrow<NotInvited> { tenant.acting { resendInvitation(user, ADMIN) } }
+                    shouldThrow<UserNotFound> { tenant.acting { resendInvitation(UUID.randomUUID(), ADMIN) } }
+
+                    tenant.events() shouldHaveSize before
+                    actions() shouldNotContain "user.invitation_resent"
+                }
+            }
+
             test("an unknown token is refused the same way as a spent one") {
                 Identity().run {
                     val tenant = tenant()

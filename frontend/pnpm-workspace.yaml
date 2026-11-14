@@ -4,3 +4,7 @@ packages:
   - e2e
 
 minimumReleaseAge: 10080
+
+# Its script only switches the files to Vue 2, and the files it ships are those for Vue 3.
+allowBuilds:
+  vue-demi: false

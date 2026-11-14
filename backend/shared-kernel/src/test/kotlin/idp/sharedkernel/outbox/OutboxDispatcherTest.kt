@@ -4,6 +4,7 @@ import idp.db.jooq.platform.tables.Outbox.OUTBOX
 import idp.sharedkernel.migration.TenantSchema
 import idp.sharedkernel.migration.query
 import idp.sharedkernel.migration.update
+import idp.sharedkernel.observability.Failures
 import idp.sharedkernel.persistence.VersionConflictException
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
@@ -17,6 +18,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.jooq.exception.DataAccessException
 import java.time.Duration
 import java.util.UUID
@@ -68,10 +70,11 @@ private class Outbox {
     val a: UUID = database.tenantSchema()
     val b: UUID = database.tenantSchema()
     val clock = MovableClock()
-    val publisher = OutboxPublisher()
+    val publisher = OutboxPublisher(clock)
     val tenants = TenantTransaction(worker)
     val platform = PlatformTransaction(worker)
     val handlerCalls = AtomicInteger()
+    val registry = SimpleMeterRegistry()
 
     init {
         listOf(a, b).forEach { id ->
@@ -93,7 +96,15 @@ private class Outbox {
         LEASE,
         RETRY_DELAY,
         MAX_ATTEMPTS,
+        Failures(registry),
     )
+
+    fun failures(): Double =
+        registry
+            .find("idp.failures")
+            .tags("source", "outbox")
+            .counter()
+            ?.count() ?: 0.0
 
     fun <T> inTenant(
         id: UUID,
@@ -120,7 +131,7 @@ private class Outbox {
     fun fixtureRows(tenant: UUID): String = owner.query("""SELECT count(*) FROM "${TenantSchema(tenant).name}".fixture""")
 
     fun redeliver() {
-        owner.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = now()")
+        owner.update("UPDATE platform.outbox SET status = 'PENDING', attempts = 0, available_at = '${clock.instant()}'")
     }
 
     fun afterRetryDelay() {
@@ -203,6 +214,15 @@ class OutboxDispatcherTest :
                     shouldThrow<DataAccessException> {
                         ops.execute { it.fetchCount(OUTBOX) }
                     }.message shouldContain "permission denied"
+                }
+            }
+
+            test("a new event is due by the clock the dispatcher reads, though the database runs ahead of it") {
+                Outbox().run {
+                    clock.offset = Duration.ofHours(-1)
+                    publish(a)
+
+                    dispatcher(Recording()).dispatch() shouldBe 1
                 }
             }
 
@@ -414,6 +434,23 @@ class OutboxDispatcherTest :
                     afterRetryDelay()
                     dispatcher.dispatch() shouldBe 0
                     handler.seen shouldHaveSize MAX_ATTEMPTS
+                }
+            }
+
+            test("every failed attempt counts as a failure of the outbox, and a success counts nothing") {
+                Outbox().run {
+                    publish(a)
+                    var fails = true
+                    val dispatcher = dispatcher(Recording { if (fails) throw IllegalArgumentException("stop") })
+
+                    dispatcher.dispatch()
+                    failures() shouldBe 1.0
+
+                    fails = false
+                    afterRetryDelay()
+                    dispatcher.dispatch() shouldBe 1
+                    status() shouldBe "DONE"
+                    failures() shouldBe 1.0
                 }
             }
 
@@ -631,6 +668,52 @@ class OutboxDispatcherTest :
                     dispatcher(handler).dispatch()
 
                     handler.seen.map { it.correlationId }.toSet() shouldHaveSize 2
+                }
+            }
+        }
+
+        context("metrics") {
+            test("the lag counts from the most overdue available_at, not from the age of a row") {
+                Outbox().run {
+                    publish(a)
+                    publish(b)
+                    val now = clock.instant()
+                    owner.update(
+                        "UPDATE platform.outbox SET available_at = '${now.minusSeconds(600)}', created_at = '${now.minusSeconds(3600)}'",
+                    )
+                    owner.update("UPDATE platform.outbox SET available_at = '${now.minusSeconds(60)}' WHERE tenant_id = '$b'")
+
+                    OutboxMetrics(platform, clock).lag().toSeconds() shouldBe Duration.ofMinutes(10).toSeconds()
+                }
+            }
+
+            test("an event planned for later, a claimed one and a finished one do not lag") {
+                Outbox().run {
+                    publish(a)
+                    publish(b)
+                    publish(a)
+                    val now = clock.instant()
+                    owner.update("UPDATE platform.outbox SET available_at = '${now.plus(Duration.ofDays(30))}'")
+                    owner.update(
+                        "UPDATE platform.outbox SET available_at = '${now.minusSeconds(60)}', status = 'DONE' WHERE tenant_id = '$b'",
+                    )
+
+                    OutboxMetrics(platform, clock).lag() shouldBe Duration.ZERO
+                }
+            }
+
+            test("a dead event is counted, and the gauges reach the registry") {
+                Outbox().run {
+                    publish(a)
+                    publish(b)
+                    owner.update("UPDATE platform.outbox SET status = 'DEAD' WHERE tenant_id = '$a'")
+                    owner.update("UPDATE platform.outbox SET available_at = '${clock.instant().plus(Duration.ofDays(1))}'")
+                    val registry = SimpleMeterRegistry()
+
+                    OutboxMetrics(platform, clock).bindTo(registry)
+
+                    registry.get("idp.outbox.dead").gauge().value() shouldBe 1.0
+                    registry.get("idp.outbox.lag").gauge().value() shouldBe 0.0
                 }
             }
         }

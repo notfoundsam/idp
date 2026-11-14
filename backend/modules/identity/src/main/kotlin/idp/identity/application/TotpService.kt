@@ -1,5 +1,6 @@
 package idp.identity.application
 
+import idp.identity.adapters.persistence.Passkeys
 import idp.identity.adapters.persistence.RecoveryCodes
 import idp.identity.adapters.persistence.Totps
 import idp.identity.adapters.persistence.Users
@@ -13,6 +14,7 @@ import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.crypto.KeyHierarchy
 import idp.sharedkernel.domain.DomainRuleViolation
+import idp.sharedkernel.domain.NotFound
 import idp.sharedkernel.tenant.TenantTransaction
 import org.jooq.DSLContext
 import java.security.SecureRandom
@@ -23,10 +25,13 @@ import java.util.UUID
 private const val TOTP_ENROLLED = "user.totp_enrolled"
 private const val RECOVERY_CODES_ISSUED = "user.recovery_codes_issued"
 private const val RECOVERY_CODE_USED = "user.recovery_code_used"
+private const val TOTP_REMOVED = "user.totp_removed"
 
 private const val SECRET_FIELD = "totp_credentials.secret_ciphertext"
 
 class TotpAlreadyEnrolled : DomainRuleViolation("TOTP is already enrolled")
+
+class TotpNotEnrolled : NotFound("No TOTP is enrolled")
 
 /** Not a data class: `toString` must not print the secret. */
 class TotpEnrollment(
@@ -44,6 +49,7 @@ class TotpService(
     private val users = Users()
     private val totps = Totps()
     private val recoveryCodes = RecoveryCodes()
+    private val floor = FactorFloor(users, totps, Passkeys())
     private val random = SecureRandom()
 
     /**
@@ -104,6 +110,28 @@ class TotpService(
             audit.recordChange(AuditRecord(actor, RECOVERY_CODES_ISSUED, AuditTarget.user(userId), ip))
         }
         return issued.map { it.value }
+    }
+
+    fun recoveryCodesLeft(userId: UUID): Int = transaction.execute { dsl -> recoveryCodes.count(dsl, userId) }
+
+    /**
+     * The way to replace a confirmed secret, which [enroll] refuses. A secret nobody confirmed is no factor, so it counts as none.
+     * Recovery codes go when this was the last second factor. [requirement] refuses a removal that would leave the user below it.
+     */
+    fun remove(
+        userId: UUID,
+        actor: Actor,
+        ip: String?,
+        requirement: FactorRequirement,
+    ) {
+        transaction.execute { dsl ->
+            floor.removing(dsl, userId, requirement) {
+                totps.find(dsl, userId)?.takeIf { it.isConfirmed } ?: throw TotpNotEnrolled()
+                totps.delete(dsl, userId)
+            }
+            val codesRemoved = recoveryCodes.deleteWithoutSecondFactor(dsl, userId)
+            audit.recordChange(AuditRecord(actor, TOTP_REMOVED, AuditTarget.user(userId), ip, removedCodes(codesRemoved)))
+        }
     }
 
     /** Counts no attempts: 128 bits cannot be guessed online, and a TOTP delay must not lock the user out of the way back in. */

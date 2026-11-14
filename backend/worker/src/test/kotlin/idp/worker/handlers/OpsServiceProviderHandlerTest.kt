@@ -2,6 +2,7 @@ package idp.worker.handlers
 
 import idp.federation.application.FederationService
 import idp.federation.application.NameIdFormat
+import idp.federation.application.ServiceProviderManaged
 import idp.identity.application.IdentityService
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.crypto.KeyHierarchy
@@ -109,8 +110,11 @@ class OpsServiceProviderHandlerTest :
                 sp.authnRequestsSigned shouldBe false
                 sp.settings.nameIdFormat shouldBe NameIdFormat.EMAIL
                 federation.assignedUsers(sp.id).shouldContainExactly(identity.findByEmail(OPERATOR_EMAIL).shouldNotBeNull().id)
+                val admin = Actor.User(identity.findByEmail(OPERATOR_EMAIL).shouldNotBeNull().id)
+                shouldThrow<ServiceProviderManaged> { federation.removeServiceProvider(sp.id, admin) }
             }
             tenant.passkeyRequired() shouldBe true
+            sql.queryForObject("SELECT passkeys_locked FROM ${tenant.table("tenant_policies")}", Boolean::class.java) shouldBe true
             sql.queryForList(
                 "SELECT DISTINCT actor_type FROM ${tenant.table("audit_entries")} WHERE action IN " +
                     "('sp.registered', 'sp.settings_changed', 'policy.changed', 'sp.user_assigned')",
@@ -120,6 +124,13 @@ class OpsServiceProviderHandlerTest :
 
         test("a repeated event changes nothing") {
             val tenant = serviceTenant()
+            eventually(60.seconds) {
+                sql.queryForObject(
+                    "SELECT count(*) FROM platform.outbox WHERE tenant_id = ? AND status <> 'DONE'",
+                    Int::class.java,
+                    tenantId,
+                ) shouldBe 0
+            }
             val journal = tenant.journal()
             val policyVersion = sql.queryForObject("SELECT version FROM ${tenant.table("tenant_policies")}", Long::class.java)
 
@@ -130,6 +141,22 @@ class OpsServiceProviderHandlerTest :
                 federation.assignedUsers(federation.serviceProviders().single().id).size shouldBe 1
             }
             sql.queryForObject("SELECT version FROM ${tenant.table("tenant_policies")}", Long::class.java) shouldBe policyVersion
+            tenant.journal() shouldBe journal
+        }
+
+        test("an SP ops registered before it could be flagged becomes managed on the next run") {
+            val tenant = serviceTenant()
+            sql.update("UPDATE ${tenant.table("service_providers")} SET managed = false")
+            val admin = Actor.User(TenantContext.with(tenant) { identity.findByEmail(OPERATOR_EMAIL).shouldNotBeNull().id })
+            val journal = tenant.journal()
+
+            TenantContext.with(tenant) { handler.handle(bootstrapped(tenantId)) }
+
+            sql.queryForObject("SELECT managed FROM ${tenant.table("service_providers")}", Boolean::class.java) shouldBe true
+            TenantContext.with(tenant) {
+                val sp = federation.serviceProviderByEntityId(OPS_ENTITY_ID).shouldNotBeNull()
+                shouldThrow<ServiceProviderManaged> { federation.removeServiceProvider(sp.id, admin) }
+            }
             tenant.journal() shouldBe journal
         }
 

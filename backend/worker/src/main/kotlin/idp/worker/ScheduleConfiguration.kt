@@ -1,5 +1,6 @@
 package idp.worker
 
+import idp.sharedkernel.observability.Failures
 import idp.sharedkernel.outbox.EventHandler
 import idp.sharedkernel.outbox.IdempotentHandler
 import idp.sharedkernel.outbox.OutboxCleanupJob
@@ -31,7 +32,8 @@ class ScheduleConfiguration {
         platform: PlatformTransaction,
         idempotent: IdempotentHandler,
         handlers: ObjectProvider<EventHandler>,
-    ) = OutboxDispatcher(platform, idempotent, handlers.orderedStream().toList())
+        failures: Failures,
+    ) = OutboxDispatcher(platform, idempotent, handlers.orderedStream().toList(), failures = failures)
 
     @Bean
     fun processedEventsCleanup(dispatcher: OutboxDispatcher) = ProcessedEventsCleanup(dispatcher.redeliveryWindow)
@@ -42,10 +44,11 @@ class ScheduleConfiguration {
         transaction: TenantTransaction,
         cleanups: ObjectProvider<TenantCleanup>,
         others: ObjectProvider<ScheduledJob>,
+        failures: Failures,
     ): JobScheduler {
-        val tenants = TenantJobRunner(platform, transaction)
+        val tenants = TenantJobRunner(platform, transaction, failures)
         val jobs = listOf(OutboxCleanupJob(platform)) + cleanups.orderedStream().toList().map { TenantCleanupJob(it, tenants) }
-        return JobScheduler(jobs + others.orderedStream().toList(), JobLocks(platform))
+        return JobScheduler(jobs + others.orderedStream().toList(), JobLocks(platform), failures)
     }
 }
 

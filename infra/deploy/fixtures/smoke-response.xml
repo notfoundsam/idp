@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?><saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol" Destination="https://release-smoke.invalid/saml/acs" ID="_dc30d2df01de76f4f80220d35df23126" InResponseTo="_25243cb9eadf0309cca1bd37d5230806" IssueInstant="2026-11-09T22:47:01.088Z" Version="2.0"><saml2:Issuer xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion">https://release-smoke.idp.test/saml/metadata</saml2:Issuer><saml2p:Status><saml2p:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></saml2p:Status><saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_87d78e19d66a1f61e31ef4eba36a564a" IssueInstant="2026-11-09T22:47:01.088Z" Version="2.0"><saml2:Issuer>https://release-smoke.idp.test/saml/metadata</saml2:Issuer><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+<ds:SignedInfo>
+<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+<ds:SignatureMethod Algorithm="http://www.w3.org/2007/05/xmldsig-more#sha256-rsa-MGF1"/>
+<ds:Reference URI="#_87d78e19d66a1f61e31ef4eba36a564a">
+<ds:Transforms>
+<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+</ds:Transforms>
+<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+<ds:DigestValue>jPelYljfR616GzuFUnmYVdc82HTKPLtd60jIXRB1VZQ=</ds:DigestValue>
+</ds:Reference>
+</ds:SignedInfo>
+<ds:SignatureValue>
+fYs/GaI9TZZvwCKh6OmbxKGzQ1TgLT98L1O/TKaI6Pz33e/7CiWGBGsJS1HUiCzXkW0JeV+ESxhn&#13;
+Ih2Zy9IFRSToIyANPHTO+9mn7IvhcMyAlSajeizuP3lW2BKpNNggFAZdDpMzfsg3miWoY9ZU4Ros&#13;
+RPl+v3KANcOLS7urr9yR6AXUwt7Sygu2WOs/k9myEY9VL+HHltY9YDnF2EPRlxvnHTJChtPyjdgs&#13;
+AG9hhdz2T4SM9WLtlqrRNPVpu9UetbXhr7C0YaXcBQciSUa75SpuUDREazn7zH0YBo30yM67FSZM&#13;
+lWpozzJz4ZldtoKVi/u1iVeX981pHmfnU0zIIg41OCEHYBEdpFcAmkVczhgk+7kZCgzKIOz/IU5N&#13;
+3JVW4+oJ8jsei9X7P0ZDEjz8Ucdh8HZJL85IDiHKcn8xZ/y/XfY1+FHuZAeytr8m5y7XeWXxYdlG&#13;
+QvzujAfXmDnBzjzexEKGIprpgfV55qSAI8PCEcwdqtlcW0hZzpBMKV+a
+</ds:SignatureValue>
+</ds:Signature><saml2:Subject><saml2:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" NameQualifier="https://release-smoke.idp.test/saml/metadata" SPNameQualifier="https://release-smoke.invalid/saml/metadata">BKIVTWIn78qUjuxm-a1pe-IrasT2yc2eh1MPUx4Qog8</saml2:NameID><saml2:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml2:SubjectConfirmationData InResponseTo="_25243cb9eadf0309cca1bd37d5230806" NotOnOrAfter="2026-11-09T22:52:01.088Z" Recipient="https://release-smoke.invalid/saml/acs"/></saml2:SubjectConfirmation></saml2:Subject><saml2:Conditions NotBefore="2026-11-09T22:47:01.088Z" NotOnOrAfter="2026-11-09T22:52:01.088Z"><saml2:AudienceRestriction><saml2:Audience>https://release-smoke.invalid/saml/metadata</saml2:Audience></saml2:AudienceRestriction></saml2:Conditions><saml2:AuthnStatement AuthnInstant="2026-11-09T22:47:01.062Z" SessionNotOnOrAfter="2026-11-10T10:47:01.062Z"><saml2:AuthnContext><saml2:AuthnContextClassRef>https://refeds.org/profile/mfa</saml2:AuthnContextClassRef></saml2:AuthnContext></saml2:AuthnStatement></saml2:Assertion></saml2p:Response>

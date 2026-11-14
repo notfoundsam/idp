@@ -1,6 +1,8 @@
 package idp.sharedkernel.scheduling
 
 import idp.db.jooq.platform.tables.Tenants.TENANTS
+import idp.sharedkernel.observability.FailureSource
+import idp.sharedkernel.observability.Failures
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
@@ -17,6 +19,7 @@ private val SCHEMA_IN_USE = listOf(TenantStatus.ACTIVE, TenantStatus.SUSPENDED, 
 class TenantJobRunner(
     private val platform: PlatformTransaction,
     private val transaction: TenantTransaction,
+    private val failures: Failures = Failures(),
 ) {
     /** The lease is renewed before each tenant, so hundreds of schemas cannot outrun it. */
     fun forEachTenant(
@@ -29,8 +32,9 @@ class TenantJobRunner(
                 log.warn("Job {} lost its lease and stops", job)
                 return
             }
-            runCatching { TenantContext.with(tenant) { transaction.execute(block) } }
-                .onFailure { log.error("Job {} failed for tenant {}", job, tenant.tenantId, it) }
+            TenantContext.with(tenant) {
+                runCatching { transaction.execute(block) }.onFailure { failures.record(FailureSource.JOB, it, job) }
+            }
         }
     }
 

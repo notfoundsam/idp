@@ -1,0 +1,1151 @@
+openapi: 3.1.0
+info:
+  title: IdP admin API
+  version: 1.0.0
+  description: >-
+    The tenant admin area. Every call needs a live session of a `TENANT_ADMIN` of the tenant the host names, and anyone else gets 403.
+    A session belongs to its tenant, so a session of another tenant counts as none and gets 401, and a user of another tenant reads as
+    missing. A call that changes something echoes the `__Host-csrf` cookie in `X-CSRF-Token` and gets 403 without it. Inviting a user,
+    changing a role, erasing a user, resetting their MFA, saving the policy or the settings of a Service Provider, removing a Service Provider and completing a rotation of
+    the signing key need a session whose full login is at most 10 minutes old: otherwise the answer is 403 with
+    `reauthentication_required`, and the client walks a flow of the login API started with `reauthenticate`, then repeats the call. A
+    client states its version in `X-Client-Version`, every response states the backend's in `X-App-Version`, and a client older than
+    the minimum gets 426.
+paths:
+  /api/admin/users:
+    post:
+      operationId: inviteUser
+      summary: Create a user who waits for the invitation that is mailed to them
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationRequest"
+      responses:
+        "201":
+          description: The user is created and the mail is on its way
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitedUser"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The address is not valid, or the tenant already has a user with it. The answer does not say which
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/search:
+    post:
+      operationId: searchUsers
+      summary: >-
+        Find the user with an address. Only the whole address finds them, in any case, and a part of one finds nobody. The address goes
+        in the body, so it stays out of URLs and logs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSearchRequest"
+      responses:
+        "200":
+          description: The user with the address, or none
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSearch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/invitation:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: resendInvitation
+      summary: Mail a new invitation, which voids the link of the one before
+      responses:
+        "204":
+          description: The mail is on its way
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user has already accepted an invitation
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/role:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      operationId: changeRole
+      summary: Change the role of a user, which a live session of theirs follows on its next request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleChangeRequest"
+      responses:
+        "204":
+          description: The user has the role
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/LastAdmin"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/block:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: blockUser
+      summary: Block an active user. Their sessions and logins in progress end in the same step
+      responses:
+        "204":
+          description: The user is blocked
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user is not active, or is the last admin who can act
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/unblock:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: unblockUser
+      summary: Let a blocked user log in again
+      responses:
+        "204":
+          description: The user is active
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The user is not blocked
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/mfa-reset:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: resetMfa
+      summary: >-
+        Remove every TOTP, passkey and recovery code of a user who lost them, so the next login enrolls again. Their sessions and logins
+        in progress end in the same step
+      responses:
+        "204":
+          description: The factors are gone
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getUser
+      summary: >-
+        The card of a user: who they are, the Service Providers they are assigned to and the newest records of the journal about them
+      responses:
+        "200":
+          description: The card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserCard"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: eraseUser
+      summary: Erase a user with their data and sessions. The ID is never given out again
+      responses:
+        "204":
+          description: The user is erased
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "422":
+          $ref: "#/components/responses/LastAdmin"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/users/{id}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: endUserSessions
+      summary: >-
+        End every session of a user and their logins in progress. An admin who names themselves keeps the session of the request
+      responses:
+        "204":
+          description: The sessions are ended
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/UserNotFound"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/policy:
+    get:
+      operationId: getPolicy
+      summary: The login and session policy of the tenant. MFA for `TENANT_ADMIN` is always on, so the policy has no switch for it
+      responses:
+        "200":
+          description: The policy, with its version in `ETag`
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    put:
+      operationId: savePolicy
+      summary: >-
+        Replace the policy read with the `ETag` sent back in `If-Match`. A policy saved meanwhile by someone else gets 412, so the client
+        reads it again. A tighter timeout reaches the sessions already open on their next request
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Policy"
+      responses:
+        "204":
+          description: The policy is saved, with its new version in `ETag`
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "412":
+          description: The policy changed since the client read it, or `If-Match` names no version of it
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: >-
+            A timeout is out of bounds. The idle one is from 300 to 3600 seconds, the absolute one from the idle one to 86400 seconds.
+            Or the policy drops passkeys of the service tenant, which the platform requires there
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "428":
+          description: The request has no `If-Match`
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/sessions:
+    delete:
+      operationId: endAllSessions
+      summary: End every session of the tenant, the one of the request too
+      responses:
+        "204":
+          description: The sessions are ended
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/service-providers:
+    get:
+      operationId: listServiceProviders
+      summary: The Service Providers of the tenant, by name
+      responses:
+        "200":
+          description: The Service Providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceProviderList"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: registerServiceProvider
+      summary: >-
+        Register a Service Provider from its metadata file. The file name of the upload is never read. The SP starts with the default
+        settings and nobody assigned
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ServiceProviderUpload"
+      responses:
+        "201":
+          description: The Service Provider is registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Created"
+        "400":
+          description: The form has no name or no file
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The tenant already has a Service Provider with this EntityID
+        "413":
+          description: The request is over 160 KiB
+        "415":
+          description: The body is not `multipart/form-data`
+        "422":
+          description: >-
+            The name is empty or longer than 200 characters, or the file is over 128 KiB or is not valid SAML metadata of one Service
+            Provider with https endpoints. The answer does not say which
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/service-providers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getServiceProvider
+      summary: A Service Provider with what its metadata said and its settings
+      responses:
+        "200":
+          description: The Service Provider, with the version of its settings in `ETag`
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceProvider"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ServiceProviderNotFound"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: removeServiceProvider
+      summary: Remove a Service Provider with every assignment to it. Its users can no longer log in to it
+      responses:
+        "204":
+          description: The Service Provider is removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/ServiceProviderNotFound"
+        "422":
+          $ref: "#/components/responses/ServiceProviderManaged"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/service-providers/{id}/settings:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      operationId: saveServiceProviderSettings
+      summary: >-
+        Replace the settings read with the `ETag` sent back in `If-Match`. Settings saved meanwhile by someone else get 412, so the
+        client reads them again
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpSettings"
+      responses:
+        "204":
+          description: The settings are saved, with their new version in `ETag`
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/ServiceProviderNotFound"
+        "412":
+          description: The settings changed since the client read them, or `If-Match` names no version of them
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/ServiceProviderManaged"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "428":
+          description: The request has no `If-Match`
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/service-providers/{id}/users:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: listAssignedUsers
+      summary: The users assigned to a Service Provider, by ID. The card of a user tells who they are
+      responses:
+        "200":
+          description: The assigned users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedUsers"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ServiceProviderNotFound"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: assignUsers
+      summary: >-
+        Let the users log in to the Service Provider. A user assigned already stays so. A user the tenant does not have leaves everyone of
+        the list unassigned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserList"
+      responses:
+        "204":
+          description: The users are assigned
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The tenant has no such Service Provider or no such user
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/service-providers/{id}/users/removal:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: unassignUsers
+      summary: >-
+        Stop the users from logging in to the Service Provider. A user who was not assigned changes nothing. A session already open at
+        the SP is the SP's own and lasts as it decides
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserList"
+      responses:
+        "204":
+          description: The users are no longer assigned
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ServiceProviderNotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/signing-keys:
+    get:
+      operationId: listSigningKeys
+      summary: >-
+        The keys the tenant signs SAML Responses with, as its metadata publishes them: the active one first, and during a rotation the
+        next one
+      responses:
+        "200":
+          description: The keys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SigningKeys"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/signing-keys/rotation:
+    post:
+      operationId: startKeyRotation
+      summary: >-
+        Create the next key and publish it in metadata beside the active one. It signs nothing until the rotation completes, so the
+        Service Providers have time to read it
+      responses:
+        "201":
+          description: The next key is published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Created"
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: A rotation is in progress already
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/signing-keys/rotation/completion:
+    post:
+      operationId: completeKeyRotation
+      summary: >-
+        Delete the active key and let the next one sign. A Service Provider that has not read the next key fails every login until it
+        does
+      responses:
+        "204":
+          description: The next key is the active one
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "409":
+          description: No rotation is in progress
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/admin/audit:
+    get:
+      operationId: readAuditJournal
+      summary: >-
+        The journal of the tenant, the newest record first, with the IP and the details. A record whose actor was erased keeps the fact
+        and loses the IP and the details. The next page starts from `next`
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          description: The time of the last record already read. Comes only with `beforeId`
+          schema:
+            type: string
+            format: date-time
+        - name: beforeId
+          in: query
+          description: The ID of the last record already read. Comes only with `before`
+          schema:
+            type: string
+            format: uuid
+        - name: targetType
+          in: query
+          description: Only the records about one target. Comes only with `targetId`
+          schema:
+            $ref: "#/components/schemas/AuditTargetType"
+        - name: targetId
+          in: query
+          description: Comes only with `targetType`
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of the journal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditJournal"
+        "400":
+          description: >-
+            A limit out of range, a malformed value, or one of `before` and `beforeId` or of `targetType` and `targetId` without the
+            other
+        "401":
+          $ref: "#/components/responses/NoSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  headers:
+    ETag:
+      description: The version of the policy or of the settings of a Service Provider, to send back in `If-Match`
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: The request is malformed or names an unknown field
+    NoSession:
+      description: The request has no live session of this tenant
+    Forbidden:
+      description: The user of the session is not an admin, or the CSRF token is missing
+    Refused:
+      description: >-
+        The user of the session is not an admin or the CSRF token is missing, with no body, or the login is too old, with
+        `reauthentication_required` in the body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ReauthenticationRequired"
+    UserNotFound:
+      description: The tenant has no such user
+    ServiceProviderNotFound:
+      description: The tenant has no such Service Provider
+    ServiceProviderManaged:
+      description: The platform manages this Service Provider, such as `ops` at the service tenant, so no admin changes it
+    LastAdmin:
+      description: The user is the last admin who can act, so the tenant would be left without one
+    TooLarge:
+      description: The request is over the size limit
+    UpgradeRequired:
+      description: The client is older than the minimum version, so it has to reload
+    TooManyRequests:
+      description: Over a limit
+      headers:
+        Retry-After:
+          description: Seconds to wait
+          schema:
+            type: integer
+  schemas:
+    Role:
+      type: string
+      enum: [TENANT_ADMIN, USER]
+    InvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+    RoleChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/Role"
+    UserSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+    UserSearch:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          maxItems: 1
+          items:
+            $ref: "#/components/schemas/FoundUser"
+    FoundUser:
+      type: object
+      additionalProperties: false
+      required: [id, role, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+    UserStatus:
+      type: string
+      enum: [INVITED, ACTIVE, BLOCKED]
+    UserCard:
+      type: object
+      additionalProperties: false
+      required: [id, email, name, role, status, serviceProviders, events]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: [string, "null"]
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        serviceProviders:
+          type: array
+          description: The Service Providers the user is assigned to, by name
+          items:
+            $ref: "#/components/schemas/AssignedServiceProvider"
+        events:
+          type: array
+          maxItems: 20
+          description: The newest records of the journal whose target is the user, the newest first. The IP and the details stay out
+          items:
+            $ref: "#/components/schemas/UserEvent"
+    AssignedServiceProvider:
+      type: object
+      additionalProperties: false
+      required: [id, entityId, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityId:
+          type: string
+        name:
+          type: string
+    UserEvent:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, action, actorType, actorId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        actorType:
+          type: string
+          enum: [USER, SYSTEM, ANONYMOUS]
+        actorId:
+          type: [string, "null"]
+          format: uuid
+          description: The user who acted, null unless `actorType` is `USER`
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [mfaForUsers, passkeyRequired, sessionIdleSeconds, sessionAbsoluteSeconds]
+      properties:
+        mfaForUsers:
+          type: boolean
+          description: Whether the `USER` role logs in with a second factor. An admin always does
+        passkeyRequired:
+          type: boolean
+          description: Whether every role logs in with a passkey
+        sessionIdleSeconds:
+          type: integer
+          format: int64
+          minimum: 300
+          maximum: 3600
+        sessionAbsoluteSeconds:
+          type: integer
+          format: int64
+          minimum: 300
+          maximum: 86400
+          description: At least `sessionIdleSeconds`
+    InvitedUser:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    Created:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    ServiceProviderUpload:
+      type: object
+      required: [name, metadata]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        metadata:
+          type: string
+          format: binary
+          description: The metadata file of the SP, at most 128 KiB. Only its content is read
+    ServiceProviderList:
+      type: object
+      additionalProperties: false
+      required: [serviceProviders]
+      properties:
+        serviceProviders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceProviderSummary"
+    ServiceProviderSummary:
+      type: object
+      additionalProperties: false
+      required: [id, entityId, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityId:
+          type: string
+        name:
+          type: string
+    ServiceProvider:
+      type: object
+      additionalProperties: false
+      required: [id, entityId, name, acs, authnRequestsSigned, signingCertificates, settings]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityId:
+          type: string
+        name:
+          type: string
+        acs:
+          type: array
+          description: The HTTP-POST endpoints of the metadata, in the order of their index
+          items:
+            $ref: "#/components/schemas/AcsEndpoint"
+        authnRequestsSigned:
+          type: boolean
+          description: Whether the SP signs its requests, so an unsigned one is refused
+        signingCertificates:
+          type: array
+          description: The certificates the requests of the SP are checked with
+          items:
+            $ref: "#/components/schemas/Certificate"
+        settings:
+          $ref: "#/components/schemas/SpSettings"
+    AcsEndpoint:
+      type: object
+      additionalProperties: false
+      required: [index, url, isDefault]
+      properties:
+        index:
+          type: integer
+        url:
+          type: string
+        isDefault:
+          type: boolean
+    Certificate:
+      type: object
+      additionalProperties: false
+      required: [sha256Fingerprint, notAfter]
+      properties:
+        sha256Fingerprint:
+          type: string
+          description: SHA-256 of the DER certificate in uppercase hex pairs joined by colons
+        notAfter:
+          type: string
+          format: date-time
+    SpSettings:
+      type: object
+      additionalProperties: false
+      required: [nameIdFormat, signedPart, signatureAlgorithm, attributes]
+      properties:
+        nameIdFormat:
+          type: string
+          enum: [PERSISTENT, EMAIL]
+          description: A persistent NameID means nothing outside the SP. The email is sent only when an admin picks it
+        signedPart:
+          type: string
+          enum: [ASSERTION, RESPONSE, BOTH]
+        signatureAlgorithm:
+          type: string
+          enum: [RSA_PSS_SHA256, RSA_SHA256]
+          description: RSA-PSS with SHA-256 unless the SP verifies nothing else. SHA-1 is never offered
+        attributes:
+          type: array
+          uniqueItems: true
+          description: The attributes the Response carries. None by default
+          items:
+            type: string
+            enum: [EMAIL, DISPLAY_NAME, PHONE]
+    UserList:
+      type: object
+      additionalProperties: false
+      required: [userIds]
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: string
+            format: uuid
+    AssignedUsers:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignedUser"
+    AssignedUser:
+      type: object
+      additionalProperties: false
+      required: [id, role, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+    SigningKeys:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/SigningKey"
+    SigningKey:
+      type: object
+      additionalProperties: false
+      required: [id, status, sha256Fingerprint, notAfter, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACTIVE, NEXT]
+          description: The active key signs, the next one is published until the rotation completes
+        sha256Fingerprint:
+          type: string
+          description: SHA-256 of the DER certificate in uppercase hex pairs joined by colons
+        notAfter:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    AuditTargetType:
+      type: string
+      enum: [USER, TENANT, SERVICE_PROVIDER, SIGNING_KEY]
+    AuditJournal:
+      type: object
+      additionalProperties: false
+      required: [entries, next]
+      properties:
+        entries:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        next:
+          oneOf:
+            - $ref: "#/components/schemas/AuditCursor"
+            - type: "null"
+          description: The query parameters of the next page, null on the last one
+    AuditCursor:
+      type: object
+      additionalProperties: false
+      required: [before, beforeId]
+      properties:
+        before:
+          type: string
+          format: date-time
+        beforeId:
+          type: string
+          format: uuid
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, action, actorType, actorId, targetType, targetId, ip, details]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        actorType:
+          type: string
+          enum: [USER, SYSTEM, ANONYMOUS]
+        actorId:
+          type: [string, "null"]
+          format: uuid
+          description: The user who acted, null unless `actorType` is `USER`
+        targetType:
+          oneOf:
+            - $ref: "#/components/schemas/AuditTargetType"
+            - type: "null"
+        targetId:
+          type: [string, "null"]
+          format: uuid
+        ip:
+          type: [string, "null"]
+          description: The address of the actor, null when the record has none or the actor was erased
+        details:
+          type: [object, "null"]
+          additionalProperties:
+            type: string
+          description: What the action changed, never personal data of anyone but the actor. Null once the actor was erased
+    ReauthenticationRequired:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [reauthentication_required]

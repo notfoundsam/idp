@@ -10,16 +10,16 @@ Scale `app`, `worker` and `ops` to zero before the restore and keep them there u
 
 ## 2. Restore the database
 
-Restore as usual. Do not touch the journal bucket: Object Lock keeps its entries for the retention period, and neither the task roles nor an operator can delete them.
+Restore as usual. Do not touch the journal bucket: Object Lock keeps its entries for the retention period, and neither the task roles nor an operator can delete them. Only `worker` writes it and only the task `recovery` lists it.
 
 ## 3. Apply the erasures again
 
-Run the `migrator` task once with `REAPPLY_ERASURES=true`. In this mode it needs, beside its usual settings:
+Run `migrator` once with `REAPPLY_ERASURES=true`. In AWS that is the one-off task `recovery` from the output `one_off_tasks` of `infra/terraform`, which runs the image of `migrator` with these settings and a task role of its own: only that role may list the journal and destroy KEKs, and a release of `migrator` cannot. Elsewhere it needs, beside its usual settings:
 
 | Setting | Value |
 |---|---|
 | `ERASURE_JOURNAL_BUCKET`, `ERASURE_JOURNAL_REGION` | The journal bucket, as `worker` has it |
-| `KMS_NEW_KEYS`, `KMS_AWS_REGION`, `KMS_AWS_KEY_POLICY` | As `worker` has them |
+| `KMS_NEW_KEYS`, `KMS_AWS_REGION` | As `worker` has them |
 | `PLATFORM_KEK_URI`, `TENANTS_BASE_DOMAIN` | As `worker` has them |
 
 While tenants move to another KMS, `worker` has the settings of both, and so does this task: a backup may name KEKs of either.
@@ -43,7 +43,7 @@ Start `worker`, `app` and `ops`, then check the dashboards and the dead events i
 
 An erasure from the last moments before the incident can miss the journal if `worker` had not handled its event yet. The restored database then holds that user with no trace of the request. Ask support for erasure requests from that window and repeat them.
 
-Entries hold IDs alone, for example `users/<tenant-id>/<user-id>`. The journal must keep an entry for as long as a backup taken before it exists: 30 days of backups plus a margin. An older entry is not needed, because every remaining backup was taken after it.
+Entries hold IDs alone, for example `users/<tenant-id>/<user-id>`. The journal must keep an entry for as long as a backup taken before it exists: 30 days of backups plus a margin. In AWS Object Lock keeps every entry for 45 days, then the lifecycle of the bucket removes it, see `infra/terraform/README.md`. An older entry is not needed, because every remaining backup was taken after it.
 
 A deleted tenant needs no journal to stay unreadable: its data in every backup is encrypted under a destroyed KEK. AWS KMS waits 7 days before it deletes the key material. Never cancel a pending deletion of a tenant KEK, the journal will not destroy it again after a restore.
 

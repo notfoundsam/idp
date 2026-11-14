@@ -48,6 +48,27 @@ internal class Passkeys {
             .fetch(PASSKEY_CREDENTIALS.CREDENTIAL_ID)
             .filterNotNull()
 
+    fun ofUser(
+        dsl: DSLContext,
+        userId: UUID,
+    ): List<PasskeyCredential> =
+        dsl
+            .selectFrom(PASSKEY_CREDENTIALS)
+            .where(PASSKEY_CREDENTIALS.USER_ID.eq(userId))
+            .orderBy(PASSKEY_CREDENTIALS.CREATED_AT, PASSKEY_CREDENTIALS.ID)
+            .fetch(::toCredential)
+
+    /** False when [userId] holds no passkey [id], so an id of someone else's passkey changes nothing. */
+    fun delete(
+        dsl: DSLContext,
+        userId: UUID,
+        id: UUID,
+    ): Boolean =
+        dsl
+            .deleteFrom(PASSKEY_CREDENTIALS)
+            .where(PASSKEY_CREDENTIALS.ID.eq(id), PASSKEY_CREDENTIALS.USER_ID.eq(userId))
+            .execute() == 1
+
     fun deleteOfUser(
         dsl: DSLContext,
         userId: UUID,

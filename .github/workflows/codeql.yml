@@ -21,8 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The Kotlin extractor hangs on Kotlin code that uses jOOQ, so Kotlin runs only on demand.
-        language: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["java-kotlin", "javascript-typescript"]') || fromJSON('["javascript-typescript"]') }}
+        language: [java-kotlin, javascript-typescript]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: matrix.language == 'java-kotlin'
@@ -32,13 +31,36 @@ jobs:
           java-version: "25"
       - if: matrix.language == 'java-kotlin'
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
           queries: security-extended
+          config: |
+            # A built bundle, analyzed already as the source it came from.
+            paths-ignore:
+              - frontend/e2e/fixtures
+            # Node runs only the scripts of infra and dev-tools, which fetch the routes of the repository from our own hosts and keep
+            # the login that our own IdP hands the synthetic user. The pages cannot read files.
+            query-filters:
+              - exclude:
+                  id: js/file-access-to-http
+              - exclude:
+                  id: js/http-to-file-access
       # CodeQL only sees Kotlin that the compiler actually runs on, so every cache is off.
       - if: matrix.language == 'java-kotlin'
+        timeout-minutes: 15
         run: ./gradlew testClasses --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks
         working-directory: backend
-      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - id: analyze
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - name: No finding at or above CVSS medium
+        env:
+          SARIF_DIR: ${{ steps.analyze.outputs.sarif-output }}
+        run: |
+          args=()
+          for sarif in "$SARIF_DIR"/*.sarif; do args+=(--sarif "$sarif"); done
+          node infra/deploy/code-scanning.mjs "${args[@]}"

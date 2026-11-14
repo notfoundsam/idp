@@ -12,6 +12,7 @@ import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldNotContain
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.trace.SpanKind
@@ -67,6 +68,16 @@ class TracingTest :
 
             val request = requests().shouldBeSingleton().single()
             request.attributes.get(TENANT_ID).shouldBeNull()
+        }
+
+        test("a traceparent from the client does not make the request a part of its trace") {
+            val incoming = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+            Browser(application, ACME).post("/api/flows", null, "traceparent", "00-$incoming-00f067aa0ba902b7-01").status shouldBe 201
+
+            val request = requests().shouldBeSingleton().single()
+            request.traceId shouldNotBe incoming
+            request.parentSpanContext.isValid shouldBe false
         }
 
         test("no email, password or SAML message reaches a span") {

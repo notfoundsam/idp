@@ -4,9 +4,11 @@ import idp.authentication.adapters.persistence.TenantPolicies
 import idp.authentication.domain.AuthFactor
 import idp.authentication.domain.FlowExpired
 import idp.authentication.domain.FlowStep
+import idp.authentication.domain.SessionTimeoutsNotValid
 import idp.authentication.domain.StepInProgress
 import idp.authentication.domain.StepNotAllowed
 import idp.authentication.domain.TenantPolicy
+import idp.identity.application.FactorRequirement
 import idp.identity.application.IdentityService
 import idp.identity.application.PasskeyService
 import idp.identity.application.TotpService
@@ -266,6 +268,107 @@ class SessionsTest :
                 }
             }
 
+            context("saving the policy") {
+                val change =
+                    PolicyChange(
+                        mfaForUsers = false,
+                        passkeyRequired = false,
+                        sessionIdleTimeout = Duration.ofMinutes(15),
+                        sessionAbsoluteTimeout = Duration.ofHours(24),
+                    )
+
+                test("replaces it at the version read, records what changed and returns the new version") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+                    audit.changes.clear()
+
+                    val saved = tenant.acting { savePolicy(change, read.version, ADMIN, IP) }
+
+                    saved shouldBe read.version + 1
+                    tenant.acting { policy() } shouldBe
+                        PolicyView(false, false, Duration.ofMinutes(15), Duration.ofHours(24), saved)
+                    audit.changes.single().run {
+                        actor shouldBe ADMIN
+                        action shouldBe "policy.changed"
+                        ip shouldBe IP
+                        details shouldBe
+                            mapOf("mfa_for_users" to "false", "session_idle_seconds" to "900", "session_absolute_seconds" to "86400")
+                    }
+                    audit.changes.clear()
+                }
+
+                test("names what each role must keep of its factors") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+
+                    tenant.acting { factorRequirementFor(UserRole.USER) } shouldBe FactorRequirement.SECOND_FACTOR
+                    val relaxed = tenant.acting { savePolicy(change, read.version, ADMIN) }
+                    tenant.acting { factorRequirementFor(UserRole.USER) } shouldBe FactorRequirement.NONE
+                    tenant.acting { factorRequirementFor(UserRole.TENANT_ADMIN) } shouldBe FactorRequirement.SECOND_FACTOR
+                    tenant.acting { savePolicy(change.copy(passkeyRequired = true), relaxed, ADMIN) }
+                    UserRole.entries.forEach { tenant.acting { factorRequirementFor(it) } shouldBe FactorRequirement.PASSKEY }
+                    audit.changes.clear()
+                }
+
+                test("the same values keep the version and record nothing") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+                    val same = PolicyChange(read.mfaForUsers, read.passkeyRequired, read.sessionIdleTimeout, read.sessionAbsoluteTimeout)
+                    audit.changes.clear()
+
+                    tenant.acting { savePolicy(same, read.version, ADMIN) } shouldBe read.version
+
+                    tenant.acting { policy() } shouldBe read
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("a stale version loses, also with the same values, and nothing is stored or recorded") {
+                    val tenant = newTenant()
+                    val stale = tenant.acting { policy() }
+                    tenant.acting { savePolicy(change, stale.version, ADMIN) }
+                    val current = tenant.acting { policy() }
+                    audit.changes.clear()
+
+                    shouldThrow<VersionConflictException> {
+                        tenant.acting { savePolicy(change.copy(mfaForUsers = true), stale.version, ADMIN) }
+                    }
+                    shouldThrow<VersionConflictException> { tenant.acting { savePolicy(change, stale.version, ADMIN) } }
+
+                    tenant.acting { policy() } shouldBe current
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("timeouts beyond the limits are refused and nothing is stored or recorded") {
+                    val tenant = newTenant()
+                    val read = tenant.acting { policy() }
+                    audit.changes.clear()
+
+                    listOf(
+                        change.copy(sessionIdleTimeout = Duration.ofMinutes(61)),
+                        change.copy(sessionIdleTimeout = Duration.ofMinutes(4)),
+                        change.copy(sessionAbsoluteTimeout = Duration.ofHours(25)),
+                        change.copy(sessionIdleTimeout = Duration.ofMinutes(45), sessionAbsoluteTimeout = Duration.ofMinutes(30)),
+                    ).forEach { shouldThrow<SessionTimeoutsNotValid> { tenant.acting { savePolicy(it, read.version, ADMIN) } } }
+
+                    tenant.acting { policy() } shouldBe read
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("a relaxed MFA lets a user in with a password, while an admin still enrolls a second factor") {
+                    val tenant = newTenant()
+                    val admin = "grace.hopper@acme.test"
+                    tenant.user()
+                    tenant.user(admin, UserRole.TENANT_ADMIN)
+
+                    tenant.acting { savePolicy(change, policy().version, ADMIN) }
+
+                    tenant.acting { onFlow(tenant.passwordFlow()) { current, now -> current.step(now) } } shouldBe FlowStep.Complete
+                    tenant.acting { onFlow(tenant.passwordFlow(admin)) { current, now -> current.step(now) } } shouldBe
+                        FlowStep.EnrollMfa(setOf(AuthFactor.TOTP, AuthFactor.PASSKEY))
+                    audit.changes.clear()
+                }
+            }
+
             context("requiring passkeys") {
                 test("keeps the rest of the policy, records the change and puts a passkey before a password-only admin") {
                     val tenant = tenant(TenantPolicy(mfaForUsers = false, sessionIdleTimeout = Duration.ofMinutes(5)))
@@ -297,6 +400,37 @@ class SessionsTest :
 
                     TenantContext.with(tenant) { transaction.execute { policies.load(it) } }.version shouldBe version
                     audit.changes.shouldBeEmpty()
+                }
+
+                test("locks them in: a saved policy may change the rest but not drop the passkey") {
+                    val tenant = tenant()
+                    tenant.acting { requirePasskeys(Actor.System) }
+                    val read = tenant.acting { policy() }
+                    audit.changes.clear()
+                    val change = PolicyChange(true, false, Duration.ofMinutes(15), Duration.ofHours(8))
+
+                    shouldThrow<PasskeysLocked> { tenant.acting { savePolicy(change, read.version, ADMIN) } }
+                    tenant.acting { policy() } shouldBe read
+                    audit.changes.shouldBeEmpty()
+
+                    tenant.acting { savePolicy(change.copy(passkeyRequired = true), read.version, ADMIN) }
+                    tenant.acting { policy() }.run {
+                        passkeyRequired shouldBe true
+                        sessionIdleTimeout shouldBe Duration.ofMinutes(15)
+                    }
+                    audit.changes.clear()
+                }
+
+                test("another tenant may still drop a passkey it chose itself") {
+                    val tenant = tenant()
+                    val read = tenant.acting { policy() }
+                    val passkeys = PolicyChange(true, true, read.sessionIdleTimeout, read.sessionAbsoluteTimeout)
+                    val required = tenant.acting { savePolicy(passkeys, read.version, ADMIN) }
+
+                    tenant.acting { savePolicy(passkeys.copy(passkeyRequired = false), required, ADMIN) }
+
+                    tenant.acting { policy() }.passkeyRequired shouldBe false
+                    audit.changes.clear()
                 }
             }
 
@@ -702,13 +836,15 @@ class SessionsTest :
                     tenant.sessionRow(tenant.login())["factors"].asStrings().shouldContainExactly(AuthFactor.PASSWORD.name)
                 }
 
-                test("resolves to the user and the role") {
+                test("resolves to the user, the role and the session") {
                     val tenant = tenant()
                     val user = tenant.user()
+                    val token = tenant.login()
 
-                    tenant.acting { resolveSession(tenant.login()) }.shouldNotBeNull().run {
+                    tenant.acting { resolveSession(token) }.shouldNotBeNull().run {
                         actor shouldBe Actor.User(user)
                         role shouldBe Role(UserRole.USER.name)
+                        sessionId shouldBe tenant.sessionRow(token)["id"]
                     }
                 }
 
@@ -816,6 +952,111 @@ class SessionsTest :
                     sql.update("UPDATE ${tenant.table("users")} SET status = 'BLOCKED' WHERE id = ?", user)
                     tenant.acting { session(blocked) }.shouldBeNull()
                     tenant.acting { session("made-up") }.shouldBeNull()
+                }
+            }
+
+            context("the sessions of a user in the account") {
+                test("are the live ones of that user only, seen last first, with the IP and the User-Agent of the login") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    tenant.login()
+                    advance(Duration.ofMinutes(31))
+                    val older = tenant.login()
+                    advance(Duration.ofMinutes(2))
+                    val newer = tenant.login()
+                    tenant.login("grace.hopper@acme.test")
+
+                    val listed = tenant.acting { sessionsOf(user) }
+
+                    listed.map { it.id } shouldContainExactly listOf(newer, older).map { tenant.sessionRow(it)["id"] }
+                    listed.forEach {
+                        it.ip shouldBe IP
+                        it.userAgent shouldBe USER_AGENT
+                    }
+                    listed.first().lastSeenAt shouldBe tenant.sessionRow(newer)["last_seen_at"].asInstant()
+                    listed.first().authenticatedAt shouldBe tenant.sessionRow(newer)["authenticated_at"].asInstant()
+                }
+
+                test("one ends alone, and the end is audited") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val ended = tenant.login()
+                    val kept = tenant.login()
+                    val id = tenant.sessionRow(ended)["id"] as UUID
+                    audit.changes.clear()
+
+                    tenant.acting { revokeSession(user, id, Actor.User(user), IP) }
+
+                    tenant.liveFor(ended) shouldBe false
+                    tenant.liveFor(kept) shouldBe true
+                    tenant.acting { sessionsOf(user) }.map { it.id } shouldContainExactly listOf(tenant.sessionRow(kept)["id"])
+                    val record = audit.changes.single()
+                    record.action shouldBe "session.revoked"
+                    record.actor shouldBe Actor.User(user)
+                    record.target shouldBe AuditTarget.user(user)
+                    record.ip shouldBe IP
+                    record.details shouldBe mapOf("session" to "$id")
+                }
+
+                test("a session of someone else, an ended one and an unknown one read as missing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    val theirs = tenant.login("grace.hopper@acme.test")
+                    val mine = tenant.sessionRow(tenant.login())["id"] as UUID
+                    tenant.acting { revokeSession(user, mine, Actor.User(user)) }
+                    audit.changes.clear()
+
+                    listOf(tenant.sessionRow(theirs)["id"] as UUID, mine, UUID.randomUUID()).forEach { id ->
+                        shouldThrow<SessionNotFound> { tenant.acting { revokeSession(user, id, Actor.User(user)) } }
+                    }
+
+                    tenant.liveFor(theirs) shouldBe true
+                    audit.changes.shouldBeEmpty()
+                }
+
+                test("a session past its timeout reads as missing too") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val id = tenant.sessionRow(tenant.login())["id"] as UUID
+                    advance(Duration.ofMinutes(31))
+
+                    shouldThrow<SessionNotFound> { tenant.acting { revokeSession(user, id, Actor.User(user)) } }
+                }
+
+                test("logging out ends the session, is audited as the user's own act, and a repeat records nothing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val token = tenant.login()
+                    val kept = tenant.login()
+                    val id = tenant.sessionRow(token)["id"] as UUID
+                    audit.changes.clear()
+
+                    tenant.acting { logout(user, id, IP) }
+                    tenant.acting { logout(user, id, IP) }
+
+                    tenant.liveFor(token) shouldBe false
+                    tenant.liveFor(kept) shouldBe true
+                    tenant.sessionRow(token)["revoked_at"].shouldNotBeNull()
+                    val record = audit.changes.single()
+                    record.action shouldBe "session.logged_out"
+                    record.actor shouldBe Actor.User(user)
+                    record.target shouldBe AuditTarget.user(user)
+                    record.details shouldBe mapOf("session" to "$id")
+                }
+
+                test("logging out of a session of someone else ends nothing") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.user("grace.hopper@acme.test")
+                    val theirs = tenant.login("grace.hopper@acme.test")
+                    audit.changes.clear()
+
+                    tenant.acting { logout(user, tenant.sessionRow(theirs)["id"] as UUID) }
+
+                    tenant.liveFor(theirs) shouldBe true
+                    audit.changes.shouldBeEmpty()
                 }
             }
 
@@ -1124,6 +1365,25 @@ class SessionsTest :
                     shouldThrow<FlowExpired> { tenant.acting { completeFlow(flow, IP, USER_AGENT) } }
                     tenant.sessionRows(user).shouldBeEmpty()
                     tenant.completed(other).isNotEmpty() shouldBe true
+                }
+
+                test("the sessions of a user keeps the one named, so the user who asks stays logged in") {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val kept = tenant.login()
+                    val ended = listOf(tenant.login(), tenant.login())
+                    val flow = tenant.passwordFlow()
+                    audit.changes.clear()
+
+                    TenantContext.with(tenant) {
+                        val id = tenant.sessionRow(kept)["id"] as UUID
+                        transaction.execute { service.revokeUserSessions(user, Actor.User(user), IP, kept = id) }
+                    }
+
+                    tenant.liveFor(kept) shouldBe true
+                    ended.forEach { tenant.liveFor(it) shouldBe false }
+                    shouldThrow<FlowExpired> { tenant.acting { completeFlow(flow, IP, USER_AGENT) } }
+                    audit.changes.single().details shouldBe mapOf("sessions" to "2")
                 }
 
                 test("bumps the version, because it is a decision") {

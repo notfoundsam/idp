@@ -1,0 +1,257 @@
+# AWS infrastructure
+
+Terraform for staging and production. Each environment lives in an AWS account of its own.
+
+| Path | Holds |
+|---|---|
+| `bootstrap/` | The state bucket with its KMS key, the GitHub OIDC provider and the roles GitHub Actions assume. Applied once per account by hand |
+| `environments/<env>/` | The root of an environment: network, ECR, static bucket, ECS cluster, internal CA, telemetry, alarms, database and PgBouncer, Valkey, keys, erasure journal, mail and the services. The output `services` holds what each service gets beside the database |
+| `modules/network` | VPC without a route to the internet, AWS services through VPC endpoints, a security group per workload, the public ALB and the internal one of `ops` |
+| `modules/app` | The services `app`, `worker` and `ops`, the one-off tasks `migrator`, `recovery` and `cli`, their execution roles, the rules of `app` on the public listener and the listener of `ops` on the internal ALB |
+| `modules/iam` | The task role of each task and the key policies of the platform KEK and of tenant KEKs |
+| `modules/registry` | ECR repositories with immutable tags |
+| `modules/release` | The rights of the role `deploy` and the SSM parameter `/<name>/release`, the settings that the release workflow reads first |
+| `modules/static` | The bucket of the frontend files, read only by CloudFront |
+| `modules/edge` | The distribution of the tenant domains `*.<domain>` with the function of `infra/web/spa-rewrite.js` for the routes of the apps, the headers of `infra/web/security-headers.json` and the cache policies of chunks and pages in front of the bucket, and `/api/*` and `/saml/*` uncached to the ALB. Its WAF, the certificates of both, the HTTPS listener of the ALB and the ingress of the ALB from CloudFront alone |
+| `modules/cluster` | The ECS cluster and the private DNS namespace `idp.internal` |
+| `modules/pki` | The internal CA and the server certificates it issues to PgBouncer, `app`, `ops` and the collector, their keys in Secrets Manager |
+| `modules/telemetry` | The OpenTelemetry Collector of `infra/otel-collector`, the log groups of OTLP and of spans with their retention, Transaction Search of X-Ray and the read policy of the on-call engineers |
+| `modules/alarms` | The CloudTrail trail of the account with its bucket and log group, the alarms on the metrics of the services, on the trail and on the WAF, and the encrypted topics they notify |
+| `modules/data` | RDS, the bootstrap tasks and PgBouncer, see `infra/pgbouncer` and `infra/db-bootstrap` |
+| `modules/valkey` | ElastiCache Valkey with TLS and the AUTH token of `modules/keys`, reachable from `app` alone |
+| `modules/keys` | The platform KEK and the generated secrets: the role passwords, the AUTH token of Valkey, the HMAC key of Throttle and the origin header of CloudFront. Its ephemeral resources keep it out of `make test-infra`, so the modules that use the secrets plan there |
+| `modules/erasure-journal` | The bucket of the erasure journal under Object Lock, see `docs/security/restore-runbook.md` |
+| `modules/mail` | The domain identity of SES with its DKIM keys and the SMTP credentials for one sender |
+
+The region and the domain are variables, and only the `*.example` files hold placeholders. Both must be chosen before the first customer: passkeys are bound to the domain, so changing it later locks every user out.
+
+`make lint-infra` checks formatting, validates every root without its backend and runs TFLint. `make test-infra` runs `terraform test` of the modules against a mocked provider. Neither reads state or calls an AWS API.
+
+## Setting up an environment
+
+1. In the account of the environment, apply `bootstrap/` with a copy of `terraform.tfvars.example`. Its state stays local: it holds no secret, and every resource in it can be imported again.
+2. In GitHub, create the environments `<env>-infra` for the `terraform` role and `<env>` for the `deploy` role, both with required reviewers and with the deployment branch `main` alone. The OIDC trust checks only the environment, so this rule and the ref check of `Deploy` and `Rollback` keep a branch with a changed workflow away from the roles. A token of one environment cannot assume the role of the other. Give `<env>` the variables `AWS_REGION` and `AWS_DEPLOY_ROLE_ARN`, the ARN of the role named by the output `deploy_role_name`.
+3. Write `environments/<env>/backend.hcl` from `backend.hcl.example` with the outputs of the bootstrap, and `terraform.tfvars` from its example with `desired_counts = { ops = 0 }`: `ops` cannot start before the service tenant exists, see Services. Then `terraform -chdir=environments/<env> init -backend-config=backend.hcl`.
+4. Apply `module.registry` alone with `-target`, build `infra/pgbouncer`, `infra/db-bootstrap` and `infra/otel-collector` for ARM64, and push them to ECR under `infra_image_tag`. Create the certificates as the section Edge describes, then apply the environment. Later releases push a new `infra_image_tag` themselves.
+5. Create the records of the output `dkim_records` at the DNS host, which verify the domain at SES, and request production access for SES in the region of the environment. Until both are done SES sends only to verified addresses, and no invitation reaches a customer.
+6. Run the `owner` step of the database bootstrap, below.
+7. Run the workflow `Deploy` with `skip-smoke`, which only the first release of an environment may set. It runs `migrator` and `role-passwords`, the other two steps of the bootstrap, and replaces the revisions that the apply gave the services. `ops` takes its revision with no task.
+8. Bootstrap the service tenant and store its metadata as Services describes, then remove `ops` from `desired_counts` and apply, which starts `ops`.
+9. Set up the synthetic tenant of the smoke test as [docs/release.md](../../docs/release.md#the-synthetic-tenant) describes. Every later release signs in there.
+
+## Edge
+
+Every tenant domain is a subdomain of `domain` and reaches one CloudFront distribution:
+
+| Path | Origin | Cache | Plain HTTP |
+|---|---|---|---|
+| `/login/assets/*`, `/console/assets/*` | S3 | A year | Redirect |
+| `/api/*`, `/saml/*` | The ALB, with every header, cookie and the query string of the viewer | None | Refused |
+| Everything else | S3 behind the function: `/` leads to `/console/`, pages get their `index.html`, other paths a `404` | None | Redirect |
+
+`app` selects the tenant by the `Host`, so CloudFront passes it on, and the certificate of the ALB matches it. The edge caches no error either: the cache key holds no `Host`, and an error of one tenant would reach the others. A missing file in S3 is therefore a `403`, as CloudFront may not list the bucket, and the error pages of a distribution cannot turn it into a `404` without replacing the errors of the API too.
+
+The bucket holds the files of each app under `<app>/`, the live pages at `<app>/index.html`, and per release `releases/<version>/manifest.json` with the list of its files and the pages at `releases/<version>/<app>/index.html`, which the function never routes to. `infra/deploy/release-assets.mjs stage` uploads a build with the `Content-Type` that nginx serves locally, `activate` marks the release live in its manifest and copies its pages into place, also for a rollback, and `prune-assets.mjs` deletes what no manifest of a release live in the last 30 days or of the previous release lists. The scripts call the AWS CLI with the role `deploy`, and no lifecycle rule expires a current object by age.
+
+CloudFront takes certificates and web ACLs only from `us-east-1`, so the environment has a second provider `aws.us_east_1`.
+
+Nothing reaches the ALB past CloudFront and its WAF:
+
+- **WAF:** the web ACL of the distribution limits each client address, see `docs/security/limits.md`. Behind CloudFront every request would come from an edge server, so only the edge can count by the viewer.
+- **Security group:** the ALB takes HTTPS only from the managed prefix list `com.amazonaws.global.cloudfront.origin-facing`. It weighs 55 of the 60 inbound rules a security group takes by default, so the group of the ALB gets no other ingress.
+- **Origin header:** the prefix list admits the distributions of every AWS account, so CloudFront also sends `X-Origin-Verify` with a generated value, and the listener answers `403` without it. Every rule that forwards to a service has to require it too, with the output `origin_header` of the module as the name and `module.keys.origin_header_value` as the value. A request with the header that no rule takes gets `404`.
+- **Client address:** the origin request policy of `app` adds `CloudFront-Viewer-Address`, which CloudFront overwrites when a viewer sends it, and the output `services` hands `app` its name as `CLIENT_IP_HEADER`. `app` reads the address from that header alone and never from `X-Forwarded-For`, which keeps what the client sent.
+
+The plan cannot prove that CloudFront overwrites the address a client sends, so a new environment is checked once: from one client, start 31 flows in a minute, each with another forged `CloudFront-Viewer-Address`. The last one must get `429`, as all of them count under the real address of the client.
+
+DNS hosting is not decided, so Terraform creates no records. On the first apply:
+
+1. Create the certificates alone: `terraform apply -target=module.edge.aws_acm_certificate.cloudfront -target=module.edge.aws_acm_certificate.alb`.
+2. Create the records of the output `certificate_validation_records` at the DNS host and keep them, ACM renews through them.
+3. Apply everything. The apply waits until ACM issues both certificates.
+4. Point `*.<domain>` at the output `distribution_domain_name`.
+
+## Services
+
+Every task runs the image `<repository>:<release>` with a read-only root. The JVM keeps its temporary files in a volume at `/run/idp`, which ECS fills from the image.
+
+| Task | Runs as | Reached by | Database |
+|---|---|---|---|
+| `app` | ECS service | The public ALB: `/api/*` and `/saml/*` with the origin header, on 8080 over HTTPS | `app_runtime` through PgBouncer |
+| `worker` | ECS service | Nobody. It sends mail to SES on 587 through the interface endpoint | `worker_runtime` through PgBouncer, `provisioner` directly |
+| `ops` | ECS service | The internal ALB at `ops.<domain>`, on 8080 over HTTPS | `ops_runtime` through PgBouncer |
+| `migrator` | One-off task, output `one_off_tasks` | Nobody | `idp_owner` directly |
+| `recovery` | One-off task of the `migrator` image with `REAPPLY_ERASURES=true`, only after a restore, see `docs/security/restore-runbook.md` | Nobody | `idp_owner` directly |
+| `cli` | One-off task of the `ops` image, output `one_off_tasks` | Nobody | `ops_runtime` through PgBouncer |
+
+The ALBs check the health of `app` and `ops` over HTTPS on the management port 8081, which only they reach. `worker` checks its own readiness. Staging runs the Spring profile `staging`, production `prod`: both refuse what the local environment allows, and only `staging` lets a load test set `THROTTLE_ENABLED=false` on `app`. `modules/app` refuses the profile `local`, a profile set through the output `services` and any JDWP option.
+
+`ops` answers only on the internal ALB, whose security group admits HTTPS from `ops_client_cidrs`, the private ranges of the VPN, and nothing while the list is empty. Create the record `ops.<domain>` towards the output `ops_alb_dns_name`, beside the wildcard of the edge: it resolves to private addresses. The service tenant `ops-sso` stays a tenant domain behind CloudFront. The ALB keeps a browser on one task of `ops` for 30 minutes, as `ops` keeps its sessions in memory, and `ops` has no `CLIENT_IP_HEADER`: no header of the ALB carries an address that a client cannot forge, so it records the address of the ALB.
+
+`ops` trusts the SAML metadata of `ops-sso` in the secret of the output `idp_metadata_secret_arn`, and a first container of its task writes it to the file of `IDP_METADATA_FILE`. Terraform creates the secret empty, so `ops` starts only once the operator has stored the metadata:
+
+1. Run the CLI `bootstrap`, below, and wait until the service tenant is active.
+2. Store its metadata: `aws secretsmanager put-secret-value --secret-id <idp_metadata_secret_arn> --secret-string file://metadata.xml`, with the file from `https://ops-sso.<domain>/saml/metadata`.
+3. Start `ops` again: `aws ecs update-service --cluster <cluster_name> --service ops --force-new-deployment`, or on a new environment apply with the default `desired_counts`.
+
+After a key rotation at the service tenant, store the new metadata and redeploy `ops` between starting and completing the rotation.
+
+The output `one_off_tasks` names the family of each one-off task, whose latest revision the last release or rollback registered with its images. `recovery` is the exception: no release registers it, so before a recovery run apply the environment with `release` set to the image tag that `app` runs. A one-off task runs with its network from the same output and its arguments in `overrides`:
+
+```bash
+aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
+  --task-definition <one_off_tasks.cli.task_definition> \
+  --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...],assignPublicIp=DISABLED}" \
+  --overrides '{"containerOverrides":[{"name":"cli","command":["cli","suspend","<tenant-id>"]}]}'
+```
+
+## Releases
+
+The workflow `Deploy` of `.github/workflows/deploy.yml` releases to the GitHub environment of the same name with the role `deploy`, and `Rollback` returns to the release before. Both read the parameter `/<name>/release` of `modules/release` and leave the logic to `infra/deploy`. Terraform creates the services with the revisions of `release` and ignores their task definition afterwards:
+
+- **Revisions:** a release registers a revision of `app`, `worker`, `ops`, `migrator` and `cli` from the latest one of each family, with the images of the release, so a change that an apply registered goes out with the next release, or at once with the input `full`. Only the image tags, and in `app` `APP_VERSION` and `MIN_CLIENT_VERSION`, change. Terraform never deregisters a revision.
+- **What is live:** the revision of `app` tells it. Its images are the backend, `APP_VERSION` the frontend in place, and its tags the release, the commits of both sides and, as on every revision of a service, the revision the service ran before.
+- **Paths:** a side goes out when one of its paths changed since its live commit. The frontend alone keeps the images that run and still rolls the services out for `APP_VERSION`, the backend alone keeps the pages, whose version `app` goes on naming.
+- **Order:** the checks of `docs/security/dependencies.md` on the registries, the SBOMs and the time frames, the images of `infra/` under `infra_image_tag` when ECR lacks them, the same time frames for the OS packages of every image that will run, `cli kms-check` with the new image, which encrypts with the platform KEK and stops the release while KMS is unusable, `migrator`, `role-passwords`, the new files, `app`, `worker` and `ops` one after the other, `migrator` again, the pages, the smoke test of [docs/release.md](../../docs/release.md#the-synthetic-tenant), five minutes in which no alarm of the output `release_alarms` of `modules/alarms` goes to ALARM after the rollout started, the git tag `release/<env>/<version>` and the pruning of old files. The deployment circuit breaker rolls a failed service back, and the workflow then rolls back what moved.
+- **Rollback:** first the pages of the previous release, then the revision each service ran before, then the one-off tasks with its images. Migrations stay, expand is compatible with the old code.
+- **Shutdown:** ECS drains a task from its target group for 30 seconds, then stops it and kills it 60 seconds later. `app` and `ops` finish their requests within 20 seconds, `worker` its requests and running jobs within 40.
+
+## Rights in AWS
+
+Each task runs as a task role of its own from `modules/iam`, apart from the execution role with which ECS pulls the image and reads the secrets of that task alone. The output `task_role_arns` names them, and so does CloudTrail for every call of a service.
+
+| Task | Platform KEK | Tenant KEKs | Erasure journal | Else |
+|---|---|---|---|---|
+| `app` | | `Decrypt` | | |
+| `worker` | `Decrypt` | `CreateKey` and `EnableKeyRotation` while provisioning or moving, `Encrypt`, `Decrypt`, aliases, `ScheduleKeyDeletion` at offboarding | `PutObject` | |
+| `ops` | `Encrypt` | | | |
+| `cli` | `Encrypt` | | | `GetCallerIdentity`, which AWS answers to anybody |
+| `migrator` | | | | |
+| `recovery` | | `Decrypt`, `DeleteAlias`, `ScheduleKeyDeletion` | `ListBucket` | |
+
+A tenant KEK appears at runtime, so no IAM policy can name it. `worker` attaches the policy of the output `tenant_kek_policy` of `modules/iam` to every key it creates, as `KMS_AWS_KEY_POLICY`, and that policy grants the rights in the table. IAM holds only the calls that name no key and those on the aliases `alias/tenant-*`. A change to the policy reaches only keys created afterwards, so older keys need `PutKeyPolicy` one by one. The platform KEK exists before the services, so IAM grants its rights by its ARN.
+
+The key policies let the account grant the rest through IAM, as the default policy does, and deny for everybody, the root user included:
+
+- `ops` and `cli` everything on a tenant KEK and everything but `Encrypt` on the platform KEK, so they store a contact and never read one.
+- `Decrypt` of a tenant KEK beside `app`, `worker` and `recovery`, of the platform KEK beside `worker`.
+- `ScheduleKeyDeletion` of a tenant KEK beside `worker` and `recovery`, of the platform KEK to every task.
+- `ReEncrypt*` and `CreateGrant` on both.
+
+They match principals by `aws:PrincipalArn`, which still matches a role created again under the same name, where a principal in the policy would stop matching. Changing a key policy stays possible for the account and lands in CloudTrail.
+
+Every task role denies every call of CloudWatch Logs, X-Ray and CloudWatch, so no task reads, shortens or deletes what it logged, see Telemetry. Every task role denies `ecs:ExecuteCommand`, and `ops` and `cli` deny every call of Secrets Manager, so neither opens a shell in `app` or reads the password of `app_runtime`, whatever is granted later. `migrator` runs every release with no rights in AWS: only `recovery` may destroy KEKs and read the journal, and `modules/app` refuses `REAPPLY_ERASURES` on any other task.
+
+The role `deploy` of a release reads its parameter, pushes to the repositories of the environment and pulls from them for the scan of the images, writes the static bucket, registers and tags revisions, updates `app`, `worker` and `ops`, runs `migrator`, `cli` and `role-passwords` in the cluster, reads the secret `<name>/release/smoke-login` of the smoke test and the state of the alarms it watches, and passes only the task and execution roles of those tasks, to ECS tasks alone (`release.tftest.hcl`). It passes neither the role of `recovery` nor its own, nor that of `terraform`, and it deregisters no revision. Rolling out `worker` already runs a new image with the role of `worker`, so whoever holds `deploy` holds what `worker` may do: only a run from `main` in the environment, approved by a reviewer, gets the role.
+
+## Database bootstrap
+
+RDS has no superuser, so `idp_owner` is created by the master user, whose password RDS keeps in a secret that only the bootstrap task may read. Run each step as a one-off task with the network from the output `bootstrap_network`:
+
+```bash
+aws ecs run-task --cluster <cluster_name> --launch-type FARGATE \
+  --task-definition <bootstrap_task_definitions.owner> \
+  --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...],assignPublicIp=DISABLED}"
+```
+
+1. `owner`, once on a new instance: creates `idp_owner` and `provisioner` with their passwords from Secrets Manager and hands the database to `idp_owner`, as `dev-tools/postgres/init.sql` does locally.
+2. `migrator`, which creates the runtime roles. Every release runs it.
+3. `role-passwords`, as `idp_owner`: sets the passwords of `app_runtime`, `worker_runtime` and `ops_runtime` from Secrets Manager. Every release of the backend runs it after `migrator`, so a new role gets its password.
+
+PgBouncer starts before that, and its connections fail until step 3 is done. Every step is safe to repeat.
+
+## Credentials
+
+Terraform generates every credential of the services into Secrets Manager, and nothing of `dev-tools` reaches an environment. The prod profile of `app` refuses Valkey without TLS or a password and an HMAC key shorter than 32 characters, so the local values cannot start it.
+
+| Credential | Secret | Replaced by raising |
+|---|---|---|
+| Database role passwords | `<env>/db/<role>` | `db_password_versions.<role>` |
+| AUTH token of Valkey, `VALKEY_PASSWORD` | `<env>/valkey/auth-token` | `credential_versions.valkey_auth_token` |
+| HMAC key of Throttle, `THROTTLE_IP_HMAC_KEY` | `<env>/app/throttle-ip-hmac-key` | `credential_versions.throttle_ip_hmac_key` |
+| SMTP credentials of SES, `MAIL_USERNAME` and `MAIL_PASSWORD` | `<env>/mail/smtp`, keys `username` and `password` | `credential_versions.smtp` |
+| Origin header of CloudFront, `X-Origin-Verify` | `<env>/edge/origin-header` | `credential_versions.origin_header` |
+| TLS keys of PgBouncer, `app`, `ops` and the collector | `<env>/tls/<name>` | An apply in the last 60 days of its certificate, then a redeploy of the service |
+
+The passwords, the token and the HMAC key are write-only values, so they reach neither the plan, the state nor the repository. The origin header is written the same way, but CloudFront and the ALB keep it in their configuration, so Terraform reads it back and it lives in the encrypted state, marked sensitive in the plan. SES derives SMTP credentials only from the access key of an IAM user, which AWS cannot create write-only, so that key lives in the encrypted state like the keys of `modules/pki`. `ProductionDatabaseTest` runs the database images and connection settings against a Postgres that behaves like RDS, `ValkeyTlsTest` the client of `app` against a Valkey that serves TLS alone.
+
+To replace a database password, raise its version and apply. Then run `owner` for `idp_owner` and `provisioner` or `role-passwords` for a runtime role, and redeploy PgBouncer and the services that use the role. Connections that PgBouncer opened before keep working until they close.
+
+To replace another credential, raise its version, apply and redeploy the service that reads it:
+
+- **Valkey token:** ElastiCache accepts the new token beside the previous one (`ROTATE`), so `app` keeps working while it redeploys. The previous token stays valid until it is removed, so once `app` runs on the new one, set the token of the secret alone: `aws elasticache modify-replication-group --replication-group-id <env> --auth-token-update-strategy SET --apply-immediately --cli-input-json file://token.json`, with `{"AuthToken": "<the value of <env>/valkey/auth-token>"}` in a file that is deleted afterwards. Terraform keeps `ROTATE` for the next replacement and sees no change.
+- **HMAC key:** the counters start over, nothing else depends on the key.
+- **SMTP credentials:** the old access key is deleted in the same apply, so redeploy `worker` right after it. Until then sends fail and the outbox retries them.
+- **Origin header:** the listener takes the new value at once, while CloudFront needs some minutes to deploy it to every edge, and the ALB refuses the API and SAML with `403` meanwhile. Nothing redeploys, but replace it only after a leak and outside working hours.
+
+## Platform KEK and erasure journal
+
+The platform KEK lives in KMS as `alias/<env>-platform` and rotates every 365 days, as `AwsKeyManagementService` rotates the KEKs of tenants. `worker`, `ops` and `migrator` get its URI as `PLATFORM_KEK_URI`, and its key policy comes from `modules/iam`.
+
+The erasure journal is the bucket `<env>-erasures-<account>` with versioning and Object Lock in COMPLIANCE mode, which `worker`, `migrator` and `recovery` get as `ERASURE_JOURNAL_BUCKET` and `ERASURE_JOURNAL_REGION`. Every version is locked for the backup retention of RDS plus 15 days, 45 in all, and the lifecycle removes it after that. The bucket policy refuses deletes to everybody, so no role can hide an entry behind a delete marker.
+
+A KEK that a move to another KMS replaced opens the backups taken before the move, so `worker` keeps it for as long as the journal keeps an entry, `KMS_PREVIOUS_KEK_RETENTION`, 45 days. Both answer how long a restore may need what existed before it, and the tenant key under both KEKs is the same, so the longer wait discloses nothing new.
+
+## TLS to Postgres
+
+Every client verifies the server certificate and its name, `sslmode=verify-full`, and trusts one CA alone, never the public ones:
+
+| Connection | Host | Trusted CA |
+|---|---|---|
+| `app`, `worker` and `ops` to PgBouncer | `pgbouncer.idp.internal` | The internal CA of `modules/pki` |
+| PgBouncer to RDS | The RDS endpoint | The RDS roots of the region |
+| `migrator`, the provisioner in `worker` and the bootstrap tasks to RDS | The RDS endpoint | The RDS root of `ca_cert_identifier` |
+
+The JDBC URLs in the output `database` read the certificate from a variable: `DB_TLS_CA` for `DB_URL`, `PROVISIONER_DB_TLS_CA` for `PROVISIONER_DB_URL`. PgBouncer accepts only TLS clients, and RDS only TLS connections through `rds.force_ssl`.
+
+The internal CA is a key in the Terraform state, which its own KMS key encrypts and only the `terraform` role reads. An apply in the last 60 days of a server certificate issues a new one, and the CA itself lives ten years.
+
+## TLS to the services and the collector
+
+`app` and `ops` serve both ports over TLS 1.2 or 1.3 with a certificate of the internal CA, `SERVER_TLS_CERT` with its key from the secret in `SERVER_TLS_KEY`, and the target groups and health checks of the ALBs speak HTTPS. The ALB checks the certificate of no target, which AWS does not offer, so the security groups keep everybody else off the ports. `prod` and `staging` refuse `SERVER_TLS_ENABLED=false`, which only the local environment and tests set.
+
+The collector serves OTLP over HTTPS at `otel-collector.idp.internal:4318` with a certificate for that name. `app`, `worker`, `ops` and the CLI get it as `OTEL_EXPORTER_OTLP_ENDPOINT`, verify the name and trust only the internal CA in `OTLP_TLS_CA`, and their deployed profiles refuse an endpoint without either. A new certificate needs a redeploy of the service that serves it, the clients keep trusting the same CA. `docs/security/communications.md` lists every connection.
+
+## Telemetry
+
+The collector of `infra/otel-collector` runs as the ECS service `otel-collector` and writes through the interface endpoints `logs` and `xray`:
+
+| Data | Store | Retention |
+|---|---|---|
+| Console of each task | `/<env>/<task>`, written by ECS | 90 days |
+| OTLP lines | `/<env>/otlp` | 90 days |
+| OTLP lines of `idp.security` | `/<env>/otlp/security` | A year |
+| Metrics `idp.*` | CloudWatch metrics in the namespace `<env>`, from the EMF events in `/<env>/otlp/metrics` | 15 months, fixed by CloudWatch. The events 14 days |
+| Spans | `aws/spans` through Transaction Search of X-Ray | 14 days |
+| Console of the collector | `/<env>/otel-collector` | 90 days |
+
+The services may only write. Their task roles deny CloudWatch Logs, X-Ray and CloudWatch, and their execution roles deny reading, shortening and deleting lines, with the list of the output `log_tampering_actions`. The task role of the collector appends to its three groups, sends spans with `AWSXrayWriteOnlyPolicy` and denies the same list. Every log group has deletion protection, so only its retention removes a line, unless somebody with rights on the account turns the protection off, which CloudTrail records.
+
+Only the on-call engineers read telemetry, through the policy of the output `telemetry.read_policy_arn`, which reads the groups of the environment, X-Ray and the metrics and writes nothing. Attach it to their permission set and to nothing else. Transaction Search is a setting of the account and region: a second environment in the same account would share `aws/spans`.
+
+## Alarms
+
+`modules/alarms` notifies the topic `<env>-alarms`, encrypted with a key of its own, which only CloudWatch alarms of the account and region use beside the account. The endpoints of `alarm_endpoints` subscribe to it, and each confirms its subscription once. Every alarm also notifies when it is back to OK.
+
+| Alarm | Reads | Fires on |
+|---|---|---|
+| `unexpected-failures`, `backend-tls-failures`, `valkey-failures`, `failed-logins`, `outbox-lag`, `outbox-dead`, `certificate-expiry` | The metrics `idp.*` of the namespace `<env>` | The alerts of `dev-tools/lgtm/alerts.yaml` with their thresholds, see `docs/security/logging.md` |
+| `throttle-refusals` | A metric filter on `event=throttle.rejected` in `/<env>/otlp/security` | More than 300 in 5 minutes |
+| `kms-decrypt` | The trail | `Decrypt` by any principal but the task roles of `app`, `worker` and `recovery` |
+| `kms-key-deletion` | The trail | `ScheduleKeyDeletion` by any principal but the task roles of `worker` and `recovery` |
+| `kms-key-policy` | The trail | `PutKeyPolicy` or `DisableKey` |
+| `rds-snapshot-export` | The trail | A snapshot copied, shared or exported |
+| `root-activity` | The trail | Any call of the root user |
+| `iam-changes` | The trail | A change of an IAM policy or trust policy, a new access key or console password |
+| `monitoring-changes` | The trail | A change of the trail, of a log group, its retention or deletion protection, or a deleted metric filter or alarm |
+| `<env>-requests-per-address-blocked`, `<env>-app-requests-per-address-blocked` | `BlockedRequests` of the WAF in `us-east-1` | More than 300 blocked requests of a rule in 5 minutes |
+
+The thresholds of the metrics are those of the local environment until a load test on staging measures normal traffic. CloudWatch keeps the metrics of a web ACL of CloudFront in `us-east-1` alone, so their alarms live there and notify a second topic of the same name in that region.
+
+The trail `<env>-management` records the management events of every region, the global ones of IAM and the reads of KMS included, into the bucket `<env>-trail-<account>` and the log group `/<env>/cloudtrail`, both for a year. CloudTrail delivers the first copy of management events for free, and the log group costs the ingestion of every event, most of them `Decrypt` of `app`. A call that an AWS service makes for a principal, such as Secrets Manager or S3 decrypting with their keys, carries `invokedBy` and stays out of `kms-decrypt`. The group has deletion protection, the role of the trail only appends to it and denies the list of `log_tampering_actions`, and the bucket refuses deletes to everybody, so only the retention removes an event. The trail checks its files with digests, `aws cloudtrail validate-logs` proves that none changed.
+
+CloudTrail names the role of a task as the issuer of its session, so the alarms tell the services apart by `task_role_arns`. A tenant KEK appears at runtime and CloudTrail names no alias, so `kms-decrypt` watches every key: only the services decrypt directly, and the key policies deny the others anyway, so an alarm means an attempt or a changed policy.
+
+## TLS to Valkey
+
+ElastiCache accepts only TLS connections with the AUTH token, `transit_encryption_mode = "required"`. `app` connects to `VALKEY_URL`, a `rediss://` URL of the primary endpoint, verifies the certificate and its name, offers only TLS 1.2 and 1.3, and trusts only the certificates in `VALKEY_TLS_CA`: the roots of Amazon Trust Services, which `modules/valkey` downloads and checks on every plan. A `rediss://` URL without them does not start, and `verifyPeer` in the URL cannot turn the check off.

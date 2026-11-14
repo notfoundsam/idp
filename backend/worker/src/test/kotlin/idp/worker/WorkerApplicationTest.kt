@@ -9,7 +9,10 @@ import idp.sharedkernel.erasure.adapter.FileErasureJournal
 import idp.sharedkernel.scheduling.TenantCleanup
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.testing.OTLP_EXPORT
+import idp.sharedkernel.testing.OTLP_SSL_BUNDLES
+import idp.sharedkernel.testing.TestCa
 import idp.sharedkernel.testing.TestMailpit
+import idp.sharedkernel.testing.shutdownBudget
 import idp.sharedkernel.throttle.RateLimiter
 import idp.tenancy.application.NewApplication
 import idp.tenancy.application.TenancyEvents
@@ -22,6 +25,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.maps.shouldNotBeEmpty
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -31,12 +35,16 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import io.micrometer.registry.otlp.OtlpMeterRegistry
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import org.springframework.boot.runApplication
+import org.springframework.boot.ssl.SslBundles
+import org.springframework.core.NestedExceptionUtils
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.mail.javamail.JavaMailSenderImpl
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.security.cert.X509Certificate
+import java.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 class WorkerApplicationTest :
@@ -81,6 +89,17 @@ class WorkerApplicationTest :
             }
         }
 
+        "a stopping worker finishes its requests and its running jobs before ECS kills it" {
+            runApplication<WorkerApplication>(*arguments).use { context ->
+                val settings = context.environment
+                settings.getProperty("server.shutdown") shouldBe "graceful"
+                settings.getProperty("spring.task.scheduling.shutdown.await-termination") shouldBe "true"
+                val phase = settings.getProperty("spring.lifecycle.timeout-per-shutdown-phase", Duration::class.java)!!
+                val jobs = settings.getProperty("spring.task.scheduling.shutdown.await-termination-period", Duration::class.java)!!
+                phase.plus(jobs) shouldBeLessThan shutdownBudget()
+            }
+        }
+
         "worker creates no Valkey adapter" {
             runApplication<WorkerApplication>(*arguments).use { context ->
                 context.getBeansOfType(RateLimiter::class.java).shouldBeEmpty()
@@ -104,6 +123,23 @@ class WorkerApplicationTest :
             }
         }
 
+        "every exporter trusts the CA in OTLP_TLS_CA alone" {
+            runApplication<WorkerApplication>(*arguments, *OTLP_EXPORT, "--OTLP_TLS_CA=${TestCa("Test collector CA").pem}").use { context ->
+                OTLP_SSL_BUNDLES.forEach { context.environment.getProperty(it) shouldBe "otlp" }
+                val bundle = context.getBean(SslBundles::class.java).getBundle("otlp")
+                val store = bundle.stores.trustStore.shouldNotBeNull()
+                store.aliases().toList().map { (store.getCertificate(it) as X509Certificate).subjectX500Principal.name } shouldBe
+                    listOf("CN=Test collector CA")
+            }
+        }
+
+        "the prod profile refuses to export over plain HTTP" {
+            val failure = shouldThrowAny { runApplication<WorkerApplication>(*arguments, *OTLP_EXPORT, "--spring.profiles.active=prod") }
+
+            NestedExceptionUtils.getMostSpecificCause(failure).message.shouldNotBeNull() shouldContain
+                "An OTLP endpoint without TLS is refused in the prod profile"
+        }
+
         "the audit log of worker writes to the tenant journal" {
             runApplication<WorkerApplication>(*arguments).use { context ->
                 context.getBean(AuditLog::class.java).shouldBeInstanceOf<AuditService>()
@@ -112,6 +148,16 @@ class WorkerApplicationTest :
 
         "new keys need a configured adapter" {
             shouldThrowAny { runApplication<WorkerApplication>(*arguments, "--KMS_NEW_KEYS=aws-kms") }
+        }
+
+        "Terraform sets how long a KEK replaced by a move is kept" {
+            runApplication<WorkerApplication>(*arguments, "--KMS_PREVIOUS_KEK_RETENTION=45d").use { context ->
+                context.environment.getProperty("idp.kms.previous-kek-retention", Duration::class.java) shouldBe Duration.ofDays(45)
+            }
+        }
+
+        "worker does not start with a retention that is no duration" {
+            shouldThrowAny { runApplication<WorkerApplication>(*arguments, "--KMS_PREVIOUS_KEK_RETENTION=forever") }
         }
 
         "worker does not start without an erasure journal" {

@@ -118,6 +118,20 @@ private class TotpFixture {
     fun TenantContext.recoveryHashes(user: UUID): List<ByteArray> =
         sql.queryForList("SELECT code_hash FROM ${table("recovery_codes")} WHERE user_id = ?", ByteArray::class.java, user).filterNotNull()
 
+    fun TenantContext.passkey(user: UUID) {
+        sql.update(
+            """
+            INSERT INTO ${table("passkey_credentials")}
+                (id, user_id, credential_id, attested_credential_data, sign_count, backup_eligible, backed_up, created_at)
+            VALUES (?, ?, ?, ?, 0, false, false, now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            user,
+            UUID.randomUUID().toString().toByteArray(),
+            byteArrayOf(1),
+        )
+    }
+
     fun <T> TenantContext.inTransaction(block: (DSLContext) -> T): T = TenantContext.with(this) { transaction.execute(block) }
 
     fun TenantContext.wrongAttempts(
@@ -752,6 +766,150 @@ class TotpServiceTest :
                     tenant.wrongAttempts(user, secret, 4)
 
                     tenant.acting { useRecoveryCode(user, code, ADMIN) } shouldBe true
+                }
+            }
+        }
+
+        context("removing") {
+            test("deletes the secret and its codes, and writes the audit log") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.acting { issueRecoveryCodes(user, ADMIN) }
+                    audit.changes.clear()
+
+                    tenant.acting { remove(user, ADMIN, IP, FactorRequirement.NONE) }
+
+                    tenant.credential(user).shouldBeNull()
+                    tenant.recoveryHashes(user).shouldBeEmpty()
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe false
+                    val record = audit.changes.single()
+                    record.action shouldBe "user.totp_removed"
+                    record.actor shouldBe ADMIN
+                    record.target shouldBe AuditTarget.user(user)
+                    record.ip shouldBe IP
+                    record.details shouldBe mapOf("recovery_codes" to "removed")
+                }
+            }
+
+            test("keeps the codes while a passkey is left") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.acting { issueRecoveryCodes(user, ADMIN) }
+                    tenant.passkey(user)
+                    audit.changes.clear()
+
+                    tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) }
+
+                    tenant.recoveryHashes(user) shouldHaveSize 10
+                    audit.changes.single().details shouldBe emptyMap()
+                }
+            }
+
+            test("a requirement keeps the last second factor, the codes and the journal as they were") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.acting { issueRecoveryCodes(user, ADMIN) }
+                    audit.changes.clear()
+
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.SECOND_FACTOR) } }
+                    shouldThrow<FactorRequired> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.PASSKEY) } }
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe true
+                    tenant.recoveryHashes(user) shouldHaveSize 10
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
+            test("a requirement of a second factor lets the TOTP go while a passkey is left") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.passkey(user)
+
+                    tenant.acting { remove(user, ADMIN, null, FactorRequirement.SECOND_FACTOR) }
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe false
+                }
+            }
+
+            test("lets a new secret be enrolled") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val old = tenant.confirmed(user)
+                    tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) }
+
+                    val renewed = tenant.confirmed(user)
+
+                    renewed.bytes.contentEquals(old.bytes) shouldBe false
+                    tenant.acting { verify(user, old.current()) } shouldBe false
+                }
+            }
+
+            test("a secret nobody confirmed is no factor to remove, and nothing is audited") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.enrolled(user)
+
+                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) } }
+                    val grace = tenant.user("grace.hopper@acme.test")
+                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(grace, ADMIN, null, FactorRequirement.NONE) } }
+
+                    audit.changes.shouldBeEmpty()
+                }
+            }
+
+            test("nothing is removed when the audit record fails") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    tenant.confirmed(user)
+                    tenant.acting { issueRecoveryCodes(user, ADMIN) }
+                    audit.failing = true
+
+                    shouldThrow<IllegalStateException> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) } }
+
+                    tenant.acting { hasConfirmedTotp(user) } shouldBe true
+                    tenant.recoveryHashes(user) shouldHaveSize 10
+                }
+            }
+
+            test("leaves the factor of another user alone") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val other = tenant.user("grace.hopper@acme.test")
+                    tenant.confirmed(other)
+
+                    shouldThrow<TotpNotEnrolled> { tenant.acting { remove(user, ADMIN, null, FactorRequirement.NONE) } }
+
+                    tenant.acting { hasConfirmedTotp(other) } shouldBe true
+                }
+            }
+        }
+
+        context("counting recovery codes") {
+            test("gives the codes not yet used, of this user only") {
+                TotpFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+                    val other = tenant.user("grace.hopper@acme.test")
+                    tenant.acting { recoveryCodesLeft(user) } shouldBe 0
+                    val code = tenant.acting { issueRecoveryCodes(user, ADMIN) }.first()
+                    tenant.acting { issueRecoveryCodes(other, ADMIN) }
+
+                    tenant.acting { useRecoveryCode(user, code, ADMIN) }
+
+                    tenant.acting { recoveryCodesLeft(user) } shouldBe 9
+                    tenant.acting { recoveryCodesLeft(other) } shouldBe 10
                 }
             }
         }

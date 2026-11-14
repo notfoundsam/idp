@@ -1,3 +1,5 @@
+import org.cyclonedx.gradle.CyclonedxDirectTask
+import org.cyclonedx.model.Component
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
 plugins {
@@ -5,9 +7,31 @@ plugins {
     alias(libs.plugins.kotlin.spring) apply false
     alias(libs.plugins.ktlint) apply false
     alias(libs.plugins.spring.boot) apply false
+    alias(libs.plugins.cyclonedx)
+    base
+    `jacoco-report-aggregation`
 }
 
 group = "idp"
+
+// The SBOM of a release lists what the jars carry, see docs/security/dependencies.md: the runtime classpath of each deployable as
+// Gradle resolves it for that jar, so neither tools and tests nor a version that only a library would pick on its own.
+val deployables = setOf(":app", ":worker", ":ops", ":migrator")
+
+allprojects {
+    val deployable = path in deployables
+    tasks.named<CyclonedxDirectTask>("cyclonedxDirectBom") {
+        enabled = deployable
+        includeConfigs = listOf("runtimeClasspath")
+        includeMetadataResolution = false
+        xmlOutput.convention(null as RegularFile?)
+    }
+}
+
+tasks.cyclonedxBom {
+    projectType = Component.Type.APPLICATION
+    xmlOutput.convention(null as RegularFile?)
+}
 
 // docker-compose.yml is the only place that names the Postgres image.
 val postgresImage: String =
@@ -67,7 +91,16 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
     dependencies {
         "testImplementation"(rootProject.libs.kotest.runner)
         "testImplementation"(rootProject.libs.kotest.assertions)
+        // OpenSAML asks for versions with vulnerabilities past their time frame, see docs/security/dependencies.md.
+        constraints {
+            "implementation"(rootProject.libs.bouncycastle)
+            "implementation"(rootProject.libs.bouncycastle.pkix)
+            "implementation"(rootProject.libs.guava)
+        }
     }
+
+    apply(plugin = "jacoco")
+    extensions.configure<JacocoPluginExtension> { toolVersion = rootProject.libs.versions.jacoco.get() }
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
@@ -85,4 +118,58 @@ configure(subprojects.filter { it.childProjects.isEmpty() }) {
             .files(fileTree(simpleSamlPhpConfig) { exclude("metadata/**") })
             .withPathSensitivity(PathSensitivity.RELATIVE)
     }
+}
+
+// Coverage counts the tests of every module: the audiences and much of the contexts are tested over HTTP in the deployables.
+// `db` holds only jOOQ code, generated from the migrations, which the tests of the migrations cover instead.
+dependencies {
+    subprojects
+        .filter { it.childProjects.isEmpty() && it.path != ":db" }
+        .forEach { jacocoAggregation(project(it.path)) }
+}
+
+configurations.jacocoAggregation { exclude(module = "db") }
+
+val coverageReport =
+    reporting.reports.register<JacocoCoverageReport>("testCodeCoverageReport") {
+        testSuiteName = "test"
+        reportTask { reports.xml.required = true }
+    }
+
+val coveredModules =
+    listOf(
+        ":shared-kernel",
+        ":modules:identity",
+        ":modules:authentication",
+        ":modules:federation",
+        ":audience:login",
+        ":audience:account",
+        ":audience:admin",
+        ":audience:operator",
+    )
+
+val coverageVerifications =
+    coveredModules.map { path ->
+        val module = project(path)
+        val name = module.name.split('-').joinToString("") { it.replaceFirstChar(Char::uppercase) }
+        tasks.register<JacocoCoverageVerification>("verifyCoverageOf$name") {
+            group = "verification"
+            description = "Fails when the tests of the build cover less than 80% of the lines of $path."
+            dependsOn("$path:classes")
+            executionData.from(coverageReport.flatMap { it.reportTask }.map { it.executionData })
+            classDirectories.from(module.layout.buildDirectory.dir("classes/kotlin/main"))
+            sourceDirectories.from(module.layout.projectDirectory.dir("src/main/kotlin"))
+            violationRules {
+                rule {
+                    limit {
+                        counter = "LINE"
+                        minimum = "0.80".toBigDecimal()
+                    }
+                }
+            }
+        }
+    }
+
+tasks.check {
+    dependsOn(coverageReport.flatMap { it.reportTask }, coverageVerifications)
 }

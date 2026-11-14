@@ -20,6 +20,9 @@ services:
   - name: Application
     items:
       - name: Tenant acme
+        subtitle: Login
+        url: https://acme.idp.test/login/
+      - name: Tenant acme
         subtitle: API
         url: https://acme.idp.test/api
       - name: Tenant globex

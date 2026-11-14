@@ -24,6 +24,7 @@ import idp.authentication.application.LoginStep
 import idp.authentication.application.SessionCookie
 import idp.identity.application.PasskeyAssertion
 import idp.identity.application.PasskeyAttestation
+import idp.identity.application.PasskeyCeremony
 import idp.sharedkernel.bus.CommandBus
 import idp.sharedkernel.bus.QueryBus
 import jakarta.servlet.http.HttpServletRequest
@@ -41,8 +42,6 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.util.Base64
 import java.util.UUID
-
-private const val USER_VERIFICATION = "required"
 
 class StartFlowRequest(
     val reauthenticate: Boolean = false,
@@ -82,18 +81,52 @@ class PasskeyEnrollmentRequest(
     val clientDataJson: String,
 )
 
+enum class FlowStep {
+    IDENTIFY,
+    PASSWORD,
+    SECOND_FACTOR,
+    ENROLL_MFA,
+    COMPLETE,
+}
+
+enum class FlowFactor {
+    PASSWORD,
+    TOTP,
+    PASSKEY,
+    RECOVERY_CODE,
+}
+
 data class FlowResponse(
     val id: UUID,
-    val step: LoginStep,
-    val factors: List<LoginFactor>,
+    val step: FlowStep,
+    val factors: List<FlowFactor>,
 )
 
 class EnrolledResponse(
     val id: UUID,
-    val step: LoginStep,
-    val factors: List<LoginFactor>,
+    val step: FlowStep,
+    val factors: List<FlowFactor>,
     val recoveryCodes: List<String>,
 )
+
+private fun LoginStep.response() =
+    when (this) {
+        LoginStep.IDENTIFY -> FlowStep.IDENTIFY
+        LoginStep.PASSWORD -> FlowStep.PASSWORD
+        LoginStep.SECOND_FACTOR -> FlowStep.SECOND_FACTOR
+        LoginStep.ENROLL_MFA -> FlowStep.ENROLL_MFA
+        LoginStep.COMPLETE -> FlowStep.COMPLETE
+    }
+
+private fun Set<LoginFactor>.response() =
+    map {
+        when (it) {
+            LoginFactor.PASSWORD -> FlowFactor.PASSWORD
+            LoginFactor.TOTP -> FlowFactor.TOTP
+            LoginFactor.PASSKEY -> FlowFactor.PASSKEY
+            LoginFactor.RECOVERY_CODE -> FlowFactor.RECOVERY_CODE
+        }
+    }.sorted()
 
 class CompletedResponse(
     val returnUrl: String?,
@@ -129,9 +162,9 @@ private fun decoded(value: String): ByteArray =
         throw ResponseStatusException(HttpStatus.BAD_REQUEST)
     }
 
-private fun FlowView.response() = FlowResponse(id, step, factors.sorted())
+private fun FlowView.response() = FlowResponse(id, step.response(), factors.response())
 
-private fun EnrolledFactor.response() = EnrolledResponse(view.id, view.step, view.factors.sorted(), recoveryCodes)
+private fun EnrolledFactor.response() = EnrolledResponse(view.id, view.step.response(), view.factors.response(), recoveryCodes)
 
 /** The flow lives in the URL and its binding in a cookie. A browser without the cookie gets the same answer as for an unknown flow. */
 @RestController
@@ -203,7 +236,7 @@ class FlowController(
         http: HttpServletRequest,
     ): PasskeyLoginOptionsResponse {
         val options = commands.dispatch(BeginPasskeyLogin(access(id, browser)))
-        return PasskeyLoginOptionsResponse(encoded(options.challenge), http.serverName, USER_VERIFICATION)
+        return PasskeyLoginOptionsResponse(encoded(options.challenge), http.serverName, PasskeyCeremony.USER_VERIFICATION)
     }
 
     @PostMapping("/{id}/passkey")
@@ -250,9 +283,9 @@ class FlowController(
             encoded(options.userHandle),
             options.algorithms,
             options.excludeCredentials.map(::encoded),
-            residentKey = "required",
-            userVerification = USER_VERIFICATION,
-            attestation = "none",
+            residentKey = PasskeyCeremony.RESIDENT_KEY,
+            userVerification = PasskeyCeremony.USER_VERIFICATION,
+            attestation = PasskeyCeremony.ATTESTATION,
         )
     }
 

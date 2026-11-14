@@ -46,6 +46,7 @@ private const val ROLE_CHANGED = "user.role_changed"
 private const val PROFILE_UPDATED = "user.profile_updated"
 private const val INVITATION_ISSUED = "user.invitation_issued"
 private const val INVITATION_ACCEPTED = "user.invitation_accepted"
+private const val INVITATION_RESENT = "user.invitation_resent"
 private const val REINVITED = "user.reinvited"
 private const val PASSWORD_RESET_ACTION = "user.password_reset"
 private const val PASSWORD_RESET_ISSUED = "user.password_reset_issued"
@@ -66,6 +67,10 @@ class UserNotFound(
 
 /** The same answer for an unknown, spent and expired token, so a guess learns nothing. */
 class InvitationNotValid : DomainRuleViolation("The invitation is not valid")
+
+class NotInvited(
+    id: UUID,
+) : DomainRuleViolation("User $id does not wait for an invitation")
 
 /** The same answer for an unknown, spent and expired token, so a guess learns nothing. */
 class PasswordResetNotValid : DomainRuleViolation("The password reset is not valid")
@@ -188,6 +193,20 @@ class IdentityService(
             audit.recordChange(AuditRecord(actor, INVITATION_ISSUED, AuditTarget.user(userId), ip))
             issued.token.value
         }
+
+    /** For a link that expired or got lost. The event ends in [issueInvitation], so the new link voids the old one. */
+    fun resendInvitation(
+        userId: UUID,
+        actor: Actor,
+        ip: String? = null,
+    ) {
+        transaction.execute { dsl ->
+            val user = load(dsl, userId)
+            if (user.status != UserStatus.INVITED) throw NotInvited(userId)
+            outbox.publish(dsl, NewEvent(IdentityEvents.AGGREGATE, userId, user.version, IdentityEvents.INVITED))
+            audit.recordChange(AuditRecord(actor, INVITATION_RESENT, AuditTarget.user(userId), ip))
+        }
+    }
 
     /** Spends nothing, so a refused password can be typed again. */
     fun invitationOwner(token: String): UUID? =

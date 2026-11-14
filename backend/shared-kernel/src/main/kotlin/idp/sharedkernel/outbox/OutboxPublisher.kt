@@ -1,11 +1,12 @@
 package idp.sharedkernel.outbox
 
 import idp.db.jooq.platform.tables.Outbox.OUTBOX
+import idp.sharedkernel.observability.LogFields
 import idp.sharedkernel.tenant.TenantContext
 import org.jooq.DSLContext
 import org.jooq.JSONB
-import org.jooq.impl.DSL
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
@@ -33,11 +34,17 @@ internal data class EventCause(
         fun <T> with(
             cause: EventCause,
             block: () -> T,
-        ): T = ScopedValue.where(current, cause).call(ScopedValue.CallableOp<T, Exception> { block() })
+        ): T =
+            LogFields.with(LogFields.CORRELATION_ID, cause.correlationId.toString()) {
+                ScopedValue.where(current, cause).call(ScopedValue.CallableOp<T, Exception> { block() })
+            }
     }
 }
 
-class OutboxPublisher {
+/** Stamps `available_at` from the JVM clock, which the dispatcher and the lag gauge compare it with, never from the database's. */
+class OutboxPublisher(
+    private val clock: Clock = Clock.systemUTC(),
+) {
     /** Takes the caller's transaction, because the event must commit or roll back with the aggregate. */
     fun publish(
         dsl: DSLContext,
@@ -56,7 +63,7 @@ class OutboxPublisher {
             .set(OUTBOX.PAYLOAD, JSONB.valueOf(eventJson.writeValueAsString(event.payload)))
             .set(OUTBOX.CORRELATION_ID, cause?.correlationId ?: UUID.randomUUID())
             .set(OUTBOX.CAUSATION_ID, cause?.eventId)
-            .set(OUTBOX.AVAILABLE_AT, event.availableAt?.let { DSL.value(it.atOffset(ZoneOffset.UTC)) } ?: DSL.currentOffsetDateTime())
+            .set(OUTBOX.AVAILABLE_AT, (event.availableAt ?: clock.instant()).atOffset(ZoneOffset.UTC))
             .execute()
     }
 }

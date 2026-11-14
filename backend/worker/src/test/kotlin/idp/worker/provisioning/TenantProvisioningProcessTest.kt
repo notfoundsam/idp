@@ -28,9 +28,11 @@ import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.tenant.TenantContext
 import idp.sharedkernel.tenant.TenantStatus
 import idp.sharedkernel.tenant.TenantTransaction
+import idp.sharedkernel.testing.Plaintext
 import idp.sharedkernel.testing.TestDatabase
 import idp.sharedkernel.testing.TestMailpit
 import idp.sharedkernel.testing.TestOpenBao
+import idp.sharedkernel.testing.scan
 import idp.tenancy.application.NewApplication
 import idp.tenancy.application.TenancyEvents
 import idp.tenancy.application.TenancyNotFound
@@ -379,6 +381,21 @@ class TenantProvisioningProcessTest :
                             "SELECT payload::text FROM platform.outbox",
                             String::class.java,
                         ).forEach { it shouldNotContain CONTACT }
+                }
+            }
+
+            test("no table of the platform or of the new tenant keeps the contact in clear, before the run or after it") {
+                Provisioning().run {
+                    val contact = Plaintext.text("contact", CONTACT)
+                    val tenant = approved()
+                    database.scan(listOf(contact)).findings.shouldBeEmpty()
+
+                    deliver(tenant)
+
+                    val stored = database.scan(listOf(contact))
+                    stored.findings.shouldBeEmpty()
+                    stored.rows.getValue("${TenantSchema(tenant).name}.users") shouldBe 1
+                    stored.rows.getValue("platform.tenant_applications") shouldBe 1
                 }
             }
 

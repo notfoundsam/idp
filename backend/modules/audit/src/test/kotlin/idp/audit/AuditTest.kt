@@ -473,6 +473,32 @@ class AuditTest :
                 }
             }
 
+            test("a target keeps only the records about it, newest first, and pages by a cursor") {
+                Audit().run {
+                    val context = tenant()
+                    val user = context.user()
+                    val other = context.user()
+                    val records = listOf(user to "first", other to "theirs", user to "second", user to "third")
+                    records.forEachIndexed { minutes, (target, action) ->
+                        clock.offset = Duration.ofMinutes(minutes.toLong())
+                        context.change(record(Actor.System, target, action))
+                    }
+                    context.change(AuditRecord(Actor.System, "tenant.wide", AuditTarget.tenant(user)))
+
+                    val (page, next) =
+                        TenantContext.with(context) {
+                            val page = audit.read(limit = 2, target = AuditTarget.user(user))
+                            val cursor = page.last().let { AuditCursor(it.occurredAt, it.id) }
+                            page to audit.read(limit = 2, before = cursor, target = AuditTarget.user(user))
+                        }
+
+                    page.map { it.action } shouldContainExactly listOf("third", "second")
+                    next.map { it.action } shouldContainExactly listOf("first")
+                    val nobody = AuditTarget.user(UUID.randomUUID())
+                    TenantContext.with(context) { audit.read(limit = 10, target = nobody) }.shouldBeEmpty()
+                }
+            }
+
             test("a tenant sees only its own journal") {
                 Audit().run {
                     val a = tenant()

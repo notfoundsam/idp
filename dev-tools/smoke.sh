@@ -35,10 +35,24 @@ reaches_spring() {
   curl -s --cacert "$CA" --resolve "$1:443:127.0.0.1" "https://$1/api" -H 'Accept: application/json' | grep -q '"status":404'
 }
 
+login_page_has_policy() {
+  curl -s -D - -o /dev/null --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/login/ |
+    grep -qi "^content-security-policy: default-src 'none'; script-src 'self';"
+}
+
+# The cases the CloudFront Function is tested on, against nginx itself.
+spa_routes_on_nginx() {
+  docker compose run --rm --no-deps nginx-config node /infra/web/check-nginx.mjs http://nginx
+}
+
+root_leads_to_console() {
+  [ "$(curl -s -o /dev/null -w '%{redirect_url}' --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/)" = "https://acme.idp.test/console/" ]
+}
+
 # A healthy container is not routed yet: Traefik picks it up about a second later.
 wait_for_routes() {
   for _ in $(seq 1 15); do
-    reaches_spring acme.idp.test && reaches_spring ops.idp.test && return
+    reaches_spring acme.idp.test && reaches_spring ops.idp.test && expect_status acme.idp.test /login/ 200 && return
     sleep 1
   done
 }
@@ -89,11 +103,21 @@ lgtm_running() {
   [ -n "$(docker compose --profile '*' ps -q --status running lgtm 2>/dev/null)" ]
 }
 
-# Spans leave in batches every five seconds, and the checks above have just sent the requests.
+# Spans leave in batches every five seconds, and the checks above have just sent the requests. A service that has just started
+# takes longer for its first batch.
 traces_reach_tempo() {
-  for _ in $(seq 1 15); do
+  for _ in $(seq 1 30); do
     docker compose --profile '*' exec -T lgtm curl -s -G http://127.0.0.1:3200/api/search \
       --data-urlencode "q={ resource.service.name = \"$1\" }" | grep -q '"traceID"' && return
+    sleep 1
+  done
+  return 1
+}
+
+logs_reach_loki() {
+  for _ in $(seq 1 30); do
+    docker compose --profile '*' exec -T lgtm curl -s -G http://127.0.0.1:3100/loki/api/v1/query_range \
+      --data-urlencode "query={service_name=\"$1\"}" --data-urlencode 'limit=1' | grep -q '"values":\[\[' && return
     sleep 1
   done
   return 1
@@ -110,6 +134,14 @@ check "globex.idp.test reaches app" reaches_spring globex.idp.test
 check "unknown tenant refused" unknown_tenant_refused
 check "ops.idp.test reaches ops" reaches_spring ops.idp.test
 check "unknown path stays on Traefik" expect_status acme.idp.test /nothing 404
+check "login page with its policy" login_page_has_policy
+check "deep link of the login falls back to the page" expect_status acme.idp.test /login/any/path 200
+check "static files not listed" expect_status acme.idp.test /login/assets/ 404
+check "invitation link opens the login" expect_status acme.idp.test /invite 200
+check "reset link opens the login" expect_status acme.idp.test /reset-password 200
+check "confirmation link opens the login" expect_status acme.idp.test /confirm-email 200
+check "/ leads to the console" root_leads_to_console
+check "nginx serves the routes of spa-routes.json" spa_routes_on_nginx
 check "postgres through pgbouncer" pgbouncer_query
 check "platform schema migrated" platform_migrated
 check "runtime role connects" runtime_role_connects
@@ -124,6 +156,9 @@ if lgtm_running; then
   check "app traces reach Tempo" traces_reach_tempo app
   check "worker traces reach Tempo" traces_reach_tempo worker
   check "ops traces reach Tempo" traces_reach_tempo ops
+  check "app logs reach Loki" logs_reach_loki app
+  check "worker logs reach Loki" logs_reach_loki worker
+  check "ops logs reach Loki" logs_reach_loki ops
 fi
 
 exit "$failed"

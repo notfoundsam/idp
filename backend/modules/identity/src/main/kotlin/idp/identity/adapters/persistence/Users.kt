@@ -33,6 +33,18 @@ internal class Users {
         id: UUID,
     ): User? = dsl.selectFrom(USERS).where(USERS.ID.eq(id)).fetchOne(::toUser)
 
+    /** Without a key update, so a login that opens a session of the user does not wait for it. */
+    fun lock(
+        dsl: DSLContext,
+        id: UUID,
+    ): Boolean =
+        dsl
+            .select(USERS.ID)
+            .from(USERS)
+            .where(USERS.ID.eq(id))
+            .forNoKeyUpdate()
+            .fetchOne() != null
+
     fun findByEmailIndex(
         dsl: DSLContext,
         index: ByteArray,

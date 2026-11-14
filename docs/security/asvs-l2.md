@@ -8,13 +8,14 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 
 | Status | Meaning | Count |
 |---|---|---|
-| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 90 |
-| Partial | Part of the control is merged, the listed tasks finish it | 47 |
-| Planned | The listed tasks build the control | 45 |
+| Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 174 |
+| Staging | In merged code, with a part that rests on LocalStack or a mocked AWS provider alone, which cannot show how AWS itself behaves, such as how CloudWatch matches a pattern or whether an ALB reaches a target. The row names the check that remains on a staging environment | 7 |
+| Partial | Part of the control is merged, the listed tasks finish it | 0 |
+| Planned | The listed tasks build the control | 0 |
 | N/A | The feature does not exist, the note says why | 67 |
-| Exception | Deliberate deviation, see [Exceptions](#exceptions) | 4 |
+| Exception | Deliberate deviation, see [Exceptions](#exceptions) | 5 |
 
-`T17` is the issue titled `Task 17: ...`. The application reaches Level 2 when no row is Partial or Planned.
+`T17` is the issue titled `Task 17: ...`. The code reaches Level 2 when no row is Partial or Planned. A production environment reaches it once the checks of every Staging row have passed there, and each such row then turns Done. A row never turns Done on a check that has not run.
 
 ## Maintenance
 
@@ -28,6 +29,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V11.6.1 | Passkeys may verify `RS256` signatures | Some platform authenticators offer only this algorithm | Verification only, the application never creates such signatures |
 | V11.4.1 | TOTP uses HMAC-SHA-1 | RFC 6238 authenticator apps implement this function. Appendix C lists it as legacy, not disallowed | TOTP only, every other use of SHA-1 is refused |
 | V11.2.2 | The tenant key and the keys below it are not replaced in place | Rotating them means wrapping every user key again and computing the blind index again, which is outside the first version | KEKs above them rotate in the KMS and move between KMS. A compromised tenant key is replaced as the [runbook](key-compromise-runbook.md) says, and `tenant_keys.version` leaves room for a second key |
+| V12.3.4 | The ALBs do not verify the certificates of `app` and `ops` | An application load balancer of AWS checks no certificate of a target | The targets serve certificates of the internal CA, and their security groups admit only their ALB. Every other internal client trusts one CA alone |
 | V6.3.3 | A tenant may relax MFA for the `USER` role | Customers decide this for their own workforce | MFA is on by default and cannot be relaxed for `TENANT_ADMIN`. Relaxing is audited, and a tenant that does so falls outside this Level 2 claim |
 
 ## V1 Encoding and Sanitization
@@ -35,18 +37,18 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V1.1.1 | 2 | Done | | JSON and base64url are decoded once, before validation (`FlowApiTest`). A SAML request is URL-decoded, base64-decoded and inflated once each, then checked (`AuthnRequestValidatorTest`) |
-| V1.1.2 | 2 | Partial | T31 | Encoding at the sink: mail templates, jOOQ, the SAML form and the attribute values of an assertion are merged (`SamlPagesTest`, `ResponseBuilderTest`), the SPA remains |
-| V1.2.1 | 1 | Partial | T31 | HTML mail and the SAML form are escaped (`MailTemplatesTest`, `SamlPagesTest`, `SsoApiTest`), the SPA remains |
+| V1.1.2 | 2 | Done | T31 | Encoding at the sink: mail templates, jOOQ, the SAML form and the attribute values of an assertion (`SamlPagesTest`, `ResponseBuilderTest`). The SPA puts every value into the DOM through Vue interpolation, as text (`admin.test.ts`), and lint forbids the sinks that take HTML (`lint.test.ts`) |
+| V1.2.1 | 1 | Done | T31 | HTML mail and the SAML form are escaped (`MailTemplatesTest`, `SamlPagesTest`, `SsoApiTest`). The SPA shows markup from the API as text (`admin.test.ts`) and has no `v-html`, `innerHTML` or `document.write` (`lint.test.ts`) |
 | V1.2.2 | 1 | Done | T27 | Mail links are `https` and built from the stored tenant host, never from a request (`RecoveryMailTest`). ACS URLs must be absolute `https` without user info or fragment, so `javascript:` and `data:` are refused (`ServiceProviderTest`, `MetadataImporterTest`) |
-| V1.2.3 | 1 | Partial | T31 | JSON comes only from the serializer (`FlowContractTest`), the frontend remains |
-| V1.2.4 | 1 | Done | T4, T5 | jOOQ binds every value, DDL identifiers derive only from a tenant UUID (`TenantIsolationTest`) |
+| V1.2.3 | 1 | Done | T31 | JSON comes only from the serializer (`FlowContractTest`). The frontend sends bodies only through `JSON.stringify` in the API client, where a value with quotes or markup stays one string (`client.test.ts`), and builds no script or JSON by hand |
+| V1.2.4 | 1 | Done | T4, T5, T43 | jOOQ binds every value, DDL identifiers derive only from a tenant UUID (`TenantIsolationTest`). CodeQL fails a pull request with SQL built from input or by concatenation (`codeql.yml`, `code-scanning.test.mjs`) |
 | V1.2.5 | 1 | N/A | | The application starts no OS processes |
 | V1.2.6 | 2 | N/A | | No LDAP |
 | V1.2.7 | 2 | N/A | | No XPath is built from input, OpenSAML reads the object model |
 | V1.2.8 | 2 | N/A | | No LaTeX |
 | V1.2.9 | 2 | N/A | | Regular expressions are constants, input never becomes a pattern |
 | V1.3.1 | 1 | N/A | | No rich text input |
-| V1.3.2 | 1 | Partial | T31 | The backend has no `eval` or SpEL, CSP without `unsafe-eval` covers the SPA |
+| V1.3.2 | 1 | Done | T31 | The backend has no `eval` or SpEL, CSP without `unsafe-eval` covers the SPA, and lint forbids `eval`, `new Function` and strings run by timers (`lint.test.ts`) |
 | V1.3.3 | 2 | Done | | Control characters are stripped from mail (`MailTemplatesTest`). RelayState is limited to 1 KiB and HTML-escaped in the form to the ACS (`AuthnRequestValidatorTest`, `SamlPagesTest`, `SsoApiTest`) |
 | V1.3.4 | 2 | N/A | | No user-supplied SVG |
 | V1.3.5 | 2 | N/A | | No user-supplied Markdown, CSS or XSL |
@@ -57,7 +59,7 @@ A change that adds, removes or weakens a control updates its row in the same pul
 | V1.3.10 | 2 | N/A | | No format string comes from input |
 | V1.3.11 | 2 | Done | T12 | Mail fields go through `MimeMessageHelper`, control characters are removed (`MailTemplatesTest`) |
 | V1.4.1 | 2 | N/A | | JVM and JavaScript are memory safe, the application has no native code of its own |
-| V1.4.2 | 2 | Planned | T36 | Numeric API inputs have ranges in the contracts |
+| V1.4.2 | 2 | Done | T36 | Every numeric input has its range in the contract and on the server, and a number past its type answers `400` instead of wrapping (`AdminPolicyApiTest`, `AdminAuditApiTest`). See [input-validation.md](input-validation.md) |
 | V1.4.3 | 2 | N/A | | Garbage-collected runtimes |
 | V1.5.1 | 1 | Done | T30 | XML parsers refuse DTDs and external entities, with negative tests. The parser of metadata and AuthnRequests refuses DTDs, external entities and XInclude (`MetadataImporterTest`, `AuthnRequestValidatorTest`), `ops` refuses a Response with a DOCTYPE (`OpsSamlLoginTest`) |
 | V1.5.2 | 2 | Done | T8 | Jackson binds fixed types without default typing, no Java serialization (`OutboxDispatcherTest`) |
@@ -66,50 +68,50 @@ A change that adds, removes or weakens a control updates its row in the same pul
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V2.1.1 | 1 | Planned | T36 | `docs/security/input-validation.md` and the OpenAPI contracts define input rules |
-| V2.1.2 | 2 | Planned | T36 | The same document covers combined data items |
+| V2.1.1 | 1 | Done | T36 | [input-validation.md](input-validation.md) defines the rules of every input and the answer to a broken one, and the OpenAPI contracts carry their types, formats, enums, ranges and list sizes, checked against the controllers by the contract tests (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
+| V2.1.2 | 2 | Done | T36 | The same document lists the combinations: the timeouts of the policy, the halves of a journal cursor and target, signed requests and their certificate, the ACS endpoints of metadata, and states that SP settings combine freely |
 | V2.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists per-user and global limits |
-| V2.2.1 | 1 | Partial | T32, T34, T36 | Domain types validate on the server (`TenantTest`), the login API refuses malformed input (`FlowApiTest`), each API adds its inputs |
-| V2.2.2 | 1 | Partial | T32, T34, T36 | Validation lives in the domain and the audience, client checks are convenience only |
-| V2.2.3 | 2 | Planned | T34, T36 | Policy and SP settings are checked as a combination |
+| V2.2.1 | 1 | Done | T32, T34, T36 | Every input is checked on the server by the rules of [input-validation.md](input-validation.md): domain types validate themselves (`TenantTest`, `TenantPolicyTest`, `ServiceProviderTest`, `MetadataImporterTest`), and every API refuses malformed input (`FlowApiTest`, `AccountApiTest`, `AdminUsersApiTest`, `AdminPolicyApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`, `OpsApiTest`) |
+| V2.2.2 | 1 | Done | T32, T34, T36 | Validation lives in the domain and the audience on the server, and checks of the frontend are a convenience only, by inspection and [input-validation.md](input-validation.md) |
+| V2.2.3 | 2 | Done | T34, T36 | The policy is checked as a combination: an idle timeout longer than the absolute one is refused (`TenantPolicyTest`, `AdminPolicyApiTest`). Half a cursor or half a target of the journal answers `400` (`AdminAuditApiTest`), and metadata that wants signed requests without a certificate is refused (`MetadataImporterTest`). SP settings have no dependent values, see [input-validation.md](input-validation.md) |
 | V2.3.1 | 1 | Done | T23 | `AuthFlow` decides the next step and refuses any other (`AuthFlowTest`), the API cannot skip one (`FlowApiTest`) |
 | V2.3.2 | 2 | Done | T23 | The limits from `docs/security/limits.md` are enforced (`LoginLimitsTest`, `LoginThrottleConfigTest`, `SessionsTest`) |
 | V2.3.3 | 2 | Done | T8, T11, T13 | One transaction per operation, with state and event together (`BusDecoratorsTest`, `OutboxDispatcherTest`, `VersionedUpdateTest`) |
 | V2.3.4 | 2 | Done | T23, T24 | Invitation, reset and email change tokens and recovery codes are consumed by a conditional delete (`IdentityServiceTest`, `AccountRecoveryTest`, `TotpServiceTest`), TOTP steps by a conditional update (`TotpServiceTest`), flow steps by a lease and a version (`FlowApiTest`, `SessionsTest`) |
-| V2.4.1 | 2 | Partial | T40 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`), WAF remains |
+| V2.4.1 | 2 | Done | T40, T41 | The throttle decorator, the limits of the login and the SAML filter are merged (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`). A signed-in user is limited per user on each way to guess a credential, and an admin on invitations and their resends (`SessionLimitsTest`). Switching them off with `THROTTLE_ENABLED=false` or raising them with `THROTTLE_MULTIPLIER`, which only the local environment and e2e do, is refused in the `prod` profile, and the multiplier in the `staging` one, where a load test may switch them off (`ThrottleApplicationTest`). Production runs `prod` (`app.tftest.hcl`). In front of them the WAF of CloudFront limits each client address, all requests and those of `app` apart, with a `429` (`edge.tftest.hcl`, `docs/security/limits.md`), and the ALB takes only requests that passed it |
 
 ## V3 Web Frontend Security
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
 | V3.2.1 | 1 | Done | | The API answers JSON with `nosniff` and a closed CSP (`ResponseHeadersTest`, `OpsApiTest`). SAML pages are `text/html` with a charset, `nosniff` and a CSP of their own (`SsoApiTest`, `ResumeApiTest`). Uploaded files are never served |
-| V3.2.2 | 1 | Planned | T31 | Vue interpolation only, a lint rule forbids `v-html` |
+| V3.2.2 | 1 | Done | T31 | Vue interpolation only: lint forbids `v-html`, `innerHTML`, `insertAdjacentHTML` and `document.write` (`lint.test.ts`) |
 | V3.3.1 | 1 | Done | T23 | Every cookie is `Secure` (`ResponseHeadersTest`) |
 | V3.3.2 | 2 | Done | T23 | The session cookie is `SameSite=Lax`, the flow and CSRF cookies `SameSite=Strict` (`SessionCookieTest`, `FlowCookieTest`, `CsrfCookieTest`, `ResponseHeadersTest`) |
 | V3.3.3 | 2 | Done | T23 | Every cookie uses `__Host-` (`ResponseHeadersTest`) |
 | V3.3.4 | 2 | Done | T22 | The session cookie is `HttpOnly` and travels only in `Set-Cookie` (`SessionCookieTest`) |
-| V3.4.1 | 1 | Partial | T31, T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.1 | 1 | Done | T40 | HSTS with one year and `includeSubDomains` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files in `infra/web/security-headers.json` (`render-nginx.test.mjs`), which the response headers policy of `modules/edge` sets from the same file on every behavior of S3 (`edge.tftest.hcl`) |
 | V3.4.2 | 1 | Done | T23 | The API is same-origin and sends no CORS headers (`ResponseHeadersTest`) |
-| V3.4.3 | 2 | Partial | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`), static files remain |
-| V3.4.4 | 2 | Partial | T31, T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
-| V3.4.5 | 2 | Partial | T31, T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
-| V3.4.6 | 2 | Partial | T31, T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`), static files remain |
+| V3.4.3 | 2 | Done | T31, T40 | CSP with `object-src 'none'` and `base-uri 'none'` on the API (`ResponseHeadersTest`). The SAML form runs one script by a nonce drawn per page (`SamlPagesTest`, `ResumeApiTest`). The static files allow only their own origin and close `object-src`, `base-uri`, `form-action` and `frame-ancestors` (`render-nginx.test.mjs`), in nginx and in the response headers policy that every behavior of S3 in `modules/edge` uses (`edge.tftest.hcl`) |
+| V3.4.4 | 2 | Done | T40 | `nosniff` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of every behavior of S3 in `modules/edge` (`edge.tftest.hcl`) |
+| V3.4.5 | 2 | Done | T40 | `Referrer-Policy` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of every behavior of S3 in `modules/edge` (`edge.tftest.hcl`) |
+| V3.4.6 | 2 | Done | T40 | `frame-ancestors 'none'` on every response of `app` and `ops` (`ResponseHeadersTest`, `OpsApiTest`) and of the static files, in nginx (`render-nginx.test.mjs`) and in the response headers policy of every behavior of S3 in `modules/edge` (`edge.tftest.hcl`) |
 | V3.5.1 | 1 | Done | T23, T30 | An anti-forgery token derived from the session guards every unsafe call of a live session (`SessionGuardsTest`, `CsrfCookieTest`). In `ops` Spring Security checks the `XSRF-TOKEN` cookie echoed in `X-XSRF-TOKEN` for every unsafe call of an operator session (`OpsSamlLoginTest`, `OpsContractTest`) |
 | V3.5.2 | 1 | N/A | | Sensitive calls rely on tokens, not on CORS preflight |
-| V3.5.3 | 1 | Partial | T34 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The admin API remains |
-| V3.5.4 | 2 | Partial | T40 | Each tenant has its own host (`TenantFilterTest`), `ops` answers on its own host only (`OpsSamlLoginTest`). Login and console form one application |
-| V3.5.5 | 2 | Planned | T31 | No `postMessage` listeners, enforced by lint |
-| V3.7.1 | 2 | Planned | T31 | Only supported browser technology, no plugins |
+| V3.5.3 | 1 | Done | T34, T36 | State changes of the login use `POST` (`FlowContractTest`). The SAML resume is a `GET`, because the login page ends by navigating there, so it acts only with the session and the `SameSite=Strict` cookie of the browser that began the request (`ResumeApiTest`). The account, admin and `ops` APIs change state only with `POST`, `PUT` and `DELETE`, every `GET` of their contracts reads, and the contract tests hold each controller to the method of its operation (`AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
+| V3.5.4 | 2 | Done | T40, T41 | Each tenant has its own host (`TenantFilterTest`), `ops` answers on its own host only (`OpsSamlLoginTest`), behind the internal ALB alone (`app.tftest.hcl`). Login and console are one application that shares the session of its tenant host, and the edge serves both from it (`edge.tftest.hcl`) |
+| V3.5.5 | 2 | Done | T31 | No `postMessage` listeners: lint forbids `addEventListener('message')` and `onmessage` (`lint.test.ts`) |
+| V3.7.1 | 2 | Done | T31 | The pages are Vue 3 and standard Web APIs, WebAuthn for passkeys, with no Flash, ActiveX, Silverlight, Java applets or other plugins, by inspection. `object-src 'none'` in the CSP of the static files and of the API refuses any plugin content (`render-nginx.test.mjs`, `edge.tftest.hcl`, `ResponseHeadersTest`) |
 | V3.7.2 | 2 | Done | | The only automatic cross-host navigation goes to a registered ACS URL. ACS URLs are registered from metadata as `https` only (`MetadataImporterTest`). An ACS a request names counts only as registered, and an error or a Response goes there under a `form-action` limited to it, otherwise to an error page (`AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest`) |
 
 ## V4 API and Web Service
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Partial | T31 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`), the static HTML remains |
-| V4.1.2 | 2 | Planned | T40 | Only `/login/*` and `/console/*` redirect to HTTPS, `/api/*` and `/saml/*` refuse plain HTTP |
-| V4.1.3 | 2 | Partial | T40, T41 | `app` trusts one configured header (`ClientIpTest`), the edge must overwrite it |
-| V4.2.1 | 2 | Planned | T40 | The load balancer drops invalid headers and uses strict desync mitigation |
+| V4.1.1 | 1 | Done | T31, T42 | Every JSON body, the SAML metadata and the SAML pages name their charset (`ResponseHeadersTest`, `OpsApiTest`, `MetadataApiTest`, `ResumeApiTest`). The static files get their `Content-Type` from one table in `infra/web/content-types.mjs`, with `charset=utf-8` for HTML, JS, CSS, JSON, SVG and text: nginx serves only its types (`render-nginx.test.mjs`, `make smoke`), and the release sets them on every object in S3 and refuses a file without one (`release-assets.test.mjs`, `s3.test.mjs`) |
+| V4.1.2 | 2 | Done | T40 | Only the pages of S3 redirect to HTTPS: `/login/*`, `/console/*`, `/` and the links of the mails. `/api/*` and `/saml/*` refuse plain HTTP, and the ALB has no listener for it (`edge.tftest.hcl`) |
+| V4.1.3 | 2 | Staging | T40 | `app` trusts one configured header, `CloudFront-Viewer-Address`, and ignores `X-Forwarded-For` and a malformed or missing value (`ClientIpTest`, `ThrottleApplicationTest`). The `prod` profile refuses an empty `CLIENT_IP_HEADER` and the headers a proxy appends to. CloudFront generates it through the origin request policy of `app`, overwrites the origin header `X-Origin-Verify`, and the ALB takes only CloudFront with that header (`edge.tftest.hcl`). Proving on staging that a value sent by the client does not reach `app` remains |
+| V4.2.1 | 2 | Done | T39, T40 | The public ALB drops invalid header fields and uses the `strictest` desync mitigation (`network.tftest.hcl`) |
 | V4.3.1 | 2 | N/A | | No GraphQL |
 | V4.3.2 | 2 | N/A | | No GraphQL |
 | V4.4.1 | 1 | N/A | | No WebSocket |
@@ -123,12 +125,12 @@ SP metadata import is the only file upload.
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V5.1.1 | 2 | Planned | T36 | `docs/security/input-validation.md` describes the upload |
+| V5.1.1 | 2 | Done | T36 | [input-validation.md](input-validation.md) describes the only upload, SP metadata: SAML metadata of one SP whatever the file name or part type, 160 KiB for the form and 128 KiB for the file, nothing unpacked, `413` or `422` with no body for a bad file, and the file itself is neither kept nor served |
 | V5.2.1 | 1 | Done | T27 | Metadata over 128 KiB is refused before parsing (`MetadataImporterTest`) |
 | V5.2.2 | 1 | Done | T27 | Content must be one `EntityDescriptor` with an SP role that validates against the SAML metadata schema (`MetadataImporterTest`) |
 | V5.2.3 | 2 | N/A | | Compressed files are not accepted. SAML DEFLATE limits are under V15.2.2 |
 | V5.3.1 | 1 | N/A | | Uploads are parsed into the database, no file lands in a served folder |
-| V5.3.2 | 1 | Partial | T36 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalLocalStackTest`). Metadata import takes the content only and has no parameter for a file name (`FederationService`), the upload endpoint remains |
+| V5.3.2 | 1 | Done | T36 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalLocalStackTest`). Metadata import takes the content only and has no parameter for a file name (`FederationService`), and the upload endpoint never reads the file name of the form, so it reaches neither the SP nor the journal (`AdminServiceProvidersApiTest`) |
 | V5.4.1 | 2 | Done | T27 | Metadata downloads use the fixed name `idp-metadata.xml` in `Content-Disposition`, whatever the request holds (`MetadataApiTest`) |
 | V5.4.2 | 2 | N/A | | Served file names are constants, mail has no attachments |
 | V5.4.3 | 2 | N/A | | No untrusted file is served back to anyone |
@@ -140,28 +142,28 @@ SP metadata import is the only file upload.
 | V6.1.1 | 1 | Done | T23 | `docs/security/authentication.md` covers rate limits and malicious lockout |
 | V6.1.2 | 2 | Done | T23 | Context-specific words are refused (`PasswordPolicyTest`) and listed in the same document |
 | V6.1.3 | 2 | Done | T23 | The same document lists every pathway with its strength |
-| V6.2.1 | 1 | Partial | T31, T33 | At least 8 characters (`PasswordPolicyTest`), the UI hint for 15 remains |
-| V6.2.2 | 1 | Planned | T32 | Users change their password in the account area |
-| V6.2.3 | 1 | Planned | T32 | The change requires the current password |
+| V6.2.1 | 1 | Done | T33 | At least 8 characters (`PasswordPolicyTest`). The login pages that set a password and the change of password in the console recommend 15 characters (`App.test.ts`, `console.test.ts`, `login.spec.ts`, `account.spec.ts`) |
+| V6.2.2 | 1 | Done | T32 | Users change their password in the account area under the password policy (`AccountApiTest`) |
+| V6.2.3 | 1 | Done | T32 | The change requires the current password, and a wrong one counts as a guess with the delay of a login and is audited (`AccountApiTest`) |
 | V6.2.4 | 1 | Done | T18 | Top passwords are refused (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.2.5 | 1 | Done | T18 | No composition rules (`PasswordPolicyTest`) |
-| V6.2.6 | 1 | Planned | T31 | `type=password` with an optional reveal |
-| V6.2.7 | 1 | Planned | T31 | Paste and password managers work |
+| V6.2.6 | 1 | Done | T31 | Every password field of the login has `type=password`, without a reveal (`App.test.ts`, `login.spec.ts`) |
+| V6.2.7 | 1 | Done | T31 | Nothing blocks paste, and the fields carry `autocomplete` `current-password` or `new-password` with the login beside them for password managers. `login.spec.ts` pastes both kinds from the clipboard |
 | V6.2.8 | 1 | Done | T18 | The password is verified exactly as received (`PasswordHasherTest`) |
 | V6.2.9 | 2 | Done | T18 | Up to 128 characters are accepted (`PasswordPolicyTest`) |
-| V6.2.10 | 2 | Partial | T34 | A credential has no expiry (`PasswordCredential`), the test that the policy offers none remains |
+| V6.2.10 | 2 | Done | T34 | A credential has no expiry (`PasswordCredential`), and the policy offers none: it has no such field, and the admin API refuses a body that sets one (`TenantPolicyTest`, `AdminPolicyApiTest`) |
 | V6.2.11 | 2 | Done | T18 | Context-specific words are refused (`PasswordPolicyTest`, `PasswordServiceTest`) |
 | V6.2.12 | 2 | Done | T18 | Breached passwords are refused using an offline list (`PasswordPolicyTest`, `BannedPasswordsTest`) |
 | V6.3.1 | 1 | Done | T23 | Growing delay and attempt counters in Postgres, which hold without the throttle (`PasswordServiceTest`, `TotpServiceTest`, `LoginLimitsTest`), and limits by address and tenant (`LoginLimitsTest`, `LoginThrottleConfigTest`) |
 | V6.3.2 | 1 | Done | T14, T17 | Seed accounts exist only in the `local` profile (`LocalSeedTest`), the first admin is invited (`TenantProvisioningProcessTest`) |
-| V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`), its relaxing remains. See [Exceptions](#exceptions) |
+| V6.3.3 | 2 | Exception | T34 | MFA by default, a passkey with user verification counts as MFA, and every new tenant stores this policy (`AuthFlowTest`, `TenantPolicyTest`, `SessionsTest`). An admin relaxes it only for `USER`, after a fresh login, and the change is audited. No field relaxes it for `TENANT_ADMIN`, and an admin still enrolls a second factor under a relaxed policy (`SessionsTest`, `AdminPolicyApiTest`). A user cannot remove the last factor the policy asks for (`TotpServiceTest`, `PasskeyServiceTest`, `AccountApiTest`). See [Exceptions](#exceptions) |
 | V6.3.4 | 2 | Done | T23 | Every session starts from `AuthFlow`, and `docs/security/authentication.md` lists every pathway |
 | V6.4.1 | 1 | Done | T24 | Invitations are random, short-lived and one-time (`InvitationTest`, `IdentityServiceTest`), and the first password is chosen by the user under the password policy (`RecoveryCommandsTest`, `RecoveryApiTest`) |
 | V6.4.2 | 1 | N/A | | No password hints or secret questions |
 | V6.4.3 | 2 | Done | T24 | A reset never opens a session, and the next login still asks for the second factor (`RecoveryApiTest`, `RecoveryCommandsTest`) |
-| V6.4.4 | 2 | Partial | T34 | A lost factor comes back only through `IdentityService.resetMfa`, and the user enrolls again (`AccountRecoveryTest`, `RecoveryApiTest`). An only admin goes through the [runbook](tenant-admin-recovery-runbook.md) (`ReinviteAdminHandlerTest`). The admin command remains |
+| V6.4.4 | 2 | Done | T34 | A lost factor comes back only through an admin's MFA reset, which needs a login at most 10 minutes old, ends the user's sessions in the same transaction and is audited, and the user enrolls again (`AdminUsersApiTest`, `AccountRecoveryTest`, `RecoveryApiTest`). An only admin goes through the [runbook](tenant-admin-recovery-runbook.md) (`ReinviteAdminHandlerTest`) |
 | V6.5.1 | 2 | Done | T19 | TOTP codes and recovery codes work once (`TotpServiceTest`) |
-| V6.5.2 | 2 | Done | T19 | Recovery codes have 128 bits of entropy and are stored as SHA-256 (`RecoveryCodeTest`, `TotpServiceTest`) |
+| V6.5.2 | 2 | Done | T19 | Recovery codes have 128 bits of entropy and are stored as SHA-256 (`RecoveryCodeTest`, `TotpServiceTest`), and no table holds one as issued (`PlaintextAtRestTest`) |
 | V6.5.3 | 2 | Done | T19 | Codes and seeds come from a CSPRNG (`RecoveryCodeTest`, `TotpCredentialTest`) |
 | V6.5.4 | 2 | Done | T19 | Recovery codes carry 128 bits of entropy (`RecoveryCodeTest`) |
 | V6.5.5 | 2 | Done | T19 | TOTP step of 30 seconds (`TotpCredentialTest`), the tolerance is in `docs/security/authentication.md` |
@@ -184,15 +186,15 @@ SP metadata import is the only file upload.
 | V7.2.2 | 1 | Done | T22 | Tokens are generated per session (`SessionsTest`) |
 | V7.2.3 | 1 | Done | T22 | Reference tokens with 256 bits from a CSPRNG, not UUIDs (`SsoSessionTest`) |
 | V7.2.4 | 1 | Done | T22 | A new token on login and on re-authentication (`SessionsTest`) |
-| V7.3.1 | 2 | Done | T22 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`) |
-| V7.3.2 | 2 | Done | T22 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`) |
-| V7.4.1 | 1 | Planned | T32 | Logout invalidates the session on the server |
-| V7.4.2 | 1 | Partial | T34 | A blocked user is refused on the next request, erasing a user deletes their sessions and flows with the row, and revoking joins the caller's transaction (`SessionsTest`, `SessionFilterTest`), the handlers that block and erase remain |
-| V7.4.3 | 2 | Partial | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`), a factor change offering the same remains |
-| V7.4.4 | 2 | Planned | T33 | Logout is visible on every authenticated page |
-| V7.4.5 | 2 | Planned | T34 | Admins end sessions of one user or of everyone |
-| V7.5.1 | 2 | Partial | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`), the factor messages remain |
-| V7.5.2 | 2 | Planned | T32, T33 | Users see their sessions and end them after authenticating again |
+| V7.3.1 | 2 | Done | T22, T34 | Idle timeout from tenant policy (`SessionsTest`, `SsoSessionTest`). An admin sets it from 5 minutes to the 1 hour of AAL2 and no further (`TenantPolicyTest`, `AdminPolicyApiTest`), and the database holds every stored policy to the same bounds (`PolicyBoundsMigrationTest`), see `docs/security/sessions.md` |
+| V7.3.2 | 2 | Done | T22, T34 | Absolute timeout from tenant policy, a continued session keeps its login time (`SessionsTest`, `SsoSessionTest`). An admin sets it up to the 24 hours of AAL2 and no further, and a tighter one ends older sessions at once (`TenantPolicyTest`, `AdminPolicyApiTest`). The database holds every stored policy to the same bounds (`PolicyBoundsMigrationTest`) |
+| V7.4.1 | 1 | Done | T32 | Logout revokes the session on the server, and a replayed token opens nothing (`AccountApiTest`, `SessionsTest`) |
+| V7.4.2 | 1 | Done | T34 | A blocked user is refused on the next request, and the admin's block ends their sessions and logins in progress in the same transaction. Erasing a user deletes their sessions and flows with the row (`AdminUsersApiTest`, `SessionsTest`, `SessionFilterTest`) |
+| V7.4.3 | 2 | Done | T32 | A password reset ends every session of the user (`RecoveryCommandsTest`, `RecoveryApiTest`). After a factor change the fresh login lets the user end the other sessions at once, and a password change ends them in the same step when asked (`AccountApiTest`) |
+| V7.4.4 | 2 | Done | T33 | Every page of the console shares the layout with the logout button, only the page shown after a logout has none (`console.test.ts`, `account.spec.ts`) |
+| V7.4.5 | 2 | Done | T34 | Admins end the sessions of one user or of the whole tenant, their own too, and each end is audited (`AdminUsersApiTest`) |
+| V7.5.1 | 2 | Done | T32 | The bus refuses a message marked `RequiresFreshAuthentication` after 10 minutes (`FreshAuthenticationTest`, `SessionGuardsTest`), asking to change the email carries that mark and only a flow with `reauthenticate` refreshes it (`RecoveryApiTest`). So does every message that adds, removes or renews a factor, while a password change asks for the current password instead (`AccountApiTest`). An admin needs it to invite a user, change a role, reset MFA or erase a user (`AdminUsersApiTest`) |
+| V7.5.2 | 2 | Done | T32, T33 | Users list their sessions and end one or all others only after a login at most 10 minutes old (`AccountApiTest`, `SessionsTest`). The console lists them with the current one marked, ends them, and sends an older login to `/login/?reauthenticate` (`console.test.ts`, `account.spec.ts`) |
 | V7.6.1 | 2 | Done | T30 | An assertion states `SessionNotOnOrAfter` as the absolute end of the IdP session (`ResponseBuilderTest`, [sessions.md](sessions.md)). `ops` refuses an assertion without it and ends its own session there, idle after 30 minutes (`OpsSamlLoginTest`) |
 | V7.6.2 | 2 | Done | | Sessions start only from a user action: SSO is SP-initiated, IdP pages cannot be framed. An AuthnRequest starts a flow only once the browser is back on the IdP host, and a live session counts only where it meets `ForceAuthn` and `RequestedAuthnContext`, checked again before the Response (`SsoApiTest`, `ResumeApiTest`) |
 
@@ -200,13 +202,13 @@ SP metadata import is the only file upload.
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V8.1.1 | 1 | Planned | T34 | `docs/security/authorization.md` defines function and data rules |
-| V8.1.2 | 2 | Planned | T34 | The same document defines field-level rules |
-| V8.2.1 | 1 | Partial | T32, T34, T36 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`, each other audience adds its rules |
-| V8.2.2 | 1 | Planned | T32, T34, T36 | Handlers take the user from the context and check ownership |
-| V8.2.3 | 2 | Partial | T32, T34, T36 | `ops` reads only the masked contact (`OpsAccessBoundaryTest`), responses belong to their audience |
-| V8.3.1 | 1 | Partial | T32, T34, T36 | Authorization runs on the bus on the server (`BusDenialTest`), each audience adds its rules |
-| V8.4.1 | 2 | Partial | T31, T34, T36 | Database roles isolate tenants (`TenantIsolationTest`), API and e2e isolation tests remain |
+| V8.1.1 | 1 | Done | T34 | [authorization.md](authorization.md) defines the function rules of every role and the operator, and the data each reaches |
+| V8.1.2 | 2 | Done | T34 | The same document defines which fields each role and the operator read, and `ArchitectureRulesTest` keeps context types out of responses |
+| V8.2.1 | 1 | Done | T15, T30, T32, T34, T36, T37 | The bus denies by default (`BusDecoratorsTest`, `ArchitectureRulesTest`, `FailureResponsesTest`), and each public login message is listed in `ArchitectureRules`. The admin audience grants its messages, the policy, the SPs, the signing keys and the journal too, to `TENANT_ADMIN` only (`AdminUsersApiTest`, `AdminPolicyApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`), and an ordinary user gets `403` from it in the browser (`admin-users.spec.ts`, `admin-sp.spec.ts`). The operator audience grants its messages to `Operator` and `OperatorCli` only: a role without the permission is denied (`OpsBusTest`), the API role cannot bootstrap (`OpsCliTest`), and an admin of the service tenant who is not assigned to `ops` gets no session there (`ops-login.spec.ts`). Nor can that admin remove or reconfigure the SP `ops` or drop the passkeys it needs (`FederationServiceTest`, `SessionsTest`, `OpsServiceProviderHandlerTest`), also at a service tenant set up before that guard, even one whose admin had turned the passkeys off (`PlatformGuardsBackfillMigrationTest`) |
+| V8.2.2 | 1 | Done | T15, T32, T34, T36, T37 | Handlers take the user from the context and check ownership. The factor messages of the account name no user, and a passkey or a session of someone else reads as missing (`AccountApiTest`, `PasskeyServiceTest`, `SessionsTest`). An admin reaches only the users and SPs of the tenant whose schema holds the session, a user or an SP of another tenant reads as missing, an assignment that names a user of another tenant assigns nobody, a session of another tenant counts as none, and the journal holds only records of its own tenant (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`). A user signs in to an SP only while assigned to it (`admin-sp.spec.ts`). The operator reaches only `platform`, and `ops_runtime` reads no table or key of a tenant (`OpsAccessBoundaryTest`) |
+| V8.2.3 | 2 | Done | T32, T34, T36 | [authorization.md](authorization.md) sets the fields of every role. `ops` reads only the masked contact (`OpsAccessBoundaryTest`). A controller returns only types of its audience (`ArchitectureRulesTest`), the user card leaves out the IP and the details of audit records (`AdminUsersApiTest`), and the journal shows them to an admin, never those of an erased actor (`AdminAuditApiTest`) |
+| V8.3.1 | 1 | Done | T30, T32, T34, T36, T37 | Authorization runs on the bus on the server (`BusDenialTest`, `OpsBusTest`), and the admin API refuses an ordinary user and an admin of another tenant there (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`). The console only hides the admin pages, and a user who calls the admin API from the browser still gets `403` (`admin-users.spec.ts`, `admin-sp.spec.ts`). The API of `ops` is closed without a SAML session (`OpsSamlLoginTest`) |
+| V8.4.1 | 2 | Done | T31, T34, T36, T37 | Database roles isolate tenants (`TenantIsolationTest`), and the admin API reaches only the users, SPs and journal of its tenant (`AdminUsersApiTest`, `AdminServiceProvidersApiTest`, `AdminAuditApiTest`). In the browser two tenants share no flow, session or user (`login.spec.ts`), and the session of an admin of `acme` set at `globex` reaches none of its admin API (`admin-sp.spec.ts`) |
 
 ## V9 Self-contained Tokens
 
@@ -281,33 +283,33 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V12.1.1 | 1 | Partial | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`), the other connections remain |
-| V12.1.2 | 2 | Planned | T40, T41 | Edge and load balancer security policies with recommended suites |
+| V12.1.1 | 1 | Done | T39, T40, T41 | SMTP accepts only TLS 1.2 and 1.3 (`WorkerApplicationTest`). So do RDS through `ssl_min_protocol_version` and PgBouncer on both sides (`modules/data`, `infra/pgbouncer`), and `app` towards Valkey (`ValkeyRateLimiter`). So does the edge: CloudFront towards viewers through `TLSv1.2_2021` and towards the ALB, and the public ALB through `ELBSecurityPolicy-TLS13-1-2-Res-2021-06` (`edge.tftest.hcl`), the internal ALB of `ops` through the same policy (`app.tftest.hcl`). Both ports of `app` and `ops` enable only TLS 1.3 and 1.2 towards the ALBs (`AppApplicationTest`), the collector takes nothing below 1.2 (`infra/otel-collector`, `ProductionTelemetryTest`), and AWS endpoints take nothing below 1.2 either. [communications.md](communications.md) lists every connection |
+| V12.1.2 | 2 | Done | T40, T41 | CloudFront serves viewers with `TLSv1.2_2021`, the public ALB with `ELBSecurityPolicy-TLS13-1-2-Res-2021-06`: TLS 1.2 and 1.3, only ECDHE key exchange and AEAD ciphers (`edge.tftest.hcl`). The internal ALB of `ops` uses the same policy (`app.tftest.hcl`) |
 | V12.1.3 | 2 | N/A | | No mTLS |
-| V12.2.1 | 1 | Planned | T40 | HTTPS only at the edge |
-| V12.2.2 | 1 | Planned | T40 | Public certificates from ACM |
-| V12.3.1 | 2 | Partial | T39, T41 | SMTP requires STARTTLS, database, Valkey, telemetry and targets remain |
-| V12.3.2 | 2 | Partial | T39, T41 | SMTP verifies the server name (`WorkerApplicationTest`), `verify-full` for Postgres and the other clients remain |
-| V12.3.3 | 2 | Planned | T41 | TLS between the load balancer and services |
-| V12.3.4 | 2 | Planned | T39, T41 | Internal certificates come from a pinned private CA |
+| V12.2.1 | 1 | Done | T40 | HTTPS only at the edge: pages redirect, the API and SAML refuse plain HTTP, CloudFront reaches the ALB by HTTPS alone, and the ALB has only an HTTPS listener (`edge.tftest.hcl`) |
+| V12.2.2 | 1 | Done | T40 | Public certificates from ACM for `*.<domain>`, in `us-east-1` for CloudFront and in the region of the ALB, validated by DNS (`edge.tftest.hcl`) |
+| V12.3.1 | 2 | Done | T39, T41 | SMTP requires STARTTLS. Every connection to Postgres is TLS: RDS refuses others with `rds.force_ssl`, PgBouncer with `client_tls_sslmode = require` (`ProductionDatabaseTest`). ElastiCache takes only TLS with `transit_encryption_mode = "required"` (`modules/valkey`), and the prod profile of `app` refuses a `VALKEY_URL` without it (`ThrottleApplicationTest`). The ALBs reach `app` and `ops` over HTTPS on both ports (`app.tftest.hcl`), the collector takes OTLP over HTTPS alone and writes to AWS over HTTPS (`ProductionTelemetryTest`, `telemetry.tftest.hcl`), and the deployed profiles refuse a server or an OTLP endpoint without TLS (`TlsGuardTest`, `OpsApplicationTest`, `WorkerApplicationTest`). [communications.md](communications.md) lists every connection |
+| V12.3.2 | 2 | Done | T39, T41, T43 | SMTP verifies the server name (`WorkerApplicationTest`). Every client of Postgres uses `verify-full`: the services and `migrator` through the JDBC URLs of `modules/data`, PgBouncer towards RDS, the bootstrap tasks through libpq (`ProductionDatabaseTest`). `app` verifies the certificate and name of Valkey, which `verifyPeer` in the URL cannot turn off (`ValkeyTlsTest`). The exporters verify the certificate and name of the collector and refuse another host (`ProductionTelemetryTest`). CodeQL fails a pull request that adds a `TrustManager` accepting every certificate, a host name verifier accepting every name or SMTP over SSL without the name check, tests included (`codeql.yml`, `code-scanning.test.mjs`) |
+| V12.3.3 | 2 | Staging | T41 | TLS from the ALBs to `app` and `ops`, health checks included, and from the services to the collector (`app.tftest.hcl`, `AppApplicationTest`, `OpsApplicationTest`, `ProductionTelemetryTest`). Only the health check of `worker` stays plain HTTP, on `localhost` inside its own task. Proving on staging that the targets of `app` and `ops` turn healthy over HTTPS with the certificates of the internal CA remains |
+| V12.3.4 | 2 | Exception | T39, T41 | A client of Postgres trusts one CA alone: PgBouncer is certified by the internal CA of `modules/pki`, RDS by its root of `ca_cert_identifier`, and a certificate of another CA or for another name is refused (`ProductionDatabaseTest`). `app` trusts for Valkey only the roots of Amazon Trust Services in `VALKEY_TLS_CA`, never the JVM trust store, and refuses `rediss://` without them (`ValkeyTlsTest`, `modules/valkey`). The exporters trust only the internal CA in `OTLP_TLS_CA` and refuse a collector of another CA (`ProductionTelemetryTest`). `app` and `ops` serve certificates of the internal CA, which the ALBs do not verify, see [Exceptions](#exceptions) |
 
 ## V13 Configuration
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V13.1.1 | 2 | Planned | T41 | `docs/security/communications.md` lists every connection |
-| V13.2.1 | 2 | Partial | T39, T41 | Each service has its own database role (`DatabaseRolesTest`), IAM roles remain |
-| V13.2.2 | 2 | Partial | T39, T41 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`), IAM remains |
-| V13.2.3 | 2 | Planned | T39 | Generated credentials in production, default ones stay in the local environment |
-| V13.2.4 | 2 | Planned | T41 | Security groups allow only listed destinations |
-| V13.2.5 | 2 | Planned | T41 | The same egress allowlist |
-| V13.3.1 | 2 | Planned | T39, T41 | Secrets Manager and KMS, no secrets in source or images |
-| V13.3.2 | 2 | Planned | T41 | One IAM role per service, `ops` has no `Decrypt` |
+| V13.1.1 | 2 | Done | T41 | [communications.md](communications.md) lists every connection, the external services and why no user sets the address of one, by inspection |
+| V13.2.1 | 2 | Done | T39, T41 | Each service has its own database role (`DatabaseRolesTest`). In AWS each task, the CLI and the recovery run of `migrator` included, runs as a task role of its own that only ECS tasks of the account assume, apart from the execution role that reads its secrets (`iam.tftest.hcl`, `app.tftest.hcl`) |
+| V13.2.2 | 2 | Done | T39, T41, T42 | Roles have per-table grants (`DatabaseRolesTest`, `OpsAccessBoundaryTest`). IAM grants each task role only the calls it makes, on the platform KEK, the aliases of tenant KEKs and the erasure journal by name, without wildcards in actions and without deletes in the journal, and a release of `migrator` gets none. The key policy that `worker` attaches to each tenant KEK grants `app` only `Decrypt` and `worker` what provisioning, moves and offboarding call. Every task role denies `ecs:ExecuteCommand`, `ops` and the CLI every call of Secrets Manager (`iam.tftest.hcl`). The role `deploy` of a release updates only `app`, `worker` and `ops`, runs only `migrator`, the CLI and `role-passwords` in the cluster of the environment, and passes only their roles and only to ECS tasks, never that of `recovery` (`release.tftest.hcl`). `Deploy` and `Rollback` run from `main` alone, and the GitHub environments that the OIDC trust names admit `main` alone, see `infra/terraform/README.md` |
+| V13.2.3 | 2 | Done | T39 | Terraform generates every credential of the services into Secrets Manager: database passwords, the Valkey token and the HMAC key of Throttle as write-only values, the SMTP credentials of SES from an IAM key of their own (`modules/keys`, `modules/mail`), and RDS manages the master password itself. The origin header of CloudFront is written the same way and reaches the state only through CloudFront and the ALB, which keep it in their configuration. Default ones stay in the local environment, and the prod profile of `app` refuses its Valkey and HMAC key (`ThrottleApplicationTest`) |
+| V13.2.4 | 2 | Done | T39, T41 | The private subnets have no route out of the VPC, and every egress rule of a security group names another group or the prefix list of the S3 endpoint, never an address range: AWS through the interface endpoints on 443, SES on 587 from `worker` alone, PgBouncer, Postgres for `migrator` and `worker`, Valkey for `app`, the collector on 4318 for `app`, `worker` and `ops`, the services from their load balancers (`network.tftest.hcl`, `app.tftest.hcl`, `telemetry.tftest.hcl`, `modules/data`, `modules/valkey`) |
+| V13.2.5 | 2 | Done | T39, T41 | The same allowlist: a new destination is a new rule or a new interface endpoint in `interface_endpoints`, and there is no default egress (`network.tftest.hcl`, `app.tftest.hcl`) |
+| V13.3.1 | 2 | Done | T39, T41 | Database passwords and the TLS key of PgBouncer live in Secrets Manager, and the images read them from the environment that ECS fills (`infra/pgbouncer`, `infra/db-bootstrap`). The bootstrap sets a password with `\password` of psql, which sends Postgres a SCRAM verifier, so no statement that Postgres logs or Performance Insights samples holds one (`ProductionDatabaseTest`). The secrets of the services are there too, listed by variable in the output `services` of `infra/terraform`. The task definitions take each of them through `secrets`, and the execution role of each task reads only its own (`app.tftest.hcl`) |
+| V13.3.2 | 2 | Staging | T41 | One IAM role per task. The key policies deny by `aws:PrincipalArn`, for the root user too: `ops` and the CLI everything on a tenant KEK and everything but `Encrypt` on the platform KEK, `Decrypt` of a tenant KEK to all but `app`, `worker` and the recovery run, of the platform KEK to all but `worker`, `ScheduleKeyDeletion` of a tenant KEK to all but `worker` and the recovery run, `ReEncrypt*` and `CreateGrant` to everybody (`iam.tftest.hcl`). Only `worker` gets the tenant policy as `KMS_AWS_KEY_POLICY` (`app.tftest.hcl`). Left: proving on staging that AWS refuses `ops` the `Decrypt` of a tenant KEK and accepts `CreateKey` of `worker` with that policy |
 | V13.4.1 | 1 | Done | T2 | `.dockerignore` admits only built jars |
-| V13.4.2 | 2 | Partial | T41 | JDWP exists only in local compose, production task definitions must prove it |
-| V13.4.3 | 2 | Planned | T31, T40 | No listing in nginx or S3 |
+| V13.4.2 | 2 | Done | T41 | JDWP exists only in local compose. `modules/app` refuses JDWP, `-Xdebug` and `-Xrunjdwp` in any variable of a service and checks the final environment of each task definition, which sets no JVM options (`app.tftest.hcl`) |
+| V13.4.3 | 2 | Done | T40 | nginx runs with `autoindex off` and answers a directory under `assets/` with `404` (`render-nginx.test.mjs`, `make smoke`). In AWS the CloudFront Function, on the request of every behavior of S3, asks S3 only for an `index.html` or a key under `assets/`, never for the root of the bucket, on the same cases as nginx (`spa-rewrite.test.mjs`, `check-nginx.mjs` in `make smoke`, `edge.tftest.hcl`). The bucket is read only through CloudFront with origin access control, and its policy denies CloudFront every listing, so a missing key is a `403` that the distribution passes on uncached (`static.tftest.hcl`, `edge.tftest.hcl`) |
 | V13.4.4 | 2 | Done | T23 | `TRACE` is refused (`ResponseHeadersTest`, `OpsApiTest`) |
-| V13.4.5 | 2 | Partial | T41 | Management port exposes only health (`AppApplicationTest`), it must stay private |
+| V13.4.5 | 2 | Done | T41 | Management port exposes only health (`AppApplicationTest`). In AWS only the security group of its ALB reaches 8081 of `app` and `ops`, for the health check, the target groups forward requests to 8080 alone, and `worker` takes no traffic (`app.tftest.hcl`) |
 
 ## V14 Data Protection
 
@@ -315,49 +317,49 @@ OAuth and OIDC are not part of the first version. This chapter must be revisited
 |---|---|---|---|---|
 | V14.1.1 | 2 | Done | T25 | [data-protection.md](data-protection.md) classifies data, by inspection |
 | V14.1.2 | 2 | Done | T25 | The same document sets encryption, integrity, retention, logging and access per class, by inspection |
-| V14.2.1 | 1 | Partial | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page remains |
-| V14.2.2 | 2 | Planned | T40 | The edge does not cache `/api/*` and `/saml/*`, the application has no response cache |
-| V14.2.3 | 2 | Planned | T31 | No third-party scripts, enforced by CSP |
-| V14.2.4 | 2 | Partial | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), logs remain |
-| V14.3.1 | 1 | Planned | T32, T33 | `Clear-Site-Data` on logout, and the client clears itself when the server is unreachable |
+| V14.2.1 | 1 | Done | T31 | Every mail token travels in the URL fragment and reaches the API in a request body (`TenantProvisioningProcessTest`, `RecoveryMailTest`, `RecoveryApiTest`). The SAML Redirect binding carries only the AuthnRequest, and the way on to the login only opaque IDs, each worthless without the cookie of the browser (`SsoApiTest`). The login page takes the token from the fragment and drops the fragment from the address before it calls the API (`pages.test.ts`, `login.spec.ts`) |
+| V14.2.2 | 2 | Done | T40 | The edge caches no response of `/api/*` and `/saml/*` and no error at all, so nothing of one tenant reaches another (`edge.tftest.hcl`). The application has no response cache |
+| V14.2.3 | 2 | Done | T31 | The pages load nothing from another origin: the CSP allows only `'self'` (`render-nginx.test.mjs`), and a whole login requests nothing from elsewhere and runs only the scripts of its own bundle (`login.spec.ts`) |
+| V14.2.4 | 2 | Done | T38 | Field encryption, audit, users, sessions, erasure and its reapplication after a restore are merged (`FieldCipherTest`, `AuditTest`, `IdentityServiceTest`, `SessionsTest`, `ErasureTest`, `ReapplyErasuresJobTest`), and logs hold no personal data (`NoPiiInLogsTest`). After a journey through invitations, factors, sessions, flows, SAML, mail tokens and audit, no column of any table and no key or value of Valkey holds a personal value, password, secret or token as given, in any case or in base64 or hex (`PlaintextAtRestTest`). Neither do the tables after an application, a new admin and provisioning hold a contact (`OpsAccessBoundaryTest`, `TenantProvisioningProcessTest`) |
+| V14.3.1 | 1 | Done | T32, T33 | Logout answers with `Clear-Site-Data: "cache", "storage"` and clears the session and CSRF cookies, also without a live session (`AccountApiTest`). The console leaves the pages of the account, then drops the TanStack Query cache and resets every Pinia store, also when the server cannot be reached (`console.test.ts`, `account.spec.ts`) |
 | V14.3.2 | 2 | Done | T23 | `Cache-Control: no-store` on all `/api/*` (`ResponseHeadersTest`, `OpsApiTest`) |
-| V14.3.3 | 2 | Planned | T31 | Nothing sensitive in browser storage |
+| V14.3.3 | 2 | Done | T31 | The login keeps nothing in local or session storage, IndexedDB or Cache Storage, and a script can read only the `__Host-csrf` cookie, the others are `HttpOnly`. `login.spec.ts` reads all of it midway through a login and after it, `account.spec.ts` after the console has shown recovery codes. The one key a page may write is `idp:reloaded-at` in session storage, the time of its last reload |
 
 ## V15 Secure Coding and Architecture
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V15.1.1 | 1 | Planned | T42 | `docs/security/dependencies.md` defines remediation time frames |
-| V15.1.2 | 2 | Partial | T42 | The dependency graph reaches GitHub from CI, a release SBOM remains |
+| V15.1.1 | 1 | Done | T42 | `docs/security/dependencies.md` sets remediation time frames by severity and update time frames, and `Deploy` stops on a breach (`vulnerabilities.test.mjs`) |
+| V15.1.2 | 2 | Done | T42 | Every release keeps CycloneDX SBOMs of the jars, the apps and every image it runs with their OS packages as an artifact, and `registries.mjs` allows only Maven Central, the Plugin Portal, Shibboleth for OpenSAML and npm, in CI and the release (`registries.test.mjs`) |
 | V15.1.3 | 2 | Done | T23 | `docs/security/limits.md` lists expensive operations |
-| V15.2.1 | 1 | Partial | T42 | Renovate and dependency review run, the time frames remain |
+| V15.2.1 | 1 | Done | T42 | Trivy over the SBOMs of a release, the OS packages of the images it runs included, and the age of open Renovate pull requests stop `Deploy` past the time frames of `docs/security/dependencies.md` before any revision names a new image (`vulnerabilities.test.mjs`, `images.test.mjs`) |
 | V15.2.2 | 2 | Done | | Throttling, the hash semaphore and the limits on flows, open SAML requests and request size are merged (`HashLimitTest`, `LoginLimitsTest`, `SamlRequestsTest`). An inflated request is cut at 32 KiB before parsing (`AuthnRequestValidatorTest`) |
-| V15.2.3 | 2 | Partial | T41 | Seed runs only in `local` (`LocalSeedTest`), production must never set that profile |
-| V15.3.1 | 1 | Partial | T32, T34, T36 | Audiences own responses (`OpsApiTest`, `FlowContractTest`), each API adds its own |
+| V15.2.3 | 2 | Done | T41 | Seed runs only in `local` (`LocalSeedTest`). `modules/app` gives every task `prod` or `staging` and refuses `local` and a profile from the settings of the root (`app.tftest.hcl`), and `ops` refuses `local` beside either (`OpsApiTest`) |
+| V15.3.1 | 1 | Done | T32, T34, T36 | Audiences own their responses and build them field by field (`ArchitectureRulesTest`), and every contract test checks that a response carries exactly the fields of its schema (`FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest`) |
 | V15.3.2 | 2 | Done | T6 | The OpenBao client keeps the JDK default of not following redirects, by inspection |
 | V15.3.3 | 2 | Done | T23 | Requests list their fields, unknown fields are refused (`FlowApiTest`, `OpsApiTest`) |
-| V15.3.4 | 2 | Partial | T40, T41 | One trusted header (`ClientIpTest`), the edge must set it |
-| V15.3.5 | 2 | Partial | T31 | Kotlin is statically typed, the frontend needs strict TypeScript and `eqeqeq` |
-| V15.3.6 | 2 | Planned | T31 | `Map` and `Set` for keyed data, enforced by lint |
+| V15.3.4 | 2 | Staging | T40 | One trusted header, `CloudFront-Viewer-Address` as `address:port` with IPv4 or IPv6, and the address of the socket when it is missing or malformed, never `X-Forwarded-For` (`ClientIpTest`, `ThrottleApplicationTest`). CloudFront sets it for `/api/*` and `/saml/*`, the WAF counts the same viewer address, and Terraform hands `app` the header as `CLIENT_IP_HEADER` (`edge.tftest.hcl`). Proving on staging that CloudFront overwrites a value sent by the client remains |
+| V15.3.5 | 2 | Done | T31 | Kotlin is statically typed. The frontend is strict TypeScript with `noUncheckedIndexedAccess`, checked by `make lint-frontend` in CI, and lint enforces `eqeqeq` (`lint.test.ts`) |
+| V15.3.6 | 2 | Done | T31 | Lint forbids index signatures and `Record`, so data with keys from outside goes in `Map` and `Set` (`lint.test.ts`) |
 | V15.3.7 | 2 | Done | | Each value of the API has one declared source (`FlowApiTest`). A repeated SAML parameter, an encoded copy of its name, or one in the URL of a POST is refused (`AuthnRequestValidatorTest`, `SsoApiTest`) |
 
 ## V16 Security Logging and Error Handling
 
 | ID | L | Status | Tasks | Control |
 |---|---|---|---|---|
-| V16.1.1 | 2 | Planned | T38 | `docs/security/logging.md` holds the log inventory |
-| V16.2.1 | 2 | Partial | T38 | Audit records actor, action, target, IP and time (`AuditTest`), application logs remain |
-| V16.2.2 | 2 | Partial | T38 | Audit stores instants, logs need UTC |
-| V16.2.3 | 2 | Planned | T38 | Logs go only to the listed destinations |
-| V16.2.4 | 2 | Planned | T38 | Structured JSON logs |
-| V16.2.5 | 2 | Partial | T38 | The bus logs no payloads (`BusDecoratorsTest`), request spans carry the tenant ID but no email, password or SAML message (`TracingTest`), `NoPiiInLogsTest` covers the rest |
+| V16.1.1 | 2 | Done | T38 | [logging.md](logging.md) lists the lines of every layer, their format, destinations, retention and access, by inspection |
+| V16.2.1 | 2 | Done | T38 | Audit records actor, action, target, IP and time (`AuditTest`), a log line names the service, the tenant, the correlation and the span (`LogsTest`) |
+| V16.2.2 | 2 | Done | T38 | Audit stores instants, log lines carry `@timestamp` in UTC (`LogsTest`) |
+| V16.2.3 | 2 | Done | T38 | The console and OTLP to the collector, the latter only with an endpoint (`AppApplicationTest`), as [logging.md](logging.md) lists |
+| V16.2.4 | 2 | Done | T38 | ECS JSON on the console and OTLP records with the same fields (`LogsTest`) |
+| V16.2.5 | 2 | Done | T38 | The bus logs no payloads (`BusDecoratorsTest`), failures drop exception texts (`FailuresTest`), request spans carry no email, password or SAML message (`TracingTest`), and neither do the lines of logins, refusals, failures and a SAML login (`NoPiiInLogsTest`) |
 | V16.3.1 | 2 | Done | T23 | Successful and failed logins with the factor type (`FlowApiTest`) |
 | V16.3.2 | 2 | Done | | Bus denials are audited (`BusDenialTest`). A refused AuthnRequest reaches the log of security events and not the journal, since an anonymous caller sends it (`SsoApiTest`). A user refused for lack of an assignment is audited as `sp.login_denied` (`SignInTest`, `ResumeApiTest`) |
-| V16.3.3 | 2 | Partial | T38 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`) |
-| V16.3.4 | 2 | Planned | T38 | Unexpected errors and backend TLS failures are logged and alerted |
-| V16.4.1 | 2 | Planned | T38 | The JSON encoder escapes log content |
-| V16.4.2 | 2 | Partial | T41 | Audit is append-only (`AuditTest`), log storage remains |
-| V16.4.3 | 2 | Planned | T38, T41 | Logs leave the services through the collector for a separate store |
+| V16.3.3 | 2 | Staging | T38, T41 | Denials are audited, and a throttle refusal and a refused SAML message reach the log of security events with the reason and the tenant, never the content (`ThrottleTest`, `LoginLimitsTest`, `SamlThrottleFilterTest`, `SsoApiTest`). Failed logins are counted (`FailureMetricsTest`), and both have alerts in `dev-tools/lgtm/alerts.yaml` and CloudWatch alarms in AWS, as have blocks of the WAF and, through CloudTrail, `Decrypt` outside the services, key policies and deletions, RDS snapshots leaving the account, the root user and IAM (`alarms.tftest.hcl`). The plan shows the filter patterns and the queries as text, so proving on staging with `aws logs test-metric-filter` and a sample of each event that every alarm fires remains |
+| V16.3.4 | 2 | Staging | T38 | An unexpected failure and a TLS failure to a backend are logged without their text and counted in `idp.failures` with `tls` (`FailureMetricsTest`, `FailuresTest`, `OutboxDispatcherTest`), with alerts in `dev-tools/lgtm/alerts.yaml` and the same CloudWatch alarms in AWS (`alarms.tftest.hcl`). Proving on staging that the Metrics Insights queries of the alarms read the series the collector exports remains |
+| V16.4.1 | 2 | Done | T38 | The JSON encoder escapes line breaks and control characters (`LogsTest`) |
+| V16.4.2 | 2 | Staging | T41 | Audit is append-only (`AuditTest`), and only an admin of the tenant reads its journal (`AdminAuditApiTest`). Every log group has deletion protection, the task roles deny CloudWatch Logs, X-Ray and CloudWatch, the execution roles and the collector deny reading, shortening and deleting lines, and only the read policy of the on-call engineers reads them (`telemetry.tftest.hcl`, `iam.tftest.hcl`, `app.tftest.hcl`), as [logging.md](logging.md) says. CloudTrail keeps the actions in AWS a year with digests of its files, in a log group under deletion protection that its role only appends to and a bucket that refuses deletes, and an alarm fires when somebody changes the trail, a log group or its retention (`alarms.tftest.hcl`). Proving on staging that the alarm of `monitoring-changes` fires on a changed retention remains |
+| V16.4.3 | 2 | Done | T41 | Logs leave the services over OTLP for the collector (`LogsTest`), which writes them to CloudWatch Logs, apart from the services, with the lines of `idp.security` in a group of their own (`ProductionTelemetryTest`). The console goes there through ECS |
 | V16.5.1 | 2 | Done | T23 | `BusExceptionAdvice` answers refusals without a body, an unexpected error answers in general terms (`FailureResponsesTest`) |
 | V16.5.2 | 2 | Done | T23 | Valkey, KMS and database failures are handled (`ThrottleTest`, `KeyHierarchyTest`, `FailureResponsesTest`) |
 | V16.5.3 | 2 | Done | T23 | The bus denies on a missing rule (`BusDecoratorsTest`), a failed step proves nothing and opens no session (`FailureResponsesTest`) |

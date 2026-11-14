@@ -11,6 +11,7 @@ import idp.sharedkernel.crypto.KeyManagementUnavailableException
 import idp.sharedkernel.crypto.KeyNotFoundException
 import idp.sharedkernel.crypto.adapter.OpenBaoKeyManagementService
 import idp.sharedkernel.migration.TenantSchema
+import idp.sharedkernel.observability.Failures
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.scheduling.JobLocks
 import idp.sharedkernel.scheduling.JobScheduler
@@ -36,6 +37,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldStartWith
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.springframework.jdbc.core.JdbcTemplate
 import java.time.Duration
 import java.time.Instant
@@ -113,6 +115,7 @@ private class Rotation {
     val sql = JdbcTemplate(database.owner())
     val worker = database.pooled("worker_runtime")
     val clock = MovableClock()
+    val registry = SimpleMeterRegistry()
     val openBao = OpenBaoKeyManagementService(TestOpenBao.address, TestOpenBao.TOKEN)
     val other = OtherKms(openBao)
     val kms = ObservedKms(mapOf(OPENBAO to openBao, OTHER to other))
@@ -128,10 +131,17 @@ private class Rotation {
 
     fun moveJob(newKeys: String = OTHER): KekMoveJob {
         kms.newKeys = newKeys
-        return KekMoveJob(tenancy, kms, keys, transaction, audit, newKeys, RETENTION)
+        return KekMoveJob(tenancy, kms, keys, transaction, audit, newKeys, RETENTION, Failures(registry))
     }
 
-    fun previousJob() = PreviousKekJob(tenancy, kms, transaction, audit, clock)
+    fun previousJob() = PreviousKekJob(tenancy, kms, transaction, audit, Failures(registry), clock)
+
+    fun failures(): Double =
+        registry
+            .find("idp.failures")
+            .tag("source", "job")
+            .counter()
+            ?.count() ?: 0.0
 
     /** Without the lock of the last run, which would hold the job until its interval passed. */
     fun run(job: ScheduledJob) {
@@ -347,6 +357,7 @@ class KeyRotationJobsTest :
 
                     view(broken).previousKekDestroyAfter.shouldBeNull()
                     view(healthy).previousKekDestroyAfter.shouldNotBeNull()
+                    failures() shouldBe 1.0
                 }
             }
         }

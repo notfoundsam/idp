@@ -15,6 +15,7 @@ import idp.sharedkernel.erasure.ErasureJournal
 import idp.sharedkernel.erasure.adapter.ErasureJournalSettings
 import idp.sharedkernel.migration.TenantMigrationRunner
 import idp.sharedkernel.migration.TenantSchemaFactory
+import idp.sharedkernel.observability.Failures
 import idp.sharedkernel.outbox.OutboxPublisher
 import idp.sharedkernel.scheduling.ScheduledJob
 import idp.sharedkernel.scheduling.TenantCleanup
@@ -79,7 +80,8 @@ class WorkerConfiguration {
         audit: AuditLog,
         @Value("\${idp.kms.new-keys}") newKeys: String,
         @Value("\${idp.kms.previous-kek-retention}") retention: Duration,
-    ): ScheduledJob = KekMoveJob(tenancy, kms, keys, transaction, audit, newKeys, retention)
+        failures: Failures,
+    ): ScheduledJob = KekMoveJob(tenancy, kms, keys, transaction, audit, newKeys, retention, failures)
 
     @Bean
     fun previousKekJob(
@@ -87,7 +89,8 @@ class WorkerConfiguration {
         kms: KeyManagementService,
         transaction: TenantTransaction,
         audit: AuditLog,
-    ): ScheduledJob = PreviousKekJob(tenancy, kms, transaction, audit)
+        failures: Failures,
+    ): ScheduledJob = PreviousKekJob(tenancy, kms, transaction, audit, failures)
 
     @Bean
     fun auditLog(

@@ -3,6 +3,7 @@ dependencies {
     implementation(project(":shared-kernel"))
     implementation(project(":modules:authentication"))
     implementation(project(":modules:identity"))
+    implementation(libs.micrometer.core)
     compileOnly(libs.spring.web)
     compileOnly(libs.jakarta.servlet.api)
 

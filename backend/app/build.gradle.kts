@@ -35,9 +35,15 @@ tasks.bootJar {
     archiveFileName = "app.jar"
 }
 
-// FlowContractTest reads the contract, so Gradle must rerun it when the contract changes.
+// The contract tests read the contracts, so Gradle must rerun them when a contract changes.
 tasks.test {
     // The JDK HTTP client refuses to set Host otherwise.
     systemProperty("jdk.httpclient.allowRestrictedHeaders", "host")
     inputs.file(rootProject.file("../contracts/openapi/auth.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("../contracts/openapi/account.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("../contracts/openapi/admin.yaml")).withPathSensitivity(PathSensitivity.RELATIVE)
+    // ProductionTelemetryTest builds the collector of the environments in AWS from this folder.
+    val collector = rootDir.resolve("../infra/otel-collector").canonicalFile
+    inputs.dir(collector).withPathSensitivity(PathSensitivity.RELATIVE)
+    systemProperty("idp.collector.dir", collector.path)
 }

@@ -1,9 +1,9 @@
 package idp.app.web
 
+import idp.sharedkernel.observability.UnexpectedErrorFilter
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.core.Ordered
 import org.springframework.web.filter.OncePerRequestFilter
 
 private const val APP_VERSION_HEADER = "X-App-Version"
@@ -51,6 +51,6 @@ class ClientVersionFilter(
     ): Boolean = partsOf(client)?.let { isOlder(it, minimum) } ?: true
 
     companion object {
-        const val ORDER = Ordered.HIGHEST_PRECEDENCE + 1
+        const val ORDER = UnexpectedErrorFilter.ORDER + 1
     }
 }

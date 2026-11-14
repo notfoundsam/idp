@@ -6,7 +6,7 @@
 
 The first step takes a login or a passkey. A login that matches nobody leads to the same password step as any other, and a user without a password gets it too, so the steps say nothing about an account. That step still takes a passkey, but only the passkey of the user who entered the login. A passkey fails the same way when the login belongs to someone else and when it belongs to nobody, so a valid passkey of one's own cannot probe logins.
 
-MFA is required by default, and a tenant can relax it only for the `USER` role. The policy has no switch for `TENANT_ADMIN`. A passkey with user verification is enough on its own. A second factor the user enrolled is asked for even under a relaxed policy.
+MFA is required by default, and a tenant can relax it only for the `USER` role. The policy has no switch for `TENANT_ADMIN`, and the admin API refuses a body that names one. Relaxing needs a login at most 10 minutes old and is audited. A passkey with user verification is enough on its own. A second factor the user enrolled is asked for even under a relaxed policy.
 
 A user with no second factor enrolls one right after the password when MFA is required, so until then the password alone stands behind that enrollment. A user who already has a factor must pass it first, so a stolen password cannot add a new one. When a passkey is required, neither TOTP nor a recovery code replaces it.
 
@@ -82,7 +82,13 @@ A reset spends the token, stores the password and revokes every session in one t
 
 Changing the email needs a session whose full login is at most 10 minutes old. A flow that only continues a session does not count, so a client walks one with `reauthenticate`. The request stays sealed in `email_changes` until the new address confirms it, and an address that belongs to someone else is refused only there, so a request cannot probe who has an account. Confirming moves the address and its blind index and cancels a reset whose link went to the old address. The old address is kept in `email_change_notices` until the notice has gone out, for 7 days at most. Of two quick changes the first address gets the notice, because its owner is the one who may not have asked.
 
-A user who lost every factor has no way back alone: no recovery route removes or adds a factor. `IdentityService.resetMfa` removes TOTP, recovery codes and passkeys, and the tenant admin calls it after confirming who asks. An only admin who lost everything goes through the operator, see the [runbook](tenant-admin-recovery-runbook.md).
+A user who lost every factor has no way back alone: no recovery route removes or adds a factor. `IdentityService.resetMfa` removes TOTP, recovery codes and passkeys, and the tenant admin calls it after confirming who asks. The admin's reset needs a login at most 10 minutes old and ends the user's sessions and logins in progress in the same transaction, so nothing proved with the old factors outlives them. An only admin who lost everything goes through the operator, see the [runbook](tenant-admin-recovery-runbook.md).
+
+## Factors in the account
+
+A signed-in user manages their own factors, and no message names a user: each handler takes the one of the session. Adding, removing or renewing a factor needs a session whose full login is at most 10 minutes old, as changing the email does, because a factor added by a stolen session would outlive it. Changing the password asks for the current one instead. A wrong current password counts as a guess at the password with the same delay, and a wrong current password, TOTP code or passkey answer is audited as `account.credential_refused`.
+
+After any of these changes the user can end their other sessions at once, see [sessions.md](sessions.md#sessions-in-the-account). A confirmed TOTP is replaced by removing it first. Recovery codes come with a new factor only to a user who has none, so a second factor does not void codes saved for the first, and they go with the last second factor. A removal that would leave the user below the policy is refused with `422`: under MFA, which every policy asks of an admin, the last second factor stays, and under required passkeys the last passkey stays. Otherwise the account would stand behind the password alone, and the next login would let whoever holds it enroll their own factor. So a user replaces their only factor by adding the new one first, or the admin resets MFA. A passkey of someone else reads as missing.
 
 ## Limits and lockout
 

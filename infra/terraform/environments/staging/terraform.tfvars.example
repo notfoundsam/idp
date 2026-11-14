@@ -1,0 +1,6 @@
+region          = "eu-central-1"
+account_id      = "123456789012"
+domain          = "staging.idp.example.com"
+infra_image_tag = "0.1.0"
+release         = "0.1.0"
+alarm_endpoints = [{ protocol = "email", endpoint = "oncall@example.com" }]
