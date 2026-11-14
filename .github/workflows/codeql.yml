@@ -18,7 +18,7 @@ concurrency:
 jobs:
   # A pull request analyzes the languages whose code it changed, a push to main, the schedule and a manual run all of them.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       languages: ${{ steps.jobs.outputs.codeql }}
@@ -32,7 +32,7 @@ jobs:
   analyze:
     needs: changes
     if: needs.changes.outputs.languages != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
