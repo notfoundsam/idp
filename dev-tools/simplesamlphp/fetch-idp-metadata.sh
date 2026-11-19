@@ -10,7 +10,7 @@ ca="${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem"
 for tenant in acme; do
   curl --fail --silent --show-error --max-time 10 \
     --cacert "$ca" \
-    "https://$tenant.idp.test/saml/metadata" -o "metadata/$tenant.xml.tmp"
+    "https://$tenant.${IDP_DOMAIN:-idp.test}/saml/metadata" -o "metadata/$tenant.xml.tmp"
   mv "metadata/$tenant.xml.tmp" "metadata/$tenant.xml"
   echo "metadata/$tenant.xml"
 done

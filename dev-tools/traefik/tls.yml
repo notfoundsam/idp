@@ -2,5 +2,5 @@ tls:
   stores:
     default:
       defaultCertificate:
-        certFile: /certs/idp.test.pem
-        keyFile: /certs/idp.test-key.pem
+        certFile: /tls/cert.pem
+        keyFile: /tls/key.pem

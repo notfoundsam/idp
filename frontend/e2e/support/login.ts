@@ -1,12 +1,13 @@
 import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
+import { host } from './domain'
 import { linkFromMail } from './mail'
 import { totp } from './totp'
 
-export const ACME = 'https://acme.idp.test'
+export const ACME = `https://${host('acme')}`
 export const CONSOLE = `${ACME}/console/`
-export const GLOBEX = 'https://globex.idp.test'
-export const SP_WHOAMI = 'https://sp.idp.test/simplesaml/whoami.php'
+export const GLOBEX = `https://${host('globex')}`
+export const SP_WHOAMI = `https://${host('sp')}/simplesaml/whoami.php`
 
 /** The fixtures of `acme`, see dev-tools/README.md. */
 export const ALICE = { login: 'alice@acme.test', password: 'local-fixture-password-acme', totp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' }

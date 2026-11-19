@@ -3,6 +3,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/domains.sh"
 CA="${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem"
 failed=0
 
@@ -27,7 +28,7 @@ expect_status() {
 }
 
 http_redirects() {
-  [ "$(curl -s -o /dev/null -w '%{redirect_url}' --resolve mail.idp.test:80:127.0.0.1 http://mail.idp.test/)" = "https://mail.idp.test/" ]
+  [ "$(curl -s -o /dev/null -w '%{redirect_url}' --resolve mail.$IDP_DOMAIN:80:127.0.0.1 http://mail.$IDP_DOMAIN/)" = "https://mail.$IDP_DOMAIN/" ]
 }
 
 # Spring answers with a JSON 404, Traefik with plain text, and the tenant filter with an empty body.
@@ -36,7 +37,7 @@ reaches_spring() {
 }
 
 login_page_has_policy() {
-  curl -s -D - -o /dev/null --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/login/ |
+  curl -s -D - -o /dev/null --cacert "$CA" --resolve acme.$IDP_DOMAIN:443:127.0.0.1 https://acme.$IDP_DOMAIN/login/ |
     grep -qi "^content-security-policy: default-src 'none'; script-src 'self';"
 }
 
@@ -46,19 +47,19 @@ spa_routes_on_nginx() {
 }
 
 root_leads_to_console() {
-  [ "$(curl -s -o /dev/null -w '%{redirect_url}' --cacert "$CA" --resolve acme.idp.test:443:127.0.0.1 https://acme.idp.test/)" = "https://acme.idp.test/console/" ]
+  [ "$(curl -s -o /dev/null -w '%{redirect_url}' --cacert "$CA" --resolve acme.$IDP_DOMAIN:443:127.0.0.1 https://acme.$IDP_DOMAIN/)" = "https://acme.$IDP_DOMAIN/console/" ]
 }
 
 # A healthy container is not routed yet: Traefik picks it up about a second later.
 wait_for_routes() {
   for _ in $(seq 1 15); do
-    reaches_spring acme.idp.test && reaches_spring ops.idp.test && expect_status acme.idp.test /login/ 200 && return
+    reaches_spring acme.$IDP_DOMAIN && reaches_spring ops.$IDP_DOMAIN && expect_status acme.$IDP_DOMAIN /login/ 200 && return
     sleep 1
   done
 }
 
 unknown_tenant_refused() {
-  local host=nobody.idp.test
+  local host=nobody.$IDP_DOMAIN
   [ "$(status "$host" /api)" = "404" ] &&
     [ -z "$(curl -s --cacert "$CA" --resolve "$host:443:127.0.0.1" "https://$host/api")" ]
 }
@@ -126,20 +127,20 @@ logs_reach_loki() {
 wait_for_routes
 
 check "http redirects to https" http_redirects
-check "mail.idp.test" expect_status mail.idp.test / 200
-check "dashboard.idp.test" expect_status dashboard.idp.test / 200
-check "sp.idp.test" expect_status sp.idp.test /simplesaml/module.php/core/welcome 200
-check "acme.idp.test reaches app" reaches_spring acme.idp.test
-check "globex.idp.test reaches app" reaches_spring globex.idp.test
+check "mail.$IDP_DOMAIN" expect_status mail.$IDP_DOMAIN / 200
+check "dashboard.$IDP_DOMAIN" expect_status dashboard.$IDP_DOMAIN / 200
+check "sp.$IDP_DOMAIN" expect_status sp.$IDP_DOMAIN /simplesaml/module.php/core/welcome 200
+check "acme.$IDP_DOMAIN reaches app" reaches_spring acme.$IDP_DOMAIN
+check "globex.$IDP_DOMAIN reaches app" reaches_spring globex.$IDP_DOMAIN
 check "unknown tenant refused" unknown_tenant_refused
-check "ops.idp.test reaches ops" reaches_spring ops.idp.test
-check "unknown path stays on Traefik" expect_status acme.idp.test /nothing 404
+check "ops.$IDP_DOMAIN reaches ops" reaches_spring ops.$IDP_DOMAIN
+check "unknown path stays on Traefik" expect_status acme.$IDP_DOMAIN /nothing 404
 check "login page with its policy" login_page_has_policy
-check "deep link of the login falls back to the page" expect_status acme.idp.test /login/any/path 200
-check "static files not listed" expect_status acme.idp.test /login/assets/ 404
-check "invitation link opens the login" expect_status acme.idp.test /invite 200
-check "reset link opens the login" expect_status acme.idp.test /reset-password 200
-check "confirmation link opens the login" expect_status acme.idp.test /confirm-email 200
+check "deep link of the login falls back to the page" expect_status acme.$IDP_DOMAIN /login/any/path 200
+check "static files not listed" expect_status acme.$IDP_DOMAIN /login/assets/ 404
+check "invitation link opens the login" expect_status acme.$IDP_DOMAIN /invite 200
+check "reset link opens the login" expect_status acme.$IDP_DOMAIN /reset-password 200
+check "confirmation link opens the login" expect_status acme.$IDP_DOMAIN /confirm-email 200
 check "/ leads to the console" root_leads_to_console
 check "nginx serves the routes of spa-routes.json" spa_routes_on_nginx
 check "postgres through pgbouncer" pgbouncer_query

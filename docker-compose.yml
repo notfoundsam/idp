@@ -44,7 +44,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./dev-tools/traefik:/etc/traefik/dynamic:ro
-      - ./dev-tools/certs:/certs:ro
+      # The certificate of IDP_DOMAIN that dev-tools/ssl-setup.sh issued, under the names of dev-tools/traefik/tls.yml.
+      - ./dev-tools/certs/${IDP_DOMAIN:-idp.test}.pem:/tls/cert.pem:ro
+      - ./dev-tools/certs/${IDP_DOMAIN:-idp.test}-key.pem:/tls/key.pem:ro
 
   postgres:
     image: postgres:18.6-alpine3.24
@@ -105,7 +107,7 @@ services:
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.mail.rule=Host(`mail.idp.test`)
+      - traefik.http.routers.mail.rule=Host(`mail.${IDP_DOMAIN:-idp.test}`)
       - traefik.http.routers.mail.priority=100
       - traefik.http.services.mail.loadbalancer.server.port=8025
 
@@ -114,6 +116,7 @@ services:
     environment:
       SSP_ADMIN_PASSWORD: admin
       SSP_SECRET_SALT: local-development-only
+      IDP_DOMAIN: ${IDP_DOMAIN:-idp.test}
     volumes:
       - ./dev-tools/simplesamlphp/authsources.php:/var/simplesamlphp/config/authsources.php:ro
       - ./dev-tools/simplesamlphp/config-override.php:/var/simplesamlphp/config/config-override.php:ro
@@ -121,7 +124,7 @@ services:
       - ./dev-tools/simplesamlphp/metadata:/var/simplesamlphp/metadata/idp:ro
     labels:
       - traefik.enable=true
-      - traefik.http.routers.sp.rule=Host(`sp.idp.test`)
+      - traefik.http.routers.sp.rule=Host(`sp.${IDP_DOMAIN:-idp.test}`)
       - traefik.http.routers.sp.priority=100
       - traefik.http.services.sp.loadbalancer.server.port=443
       - traefik.http.services.sp.loadbalancer.server.scheme=https
@@ -130,10 +133,18 @@ services:
   dashboard:
     image: b4bz/homer:v26.08.3
     volumes:
-      - ./dev-tools/dashboard/config.yml:/www/assets/config.yml:ro
+      - type: volume
+        source: idp-dev-config
+        target: /www/assets/config.yml
+        read_only: true
+        volume:
+          subpath: dashboard.yml
+    depends_on:
+      dev-config:
+        condition: service_completed_successfully
     labels:
       - traefik.enable=true
-      - traefik.http.routers.dashboard.rule=Host(`dashboard.idp.test`)
+      - traefik.http.routers.dashboard.rule=Host(`dashboard.${IDP_DOMAIN:-idp.test}`)
       - traefik.http.routers.dashboard.priority=100
       - traefik.http.services.dashboard.loadbalancer.server.port=8080
 
@@ -148,7 +159,7 @@ services:
       DB_PASSWORD: idp_owner
       # Read only when REAPPLY_ERASURES=true, after a restore. See docs/security/restore-runbook.md.
       ERASURE_JOURNAL_FILE: /var/lib/idp/erasures/journal
-      TENANTS_BASE_DOMAIN: idp.test
+      TENANTS_BASE_DOMAIN: ${IDP_DOMAIN:-idp.test}
       KMS_NEW_KEYS: hcvault
       PLATFORM_KEK_URI: hcvault://transit/platform-contacts
       OPENBAO_ADDRESS: http://openbao:8200
@@ -217,7 +228,8 @@ services:
       - "127.0.0.1:5005:5005"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.app.rule=HostRegexp(`^[a-z0-9-]+\.idp\.test$`) && (PathPrefix(`/api`) || PathPrefix(`/saml`))
+      # The dots of IDP_DOMAIN match any character here, which loosens the rule only by hosts that resolve to nothing.
+      - traefik.http.routers.app.rule=HostRegexp(`^[a-z0-9-]+\.${IDP_DOMAIN:-idp.test}$`) && (PathPrefix(`/api`) || PathPrefix(`/saml`))
       - traefik.http.routers.app.middlewares=viewer-address
       - traefik.http.services.app.loadbalancer.server.port=8080
       # The same header CloudFront sets in production, with a test address.
@@ -237,19 +249,21 @@ services:
       PROVISIONER_DB_URL: jdbc:postgresql://postgres:5432/idp?options=-c%20role%3Didp_owner
       PROVISIONER_DB_USERNAME: provisioner
       PROVISIONER_DB_PASSWORD: provisioner
-      TENANTS_BASE_DOMAIN: idp.test
+      TENANTS_BASE_DOMAIN: ${IDP_DOMAIN:-idp.test}
       KMS_NEW_KEYS: hcvault
       PLATFORM_KEK_URI: hcvault://transit/platform-contacts
       OPENBAO_ADDRESS: http://openbao:8200
       OPENBAO_TOKEN: local-dev-token
       MAIL_HOST: mail
       MAIL_PORT: "1025"
-      MAIL_FROM: no-reply@idp.test
+      MAIL_FROM: no-reply@${IDP_DOMAIN:-idp.test}
       ERASURE_JOURNAL_FILE: /var/lib/idp/erasures/journal
       LOCAL_SP_METADATA: /fixtures/sp-metadata.xml
     depends_on:
       <<: *java-depends-on
       erasures-init:
+        condition: service_completed_successfully
+      dev-config:
         condition: service_completed_successfully
     healthcheck:
       # Readiness waits for the seed, so `make up` returns only when the tenants exist.
@@ -260,7 +274,7 @@ services:
     volumes:
       - ./backend/worker/build/libs/worker.jar:/app/service.jar:ro
       - idp-erasures:/var/lib/idp/erasures
-      - ./dev-tools/simplesamlphp/sp-metadata.xml:/fixtures/sp-metadata.xml:ro
+      - idp-dev-config:/fixtures:ro
     ports:
       - "127.0.0.1:5006:5005"
 
@@ -276,7 +290,7 @@ services:
       DB_URL: jdbc:postgresql://pgbouncer:5432/idp?prepareThreshold=0
       DB_USERNAME: ops_runtime
       DB_PASSWORD: ops_runtime
-      TENANTS_BASE_DOMAIN: idp.test
+      TENANTS_BASE_DOMAIN: ${IDP_DOMAIN:-idp.test}
       KMS_NEW_KEYS: hcvault
       PLATFORM_KEK_URI: hcvault://transit/platform-contacts
       OPENBAO_ADDRESS: http://openbao:8200
@@ -293,7 +307,7 @@ services:
       - "127.0.0.1:5007:5005"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.ops.rule=Host(`ops.idp.test`)
+      - traefik.http.routers.ops.rule=Host(`ops.${IDP_DOMAIN:-idp.test}`)
       - traefik.http.routers.ops.priority=100
       - traefik.http.services.ops.loadbalancer.server.port=8080
 
@@ -306,7 +320,7 @@ services:
       - sh
       - -c
       - >-
-        curl -fsS --max-time 5 --retry 30 --retry-delay 2 --retry-all-errors -H 'Host: ops-sso.idp.test'
+        curl -fsS --max-time 5 --retry 30 --retry-delay 2 --retry-all-errors -H 'Host: ops-sso.${IDP_DOMAIN:-idp.test}'
         http://app:8080/saml/metadata -o /idp/metadata.xml
     volumes:
       - idp-ops-metadata:/idp
@@ -336,6 +350,7 @@ services:
     environment:
       # Go reads the CA of mkcert from here, so the tenants are trusted as in a browser of a developer.
       SSL_CERT_FILE: /certs/rootCA.pem
+      IDP_DOMAIN: ${IDP_DOMAIN:-idp.test}
       K6_NO_USAGE_REPORT: "true"
       K6_OTEL_EXPORTER_PROTOCOL: http/protobuf
       K6_OTEL_HTTP_EXPORTER_ENDPOINT: lgtm:4318
@@ -345,9 +360,9 @@ services:
       K6_OTEL_SERVICE_NAME: k6
       K6_OTEL_METRIC_PREFIX: k6_
     extra_hosts:
-      - acme.idp.test:host-gateway
-      - globex.idp.test:host-gateway
-      - sp.idp.test:host-gateway
+      - acme.${IDP_DOMAIN:-idp.test}:host-gateway
+      - globex.${IDP_DOMAIN:-idp.test}:host-gateway
+      - sp.${IDP_DOMAIN:-idp.test}:host-gateway
     volumes:
       - ./dev-tools/k6:/scripts:ro
       - ./dev-tools/certs:/certs:ro
@@ -421,13 +436,14 @@ services:
       CERTS_DIR: /certs
       NODE_EXTRA_CA_CERTS: /certs/rootCA.pem
       SAML_METADATA_DIR: /saml-metadata
+      IDP_DOMAIN: ${IDP_DOMAIN:-idp.test}
     extra_hosts:
-      - acme.idp.test:host-gateway
-      - globex.idp.test:host-gateway
-      - ops.idp.test:host-gateway
-      - ops-sso.idp.test:host-gateway
-      - mail.idp.test:host-gateway
-      - sp.idp.test:host-gateway
+      - acme.${IDP_DOMAIN:-idp.test}:host-gateway
+      - globex.${IDP_DOMAIN:-idp.test}:host-gateway
+      - ops.${IDP_DOMAIN:-idp.test}:host-gateway
+      - ops-sso.${IDP_DOMAIN:-idp.test}:host-gateway
+      - mail.${IDP_DOMAIN:-idp.test}:host-gateway
+      - sp.${IDP_DOMAIN:-idp.test}:host-gateway
     volumes:
       - ./frontend:/app/frontend
       - idp-frontend-node-modules:/app/frontend/node_modules
@@ -443,9 +459,10 @@ services:
     environment:
       NODE_EXTRA_CA_CERTS: /certs/rootCA.pem
       SMOKE_LOGIN:
+      IDP_DOMAIN: ${IDP_DOMAIN:-idp.test}
     extra_hosts:
-      - release-smoke.idp.test:host-gateway
-      - mail.idp.test:host-gateway
+      - release-smoke.${IDP_DOMAIN:-idp.test}:host-gateway
+      - mail.${IDP_DOMAIN:-idp.test}:host-gateway
     volumes:
       - ./infra/deploy:/repo/infra/deploy:ro
       - ./dev-tools:/repo/dev-tools
@@ -470,6 +487,22 @@ services:
       - ./infra/web:/infra/web:ro
       - idp-nginx-config:/etc/nginx/conf.d
 
+  # The files of the tools that name hosts of the environment, written for IDP_DOMAIN on every `up`: the metadata of the
+  # SimpleSAMLphp SP that the worker seeds in acme, and the links of the dashboard.
+  dev-config:
+    image: node:24.22.2-alpine
+    environment:
+      IDP_DOMAIN: ${IDP_DOMAIN:-idp.test}
+    command:
+      - sh
+      - -c
+      - >-
+        sed "s/idp\.test/$$IDP_DOMAIN/g" /src/simplesamlphp/sp-metadata.xml > /out/sp-metadata.xml &&
+        sed "s/idp\.test/$$IDP_DOMAIN/g" /src/dashboard/config.yml > /out/dashboard.yml
+    volumes:
+      - ./dev-tools:/src:ro
+      - idp-dev-config:/out
+
   # Stands in for S3 behind CloudFront: the same headers, caching and SPA fallback.
   nginx:
     image: nginx:1.30.6-alpine3.24
@@ -483,7 +516,7 @@ services:
         condition: service_healthy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.web.rule=HostRegexp(`^[a-z0-9-]+\.idp\.test$`) && (Path(`/`) || PathPrefix(`/login`) || PathPrefix(`/console`) || Path(`/invite`) || Path(`/reset-password`) || Path(`/confirm-email`))
+      - traefik.http.routers.web.rule=HostRegexp(`^[a-z0-9-]+\.${IDP_DOMAIN:-idp.test}$`) && (Path(`/`) || PathPrefix(`/login`) || PathPrefix(`/console`) || Path(`/invite`) || Path(`/reset-password`) || Path(`/confirm-email`))
       # Below the hosts of the tools and ops, whose routers take every path.
       - traefik.http.routers.web.priority=10
       - traefik.http.services.web.loadbalancer.server.port=80
@@ -498,6 +531,7 @@ volumes:
   idp-corepack-cache:
   idp-web:
   idp-nginx-config:
+  idp-dev-config:
   idp-tflint-plugins:
   idp-terraform-plugins:
   idp-trivy-cache:

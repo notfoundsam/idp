@@ -3,7 +3,7 @@
 // counts once.
 import http from 'k6/http'
 import { check, fail } from 'k6'
-import { ACME, ALICE, SP_WHOAMI, logIn, post } from './lib.js'
+import { ACME, ALICE, SP, SP_WHOAMI, logIn, post } from './lib.js'
 
 const BOUNCE = /url=(\/saml\/sso\/[0-9a-f-]{36})/
 const FLOW = /\/login\/\?flow=([0-9a-f-]{36})$/
@@ -37,7 +37,7 @@ function field(html, name) {
 
 export default function ({ session, csrf }) {
   const jar = http.cookieJar()
-  jar.clear('https://sp.idp.test')
+  jar.clear(SP)
   jar.set(ACME, '__Host-session', session, { path: '/', secure: true })
   jar.set(ACME, '__Host-csrf', csrf, { path: '/', secure: true })
 

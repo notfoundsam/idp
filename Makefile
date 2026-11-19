@@ -1,6 +1,8 @@
-# The settings of this machine, which compose reads too, see dev-tools/shared-traefik.env. The scripts take the mkcert CA from CAROOT.
+# The settings of this machine, which compose reads too, see dev-tools/shared-traefik.env. The scripts take the mkcert CA from CAROOT
+# and the domain of the environment from IDP_DOMAIN.
 -include .env
-export CAROOT
+IDP_DOMAIN ?= idp.test
+export CAROOT IDP_DOMAIN
 
 FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
@@ -18,7 +20,7 @@ install: dns-mapping setup-ssl frontend-install jars
 up: jars
 	mkdir -p dev-tools/simplesamlphp/metadata
 	docker compose up -d --wait --wait-timeout 180
-	@command -v open >/dev/null && open https://dashboard.idp.test || xdg-open https://dashboard.idp.test || true
+	@command -v open >/dev/null && open https://dashboard.$(IDP_DOMAIN) || xdg-open https://dashboard.$(IDP_DOMAIN) || true
 
 up-observability: export COMPOSE_PROFILES = observability
 up-observability: export OTEL_EXPORTER_OTLP_ENDPOINT = http://lgtm:4318
@@ -113,7 +115,7 @@ release-smoke: deploy-install
 smoke-sso: deploy-install
 	cp "$${CAROOT:-$$(mkcert -CAROOT)}/rootCA.pem" dev-tools/certs/rootCA.pem
 	SMOKE_LOGIN="$$(cat dev-tools/release-smoke/login.json)" docker compose run --rm --no-deps release-smoke \
-	  node infra/deploy/smoke-sso.mjs --host release-smoke.idp.test
+	  node infra/deploy/smoke-sso.mjs --host release-smoke.$(IDP_DOMAIN)
 
 # terraform test against a mocked AWS provider: plans only, reads no state and calls no AWS API.
 test-infra:

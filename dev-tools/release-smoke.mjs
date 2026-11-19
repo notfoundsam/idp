@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util'
 import { serviceProviderOf } from '../infra/deploy/saml.mjs'
 import { DEFAULT_SP, totp } from '../infra/deploy/smoke-sso.mjs'
 
-const MAILPIT = 'https://mail.idp.test'
+const MAILPIT = `https://mail.${process.env.IDP_DOMAIN ?? 'idp.test'}`
 
 const { values } = parseArgs({ options: { host: { type: 'string' }, admin: { type: 'string' }, since: { type: 'string' }, out: { type: 'string' } } })
 if (!values.host || !values.admin || !values.since || !values.out) {
