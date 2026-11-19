@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type BrowserContext, type Page } 
 import { randomBytes } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { api, contextApi, metadataOf, registerSp, uniqueSp } from './support/admin'
+import { host } from './support/domain'
 import {
   ACME,
   acceptInvitation,
@@ -240,7 +241,7 @@ test.describe.serial('an admin of the tenant', () => {
     expect((await api(guest.page, 'GET', '/api/admin/service-providers')).status).toBe(403)
 
     expect(await signInAtTestSp(guest.page)).toBe(403)
-    expect(guest.page.url()).not.toContain('sp.idp.test')
+    expect(guest.page.url()).not.toContain(host('sp'))
 
     await openTestSp(page)
     await page.getByLabel('Email address of a user').fill(invitee)
@@ -251,7 +252,7 @@ test.describe.serial('an admin of the tenant', () => {
     assigned = true
     await expect(page.getByTestId('assigned-user').filter({ hasText: user })).toHaveCount(1)
 
-    await guest.context.clearCookies({ domain: 'sp.idp.test' })
+    await guest.context.clearCookies({ domain: host('sp') })
     expect(await signInAtTestSp(guest.page)).toBe(200)
     await guest.page.waitForURL(SP_WHOAMI)
     expect(await guest.page.locator('body').innerText()).toContain('nameId')
@@ -262,9 +263,9 @@ test.describe.serial('an admin of the tenant', () => {
     assigned = false
     await expect(page.getByTestId('assigned-user').filter({ hasText: user })).toHaveCount(0)
 
-    await guest.context.clearCookies({ domain: 'sp.idp.test' })
+    await guest.context.clearCookies({ domain: host('sp') })
     expect(await signInAtTestSp(guest.page)).toBe(403)
-    expect(guest.page.url()).not.toContain('sp.idp.test')
+    expect(guest.page.url()).not.toContain(host('sp'))
     await guest.context.close()
   })
 

@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { randomInt } from 'node:crypto'
 import { api, registerSp, uniqueSp, userIdOf } from './support/admin'
+import { host } from './support/domain'
 import {
   acceptInvitation,
   atConsole,
@@ -32,7 +33,7 @@ interface NewTenant {
 
 function newTenant(): NewTenant {
   const subdomain = `onb-${randomName()}`
-  return { subdomain, origin: `https://${subdomain}.idp.test`, admin: `first-admin@${subdomain}.test`, application: '', id: '' }
+  return { subdomain, origin: `https://${host(subdomain)}`, admin: `first-admin@${subdomain}.test`, application: '', id: '' }
 }
 
 interface Account {

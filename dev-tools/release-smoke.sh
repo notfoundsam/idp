@@ -6,7 +6,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-domain=release-smoke.idp.test
+domain="release-smoke.${IDP_DOMAIN:-idp.test}"
 admin=admin@release-smoke.test
 login=dev-tools/release-smoke/login.json
 

@@ -6,6 +6,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+source dev-tools/domains.sh
 ca="${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem"
 
 reinvite() {
@@ -15,17 +16,17 @@ reinvite() {
   [ -n "$tenant" ] || { echo "$domain is not provisioned, run make up" >&2; exit 1; }
 
   curl --fail --silent --show-error --max-time 10 --cacert "$ca" -o /dev/null -X DELETE \
-    "https://mail.idp.test/api/v1/search?query=to:%22$contact%22"
+    "https://mail.$IDP_DOMAIN/api/v1/search?query=to:%22$contact%22"
 
   docker compose run --rm --no-deps -e SPRING_MAIN_BANNER_MODE=off -e LOGGING_LEVEL_ROOT=WARN \
     ops java -jar /app/service.jar cli reinvite "$tenant" "$contact"
 }
 
-reinvite acme.idp.test invitee@acme.test
-reinvite acme.idp.test passkey@acme.test
-reinvite acme.idp.test account@acme.test
-reinvite acme.idp.test admin@acme.test
-reinvite acme.idp.test services@acme.test
-reinvite ops-sso.idp.test operator@ops-sso.test
-reinvite ops-sso.idp.test outsider@ops-sso.test
-reinvite ops-sso.idp.test onboarding@ops-sso.test
+reinvite acme.$IDP_DOMAIN invitee@acme.test
+reinvite acme.$IDP_DOMAIN passkey@acme.test
+reinvite acme.$IDP_DOMAIN account@acme.test
+reinvite acme.$IDP_DOMAIN admin@acme.test
+reinvite acme.$IDP_DOMAIN services@acme.test
+reinvite ops-sso.$IDP_DOMAIN operator@ops-sso.test
+reinvite ops-sso.$IDP_DOMAIN outsider@ops-sso.test
+reinvite ops-sso.$IDP_DOMAIN onboarding@ops-sso.test

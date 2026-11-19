@@ -1,6 +1,7 @@
 import type { APIRequestContext } from '@playwright/test'
+import { host } from './domain'
 
-const MAILPIT = 'https://mail.idp.test'
+const MAILPIT = `https://${host('mail')}`
 
 interface Summary {
   ID: string

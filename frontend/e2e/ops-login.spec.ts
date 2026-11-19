@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { host } from './support/domain'
 import { acceptInvitation, cspViolations, enterLogin, enterPassword, sessionCookie } from './support/login'
 import { OPS, OPS_LOGIN, OPS_SSO, registerPasskey } from './support/ops'
 import { virtualAuthenticator } from './support/passkey'
@@ -21,7 +22,7 @@ test.describe('the login of ops', () => {
     const authenticator = await virtualAuthenticator(page)
     const password = await acceptInvitation(page, request, OPERATOR)
     await registerPasskey(page)
-    expect(await authenticator.passkeys()).toEqual([{ rpId: 'ops-sso.idp.test', discoverable: true }])
+    expect(await authenticator.passkeys()).toEqual([{ rpId: host('ops-sso'), discoverable: true }])
     expect(await opsSession(page)).toBe('anonymous')
 
     await page.goto(OPS_LOGIN)

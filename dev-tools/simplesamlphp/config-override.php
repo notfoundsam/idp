@@ -1,7 +1,7 @@
 <?php
 
 // Read by config-override-base.php of the image after its own overrides.
-$config['trusted.url.domains'] = ['sp.idp.test'];
+$config['trusted.url.domains'] = ['sp.' . (getenv('IDP_DOMAIN') ?: 'idp.test')];
 
 // fetch-idp-metadata.sh writes the metadata of each local tenant here, as published at /saml/metadata.
 $config['metadata.sources'] = [

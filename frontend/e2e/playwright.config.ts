@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 import { createHash, X509Certificate } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { DOMAIN, host } from './support/domain'
 
 const certificates = process.env.CERTS_DIR ?? '../../dev-tools/certs'
 
@@ -8,15 +9,15 @@ const certificates = process.env.CERTS_DIR ?? '../../dev-tools/certs'
  * Chromium on Linux keeps its trust in an NSS database, and the image has no tool to add the mkcert CA there. Trusting the key of
  * the certificate Traefik serves gives the same: no certificate error, so the pages are a secure context and passkeys work.
  */
-const served = new X509Certificate(readFileSync(`${certificates}/idp.test.pem`))
+const served = new X509Certificate(readFileSync(`${certificates}/${DOMAIN}.pem`))
 const spki = createHash('sha256').update(served.publicKey.export({ type: 'spki', format: 'der' })).digest('base64')
 
 /**
  * Traefik serves every tenant host, but the hosts file of the container names only the fixed ones. So Chromium resolves any host of
- * `idp.test` as `acme.idp.test`, and a tenant that a test creates under a random name is reachable too. Requests of Node still need
- * a host of the hosts file.
+ * the domain as `acme`, and a tenant that a test creates under a random name is reachable too. Requests of Node still need a host
+ * of the hosts file.
  */
-const tenantHosts = 'MAP *.idp.test acme.idp.test'
+const tenantHosts = `MAP *.${DOMAIN} ${host('acme')}`
 
 export default defineConfig({
   testDir: '.',

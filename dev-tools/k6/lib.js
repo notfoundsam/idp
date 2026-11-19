@@ -3,9 +3,11 @@ import crypto from 'k6/crypto'
 import http from 'k6/http'
 import { check, fail, sleep } from 'k6'
 
-export const ACME = 'https://acme.idp.test'
-export const GLOBEX = 'https://globex.idp.test'
-export const SP_WHOAMI = 'https://sp.idp.test/simplesaml/whoami.php'
+export const DOMAIN = __ENV.IDP_DOMAIN || 'idp.test'
+export const ACME = `https://acme.${DOMAIN}`
+export const GLOBEX = `https://globex.${DOMAIN}`
+export const SP = `https://sp.${DOMAIN}`
+export const SP_WHOAMI = `${SP}/simplesaml/whoami.php`
 export const ALICE = { login: 'alice@acme.test', password: 'local-fixture-password-acme', totp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }

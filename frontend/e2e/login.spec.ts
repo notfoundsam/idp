@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { host } from './support/domain'
 import {
   ACME,
   acceptInvitation,
@@ -61,7 +62,7 @@ test.describe('login through an SP', () => {
     ])
     expect(refusal.status()).toBe(403)
     await page.waitForURL(new RegExp(`^${ACME}/saml/resume/`))
-    expect(page.url()).not.toContain('sp.idp.test')
+    expect(page.url()).not.toContain(host('sp'))
   })
 })
 
@@ -193,7 +194,7 @@ test.describe('a user with a passkey', () => {
     await page.getByRole('button', { name: 'Register a passkey' }).click()
     await saveRecoveryCodes(page)
     await atConsole(page, PASSKEY_USER)
-    expect(await authenticator.passkeys()).toEqual([{ rpId: 'acme.idp.test', discoverable: true }])
+    expect(await authenticator.passkeys()).toEqual([{ rpId: host('acme'), discoverable: true }])
 
     await context.clearCookies()
     await page.goto(`${ACME}/login/`)

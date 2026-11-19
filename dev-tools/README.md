@@ -50,17 +50,19 @@ The API types in `packages/api-client` are generated from `contracts/openapi` an
 
 `/etc/hosts` has no wildcards, so `dev-tools/domains.sh` lists every domain. Add a new tenant there and run `make dns-mapping`. If you create tenants often, point `idp.test` at `127.0.0.1` with dnsmasq instead.
 
+`IDP_DOMAIN` in `.env` puts the environment under another domain, for example on a server, see below. Compose passes it to the services, SimpleSAMLphp, the e2e tests and k6, and `dev-config` writes it into the metadata of the test SP and the links of the dashboard on every `up`. A change of the domain on existing volumes needs `make clean`, since the tenants keep the domains they were created with.
+
 ## A server behind its own proxy
 
-A server can run the same environment with the same commands while a proxy of its own already holds 80 and 443. Copy `dev-tools/shared-traefik.env` to `.env` in the root of the checkout: compose then publishes Traefik on `127.0.0.1:8443` and `127.0.0.1:8180` and Grafana on `127.0.0.1:3001`, and the Makefile hands the scripts `CAROOT`. A machine without `.env` keeps 80, 443 and 3000.
+A server can run the same environment with the same commands while a proxy of its own already holds 80 and 443. Copy `dev-tools/shared-traefik.env` to `.env` in the root of the checkout: compose then publishes Traefik on `127.0.0.1:8443` and `127.0.0.1:8180` and Grafana on `127.0.0.1:3001`, and the Makefile hands the scripts `CAROOT` and `IDP_DOMAIN`. A machine without `.env` keeps 80, 443, 3000 and `idp.test`.
 
-The proxy passes TLS for `idp.test` and `*.idp.test` through to `127.0.0.1:8443` by SNI, without terminating it, and only from the server itself and its Docker networks: `make smoke` and `fetch-idp-metadata.sh` reach the tenants on `127.0.0.1:443`, the `e2e` and `k6` containers through `host-gateway`. In Traefik:
+Give the server a domain of its own, one that the DNS of the network resolves to it, such as `idp.example.internal`. Then the laptop and a phone reach the tenants directly, and the local environment of the laptop keeps running beside it. The proxy passes TLS for that domain and its subdomains through to `127.0.0.1:8443` by SNI, without terminating it, and only from the server itself, its Docker networks and the network of the people who use it: `make smoke` and `fetch-idp-metadata.sh` reach the tenants on `127.0.0.1:443`, the `e2e` and `k6` containers through `host-gateway`. In Traefik:
 
 ```yaml
 tcp:
   routers:
     idp:
-      rule: HostSNIRegexp(`^(.+\.)?idp\.test$`)
+      rule: HostSNIRegexp(`^(.+\.)?idp\.example\.internal$`)
       entryPoints: [websecure]
       middlewares: [idp-local]
       service: idp
@@ -68,16 +70,16 @@ tcp:
   middlewares:
     idp-local:
       ipAllowList:
-        sourceRange: ["127.0.0.1/32", "172.16.0.0/12"]
+        sourceRange: ["127.0.0.1/32", "172.16.0.0/12", "192.168.1.0/24"]
   services:
     idp:
       loadBalancer:
         servers: [{ address: "127.0.0.1:8443" }]
 ```
 
-The certificate comes from the laptop, whose browser already trusts its mkcert CA, and the key of that CA stays there. So the server runs neither `make install` nor `make setup-ssl`, which would make a CA of its own. Copy `dev-tools/certs/idp.test.pem` and `idp.test-key.pem` into `dev-tools/certs` of the server, put the `rootCA.pem` of the laptop (`mkcert -CAROOT`) in a folder there and set `CAROOT` to it in `.env`. Then install a JDK for Gradle and run `make dns-mapping frontend-install jars` once.
+The certificate comes from the laptop, whose browser already trusts its mkcert CA, and the key of that CA stays there. So the server runs neither `make install` nor `make setup-ssl`, which would make a CA of its own. On the laptop `IDP_DOMAIN=<domain> make setup-ssl` issues `dev-tools/certs/<domain>.pem` and `<domain>-key.pem`. Copy both into `dev-tools/certs` of the server, put the `rootCA.pem` of the laptop (`mkcert -CAROOT`) in a folder there and set `CAROOT` to it in `.env`. Then install a JDK for Gradle and run `make dns-mapping frontend-install jars` once: the server itself may not ask the DNS of the network, so its `/etc/hosts` maps the domain to `127.0.0.1` like on the laptop.
 
-A browser on the laptop reaches the server through `ssh -N -L 443:127.0.0.1:443 -L 3000:127.0.0.1:3001 <server>` at the usual addresses, while the local environment is stopped, since both need 443 and 3000 there. The tunnel arrives at the proxy from `127.0.0.1`.
+Grafana stays on the server, reached through `ssh -N -L 3001:127.0.0.1:3001 <server>` at http://localhost:3001. Without a domain of its own the server keeps `idp.test`, and the laptop reaches it through `ssh -N -L 443:127.0.0.1:443 <server>` while the local environment is stopped.
 
 A machine runs one environment: the compose project is `idp` in every checkout, so `make up`, `make test-e2e` and `make load` of two checkouts share the same containers and data. `./gradlew check`, the linters and `make test-infra` run side by side.
 

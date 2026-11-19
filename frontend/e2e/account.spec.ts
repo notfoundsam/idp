@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { host } from './support/domain'
 import {
   ACCOUNT_USER,
   acceptInvitation,
@@ -74,7 +75,7 @@ test.describe.serial('the account of a user', () => {
     await expect(page.getByTestId('passkey')).toHaveCount(1)
     await expect(page.getByTestId('passkey')).toContainText('never used')
     await expect(page.getByTestId('recovery-codes')).toHaveCount(0)
-    expect(await authenticator.passkeys()).toEqual([{ rpId: 'acme.idp.test', discoverable: true }])
+    expect(await authenticator.passkeys()).toEqual([{ rpId: host('acme'), discoverable: true }])
 
     await page.getByRole('button', { name: 'Remove authenticator app' }).click()
     await expect(page.getByTestId('totp-status')).toHaveText('No authenticator app is set up.')
@@ -84,7 +85,7 @@ test.describe.serial('the account of a user', () => {
     secret = (await page.getByTestId('totp-secret').innerText()).replace(/\s/g, '')
     expect(secret).not.toBe(enrolled)
     const link = await page.getByRole('link', { name: 'Open in an authenticator app' }).getAttribute('href')
-    expect(link).toContain(`otpauth://totp/${encodeURIComponent(`acme.idp.test:${ACCOUNT_USER}`)}?secret=${secret}`)
+    expect(link).toContain(`otpauth://totp/${encodeURIComponent(`${host('acme')}:${ACCOUNT_USER}`)}?secret=${secret}`)
     await page.getByLabel('Code from your authenticator app').fill(totp(secret, Date.now() - 120_000))
     await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(page.getByRole('alert')).toContainText('That code did not work')
