@@ -24,7 +24,7 @@ After a backend change run `make jars`, then `docker compose restart app`.
 | https://ops.idp.test | `ops` |
 | https://acme.idp.test, https://globex.idp.test | Tenants, `/api` and `/saml` go to `app`, `/login/` and `/console/` to `nginx` |
 | https://ops-sso.idp.test | Service tenant, the IdP of `ops`, routed to `app` like any tenant |
-| http://localhost:3000 | Grafana, only after `make up-observability` |
+| http://localhost:3000 | Grafana, only after `make up-observability`; `IDP_GRAFANA_PORT` changes the port |
 
 Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0.1:5432`.
 
@@ -49,6 +49,37 @@ The API types in `packages/api-client` are generated from `contracts/openapi` an
 `*.idp.test` is used instead of `.local`, which macOS reserves for mDNS. HTTPS is required everywhere because passkeys and `Secure` cookies need it outside `localhost`.
 
 `/etc/hosts` has no wildcards, so `dev-tools/domains.sh` lists every domain. Add a new tenant there and run `make dns-mapping`. If you create tenants often, point `idp.test` at `127.0.0.1` with dnsmasq instead.
+
+## A server behind its own proxy
+
+A server can run the same environment with the same commands while a proxy of its own already holds 80 and 443. Copy `dev-tools/shared-traefik.env` to `.env` in the root of the checkout: compose then publishes Traefik on `127.0.0.1:8443` and `127.0.0.1:8180` and Grafana on `127.0.0.1:3001`, and the Makefile hands the scripts `CAROOT`. A machine without `.env` keeps 80, 443 and 3000.
+
+The proxy passes TLS for `idp.test` and `*.idp.test` through to `127.0.0.1:8443` by SNI, without terminating it, and only from the server itself and its Docker networks: `make smoke` and `fetch-idp-metadata.sh` reach the tenants on `127.0.0.1:443`, the `e2e` and `k6` containers through `host-gateway`. In Traefik:
+
+```yaml
+tcp:
+  routers:
+    idp:
+      rule: HostSNIRegexp(`^(.+\.)?idp\.test$`)
+      entryPoints: [websecure]
+      middlewares: [idp-local]
+      service: idp
+      tls: { passthrough: true }
+  middlewares:
+    idp-local:
+      ipAllowList:
+        sourceRange: ["127.0.0.1/32", "172.16.0.0/12"]
+  services:
+    idp:
+      loadBalancer:
+        servers: [{ address: "127.0.0.1:8443" }]
+```
+
+The certificate comes from the laptop, whose browser already trusts its mkcert CA, and the key of that CA stays there. So the server runs neither `make install` nor `make setup-ssl`, which would make a CA of its own. Copy `dev-tools/certs/idp.test.pem` and `idp.test-key.pem` into `dev-tools/certs` of the server, put the `rootCA.pem` of the laptop (`mkcert -CAROOT`) in a folder there and set `CAROOT` to it in `.env`. Then install a JDK for Gradle and run `make dns-mapping frontend-install jars` once.
+
+A browser on the laptop reaches the server through `ssh -N -L 443:127.0.0.1:443 -L 3000:127.0.0.1:3001 <server>` at the usual addresses, while the local environment is stopped, since both need 443 and 3000 there. The tunnel arrives at the proxy from `127.0.0.1`.
+
+A machine runs one environment: the compose project is `idp` in every checkout, so `make up`, `make test-e2e` and `make load` of two checkouts share the same containers and data. `./gradlew check`, the linters and `make test-infra` run side by side.
 
 ## Database
 

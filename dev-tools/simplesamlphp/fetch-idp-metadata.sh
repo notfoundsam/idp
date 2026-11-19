@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 mkdir -p metadata
-ca="$(mkcert -CAROOT)/rootCA.pem"
+ca="${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem"
 
 for tenant in acme; do
   curl --fail --silent --show-error --max-time 10 \

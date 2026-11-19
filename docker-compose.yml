@@ -37,9 +37,10 @@ services:
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
       - --entrypoints.websecure.address=:443
       - --entrypoints.websecure.http.tls=true
+    # A host whose own proxy holds 80 and 443 publishes these elsewhere, see dev-tools/shared-traefik.env.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${IDP_HTTP_PUBLISH:-80}:80"
+      - "${IDP_HTTPS_PUBLISH:-443}:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./dev-tools/traefik:/etc/traefik/dynamic:ro
@@ -320,7 +321,7 @@ services:
     image: grafana/otel-lgtm:0.38.0
     profiles: [observability]
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${IDP_GRAFANA_PORT:-3000}:3000"
     volumes:
       - idp-lgtm:/data
       - ./dev-tools/lgtm/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/idp.yaml:ro

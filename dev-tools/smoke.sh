@@ -3,7 +3,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CA="$(mkcert -CAROOT)/rootCA.pem"
+CA="${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem"
 failed=0
 
 check() {
