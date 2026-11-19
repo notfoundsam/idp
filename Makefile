@@ -1,3 +1,7 @@
+# The settings of this machine, which compose reads too, see dev-tools/shared-traefik.env. The scripts take the mkcert CA from CAROOT.
+-include .env
+export CAROOT
+
 FRONTEND := docker compose run --rm frontend corepack pnpm
 GRADLE := cd backend && ./gradlew
 TERRAFORM := docker compose run --rm terraform
@@ -107,7 +111,7 @@ release-smoke: deploy-install
 	dev-tools/release-smoke.sh
 
 smoke-sso: deploy-install
-	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	cp "$${CAROOT:-$$(mkcert -CAROOT)}/rootCA.pem" dev-tools/certs/rootCA.pem
 	SMOKE_LOGIN="$$(cat dev-tools/release-smoke/login.json)" docker compose run --rm --no-deps release-smoke \
 	  node infra/deploy/smoke-sso.mjs --host release-smoke.idp.test
 
@@ -122,7 +126,7 @@ test-infra:
 # tests fresh invitations. CI runs the same target.
 test-e2e: frontend-install
 	dev-tools/simplesamlphp/fetch-idp-metadata.sh
-	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	cp "$${CAROOT:-$$(mkcert -CAROOT)}/rootCA.pem" dev-tools/certs/rootCA.pem
 	dev-tools/e2e-invitation.sh
 	docker compose run --rm e2e
 
@@ -130,7 +134,7 @@ test-e2e: frontend-install
 # mkcert CA, as Node does in test-e2e.
 SCENARIO ?= login
 load:
-	cp "$$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+	cp "$${CAROOT:-$$(mkcert -CAROOT)}/rootCA.pem" dev-tools/certs/rootCA.pem
 	docker compose run --rm -e DURATION -e RATE k6 run -o opentelemetry --tag testid=$(SCENARIO) $(SCENARIO).js
 
 lint: lint-backend lint-frontend lint-infra

@@ -6,7 +6,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-ca="$(mkcert -CAROOT)/rootCA.pem"
+ca="${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem"
 
 reinvite() {
   local domain=$1 contact=$2 tenant

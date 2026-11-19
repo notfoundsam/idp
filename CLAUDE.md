@@ -71,6 +71,12 @@ Kotlin stays at the newest version CodeQL supports, currently 2.4.20. `renovate.
 
 CodeQL analyzes Kotlin, JavaScript and TypeScript on every PR with `security-extended`, and the job fails on a finding of CVSS medium or above (`infra/deploy/code-scanning.mjs`). Its Kotlin extractor runs inside the Kotlin daemon, so `kotlin.daemon.jvmargs` in `backend/gradle.properties` gives that daemon 3 GiB: with the 512 MiB it inherits from Gradle, the build runs out of heap.
 
+## Several checkouts on one machine
+
+- Agents may work side by side on a server without a display, behind its own proxy, see "A server behind its own proxy" in `dev-tools/README.md`. Each works in a git worktree of its own.
+- `make up`, `make test-e2e` and `make load` use the one environment of the machine, so only one agent runs them at a time. `./gradlew check`, the linters and `make test-infra` run side by side.
+- The settings of a machine live in its `.env`, never in the commands. Do not open a browser, and do not fix the network when it is down: wait for it.
+
 ## Task board
 
 Every plan task has an issue `Task N: ...` on the [project board](https://github.com/users/notfoundsam/projects/1). The repository is public and plans are not, so issues hold only the goal.

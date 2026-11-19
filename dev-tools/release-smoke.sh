@@ -40,6 +40,6 @@ fi
 since="$(($(date +%s) * 1000))"
 cli reinvite "$tenant" "$admin"
 
-cp "$(mkcert -CAROOT)/rootCA.pem" dev-tools/certs/rootCA.pem
+cp "${CAROOT:-$(mkcert -CAROOT)}/rootCA.pem" dev-tools/certs/rootCA.pem
 docker compose run --rm --no-deps release-smoke node dev-tools/release-smoke.mjs \
   --host "$domain" --admin "$admin" --since "$since" --out "$login"
