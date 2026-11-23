@@ -69,7 +69,7 @@ Before the first customer:
 - **SES:** the domain identity is verified only once its DKIM records exist, and SES sends to unverified addresses only after AWS grants production access in the region. Until then no invitation reaches a customer.
 - **VPN:** `ops` answers only to the ranges of `ops_client_cidrs`, which is empty until a VPN to the VPC exists, so the operator API is unreachable before it.
 - **Alarm thresholds:** the metric alarms use the thresholds of the local environment until a load test on staging measures normal traffic.
-- **Staging checks:** seven controls rest in part on LocalStack or a mocked AWS provider alone. Their rows in [asvs-l2.md](docs/security/asvs-l2.md) have the status `Staging` and name the check that remains on a staging environment.
+- **Staging checks:** seven controls rest in part on AWS Emulator or a mocked AWS provider alone. Their rows in [asvs-l2.md](docs/security/asvs-l2.md) have the status `Staging` and name the check that remains on a staging environment.
 
 ## License
 

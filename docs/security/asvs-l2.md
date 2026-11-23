@@ -9,7 +9,7 @@ The scope is `app`, `worker`, `ops`, `migrator`, the frontend and the production
 | Status | Meaning | Count |
 |---|---|---|
 | Done | In merged code, proven by the named test, or by inspection where there is no behaviour to test | 174 |
-| Staging | In merged code, with a part that rests on LocalStack or a mocked AWS provider alone, which cannot show how AWS itself behaves, such as how CloudWatch matches a pattern or whether an ALB reaches a target. The row names the check that remains on a staging environment | 7 |
+| Staging | In merged code, with a part that rests on AWS Emulator or a mocked AWS provider alone, which cannot show how AWS itself behaves, such as how CloudWatch matches a pattern or whether an ALB reaches a target. The row names the check that remains on a staging environment | 7 |
 | Partial | Part of the control is merged, the listed tasks finish it | 0 |
 | Planned | The listed tasks build the control | 0 |
 | N/A | The feature does not exist, the note says why | 67 |
@@ -130,7 +130,7 @@ SP metadata import is the only file upload.
 | V5.2.2 | 1 | Done | T27 | Content must be one `EntityDescriptor` with an SP role that validates against the SAML metadata schema (`MetadataImporterTest`) |
 | V5.2.3 | 2 | N/A | | Compressed files are not accepted. SAML DEFLATE limits are under V15.2.2 |
 | V5.3.1 | 1 | N/A | | Uploads are parsed into the database, no file lands in a served folder |
-| V5.3.2 | 1 | Done | T36 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalLocalStackTest`). Metadata import takes the content only and has no parameter for a file name (`FederationService`), and the upload endpoint never reads the file name of the form, so it reaches neither the SP nor the journal (`AdminServiceProvidersApiTest`) |
+| V5.3.2 | 1 | Done | T36 | The erasure journal builds paths from IDs and refuses any other name (`FileErasureJournalTest`, `S3ErasureJournalEmulatorTest`). Metadata import takes the content only and has no parameter for a file name (`FederationService`), and the upload endpoint never reads the file name of the form, so it reaches neither the SP nor the journal (`AdminServiceProvidersApiTest`) |
 | V5.4.1 | 2 | Done | T27 | Metadata downloads use the fixed name `idp-metadata.xml` in `Content-Disposition`, whatever the request holds (`MetadataApiTest`) |
 | V5.4.2 | 2 | N/A | | Served file names are constants, mail has no attachments |
 | V5.4.3 | 2 | N/A | | No untrusted file is served back to anyone |
