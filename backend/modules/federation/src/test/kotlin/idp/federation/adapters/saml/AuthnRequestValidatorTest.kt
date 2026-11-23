@@ -21,6 +21,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.opensaml.saml.saml2.core.AuthnRequest
@@ -210,6 +211,15 @@ class AuthnRequestValidatorTest :
                 validator().post(postForm(stranger.signed(request()))).refusedOnPage(Rejection.SIGNATURE_INVALID)
             }
 
+            test("by another key is refused even with its certificate in KeyInfo: only the certificates of the SP count") {
+                val stranger = TestSp()
+                val signed = stranger.signed(request(), keyInfo = true)
+
+                signed shouldContain "X509Certificate"
+                validator(view(authnRequestsSigned = true)).post(postForm(signed)).refusedOnPage(Rejection.SIGNATURE_INVALID)
+                validator(view(authnRequestsSigned = true)).post(postForm(sp.signed(request(), keyInfo = true))).accepted()
+            }
+
             test("over a query changed after signing is refused") {
                 val query = sp.redirectQuery(request(), relayState = "state", signed = true)
 
@@ -326,6 +336,27 @@ class AuthnRequestValidatorTest :
                         """<saml:Issuer>$SP_ENTITY_ID</saml:Issuer><saml:NameID>x</saml:NameID></samlp:LogoutRequest>"""
 
                 validator().redirect(sp.redirectQuery(xml)).refusedOnPage(Rejection.MALFORMED)
+            }
+        }
+
+        context("the shape, limited by the parser of the JDK") {
+            fun nested(levels: Int) = "<a xmlns=\"urn:x\">" + "<a>".repeat(levels - 1) + "</a>".repeat(levels)
+
+            fun attributed(count: Int) = "<a xmlns=\"urn:x\" " + (1..count).joinToString(" ") { "a$it=\"\"" } + "/>"
+
+            fun extended(extensions: String) = authnRequest(SP_ENTITY_ID, "_${UUID.randomUUID()}", IDP_SSO, now, extensions = extensions)
+
+            test("an element deeper than 100 levels is refused") {
+                validator().redirect(sp.redirectQuery(extended(nested(99)))).refusedOnPage(Rejection.MALFORMED)
+            }
+
+            test("an element with more than 200 attributes is refused") {
+                validator().redirect(sp.redirectQuery(extended(attributed(201)))).refusedOnPage(Rejection.MALFORMED)
+            }
+
+            test("depth and attributes within the limits pass, so the refusals above are about them") {
+                validator().redirect(sp.redirectQuery(extended(nested(90)))).accepted()
+                validator().redirect(sp.redirectQuery(extended(attributed(150)))).accepted()
             }
         }
 

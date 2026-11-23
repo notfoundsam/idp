@@ -9,7 +9,10 @@ import java.nio.ByteBuffer
 import java.security.GeneralSecurityException
 import java.util.UUID
 
-/** Binds a ciphertext to its place, so a copy in another row or field does not decrypt. */
+/**
+ * Binds a ciphertext to its place, so a copy in another row or field does not decrypt. [field] is sealed into every stored value:
+ * renaming it, even to match a renamed column, needs the values sealed anew.
+ */
 data class FieldContext(
     val field: String,
     val row: UUID,

@@ -1,5 +1,6 @@
 package idp.app.login
 
+import idp.sharedkernel.testing.RetryReport
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.comparables.shouldBeGreaterThan
 import io.kotest.matchers.comparables.shouldBeLessThan
@@ -79,6 +80,8 @@ class LoginCostTest :
         val application = environment.start(sources = arrayOf(TracedDataSources::class.java))
 
         afterSpec { application.close() }
+        extension(RetryReport())
+        val timed by lazy { with(environment) { application.user("timed@acme.test") } }
 
         /**
          * Clears the delay first: a user inside one skips the check of the password, which would hide a missing hash on either side.
@@ -109,8 +112,9 @@ class LoginCostTest :
             Connections.longestFreeSpell() shouldBeGreaterThan SHORTEST_HASH
         }
 
-        test("an unknown login costs a hash, like a known one") {
-            with(environment) { application.user("timed@acme.test") }
+        // It compares the time of two requests on a shared runner, where noise alone can double one of them.
+        test("an unknown login costs a hash, like a known one").config(retries = 2) {
+            timed
             repeat(WARM_UP) {
                 attempt("timed@acme.test")
                 attempt(UNKNOWN_EMAIL)

@@ -136,6 +136,14 @@ private val BROKEN_TOKEN_BINDING: ClientDataOf =
 private fun otherCeremony(type: ClientDataType) =
     if (type == ClientDataType.WEBAUTHN_CREATE) ClientDataType.WEBAUTHN_GET else ClientDataType.WEBAUTHN_CREATE
 
+/** Close to the origin of the tenant, each in one part only. */
+private val NEAR_ORIGINS =
+    mapOf(
+        "a subdomain" to Origin("https://sub.$HOST"),
+        "another port" to Origin("https://$HOST:8443"),
+        "plain HTTP" to Origin("http://$HOST"),
+    )
+
 /** Signed by the authenticator, each with one field neither ceremony accepts: no top origin is allowed, and no embedding. */
 private val FORGED_CLIENT_DATA: Map<String, ClientDataOf> =
     mapOf(
@@ -584,6 +592,21 @@ class PasskeyServiceTest :
             }
 
             context("the checks of the response") {
+                NEAR_ORIGINS.forEach { (name, origin) ->
+                    test("an origin with $name is refused") {
+                        PasskeyFixture().run {
+                            val tenant = tenant()
+                            val user = tenant.user()
+                            val options = tenant.acting { beginRegistration(user) }
+
+                            val attestation = Device().attestation(options, origin = origin)
+
+                            shouldThrow<PasskeyNotValid> { tenant.acting { finishRegistration(user, attestation, HOST, ADMIN) } }
+                            tenant.credentials(user).shouldBeEmpty()
+                        }
+                    }
+                }
+
                 test("a wrong origin is refused") {
                     PasskeyFixture().run {
                         val tenant = tenant()
@@ -1128,6 +1151,20 @@ class PasskeyServiceTest :
             }
 
             context("the checks of the response") {
+                NEAR_ORIGINS.forEach { (name, origin) ->
+                    test("an origin with $name fails") {
+                        PasskeyFixture().run {
+                            val tenant = tenant()
+                            val user = tenant.user()
+                            val device = tenant.registered(user)
+
+                            val assertion = device.assertion(tenant.loginChallenge(), origin = origin)
+
+                            tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
+                        }
+                    }
+                }
+
                 test("a wrong origin fails") {
                     PasskeyFixture().run {
                         val tenant = tenant()

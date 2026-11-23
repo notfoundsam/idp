@@ -41,8 +41,8 @@ class OperatorAuthentication(
 }
 
 /**
- * The checks of `ops` on top of what Spring Security verifies: signature, Issuer, Audience, Destination, the bearer confirmation and
- * the validity window. Spring runs the validators even after a failed signature, so the replay cache is written only in [authenticate],
+ * The checks of `ops` on top of what Spring Security verifies: signature, Issuer, Destination, the bearer confirmation, the validity
+ * window, and the audience of each AudienceRestriction there is. Spring requires none to be there, so [validateAssertion] does. Spring runs the validators even after a failed signature, so the replay cache is written only in [authenticate],
  * which runs once everything passed.
  */
 class OperatorAssertions(
@@ -81,6 +81,9 @@ class OperatorAssertions(
         val end = sessionEnd(assertion)
         if (end == null || !end.isAfter(clock.instant())) result = result.concat(error("The assertion states no live session"))
         if (operatorName(assertion) == null) result = result.concat(error("The assertion names no operator by email"))
+        if (assertion.conditions?.audienceRestrictions.isNullOrEmpty()) {
+            result = result.concat(error("The assertion names no audience"))
+        }
         return result
     }
 

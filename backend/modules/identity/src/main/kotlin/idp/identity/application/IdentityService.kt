@@ -53,10 +53,10 @@ private const val PASSWORD_RESET_ISSUED = "user.password_reset_issued"
 private const val MFA_RESET = "user.mfa_reset"
 private const val EMAIL_CHANGE_ISSUED = "user.email_change_issued"
 
-private const val EMAIL_FIELD = "users.email_ciphertext"
-private const val NEW_EMAIL_FIELD = "email_changes.new_email_ciphertext"
-private const val NAME_FIELD = "user_profiles.name_ciphertext"
-private const val PHONE_FIELD = "user_profiles.phone_ciphertext"
+internal const val EMAIL_FIELD = "users.email_ciphertext"
+internal const val NEW_EMAIL_FIELD = "email_changes.new_email_ciphertext"
+internal const val NAME_FIELD = "user_profiles.name_ciphertext"
+internal const val PHONE_FIELD = "user_profiles.phone_ciphertext"
 
 /** Long enough for an outage of the mail server, and no longer: the row holds an address the user has given up. */
 private val EMAIL_NOTICE_TTL: Duration = Duration.ofDays(7)

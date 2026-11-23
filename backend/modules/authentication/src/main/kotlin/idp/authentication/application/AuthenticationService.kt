@@ -55,9 +55,9 @@ private const val SESSIONS_REVOKED_FOR_USER = "session.revoked_for_user"
 private const val SESSIONS_REVOKED_FOR_TENANT = "session.revoked_for_tenant"
 private const val POLICY_CHANGED = "policy.changed"
 
-private const val LOGIN_FIELD = "flows.login_ciphertext"
-private const val IP_FIELD = "sso_sessions.ip_ciphertext"
-private const val USER_AGENT_FIELD = "sso_sessions.user_agent_ciphertext"
+internal const val LOGIN_FIELD = "flows.login_ciphertext"
+internal const val IP_FIELD = "sso_sessions.ip_ciphertext"
+internal const val USER_AGENT_FIELD = "sso_sessions.user_agent_ciphertext"
 
 private val FLOWS_FULL_RETRY: Duration = Duration.ofMinutes(1)
 

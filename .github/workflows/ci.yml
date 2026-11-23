@@ -45,6 +45,22 @@ jobs:
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - run: ./gradlew check
         working-directory: backend
+      # A test measuring real time may pass on a retry. Each retry is shown, so noise stays visible and a regression is not hidden.
+      - name: Report retried tests
+        if: always()
+        working-directory: backend
+        run: |
+          shopt -s nullglob
+          reports=(*/build/test-results/retries/*.txt */*/build/test-results/retries/*.txt)
+          [ ${#reports[@]} -eq 0 ] && exit 0
+          {
+            echo "### Retried tests"
+            echo
+            echo "| Spec | Test | Attempts | Outcome |"
+            echo "|---|---|---|---|"
+            cat "${reports[@]}" | sed 's/^/| /; s/$/ |/'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "${reports[@]}" | while IFS= read -r line; do echo "::warning title=Retried test::$line"; done
 
   kms-localstack:
     needs: changes

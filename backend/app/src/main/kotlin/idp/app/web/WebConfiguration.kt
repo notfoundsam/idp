@@ -4,6 +4,7 @@ import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.web.BusExceptionAdvice
 import idp.sharedkernel.web.ClientIpFilter
 import idp.sharedkernel.web.ClientIpResolver
+import idp.sharedkernel.web.RequestSizeFilter
 import idp.sharedkernel.web.SecurityHeadersFilter
 import idp.sharedkernel.web.TlsGuard
 import org.springframework.beans.factory.annotation.Value
@@ -15,6 +16,8 @@ import org.springframework.util.unit.DataSize
 
 private const val API = "/api/*"
 private const val METADATA_UPLOAD = "/api/admin/service-providers"
+
+const val REQUEST_SIZE_ORDER = ClientVersionFilter.ORDER + 1
 
 @Configuration(proxyBeanMethods = false)
 class WebConfiguration {
@@ -43,7 +46,7 @@ class WebConfiguration {
         @Value("\${idp.login.max-request-size}") maxSize: DataSize,
         @Value("\${idp.admin.max-upload-size}") maxUpload: DataSize,
     ) = FilterRegistrationBean(RequestSizeFilter(maxSize.toBytes(), mapOf(METADATA_UPLOAD to maxUpload.toBytes()))).apply {
-        order = RequestSizeFilter.ORDER
+        order = REQUEST_SIZE_ORDER
         addUrlPatterns(API, "/saml/*")
     }
 

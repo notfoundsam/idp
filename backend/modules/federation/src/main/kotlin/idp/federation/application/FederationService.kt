@@ -58,9 +58,9 @@ private const val KEY_CREATED = "saml.signing_key_created"
 private const val ROTATION_STARTED = "saml.key_rotation_started"
 private const val ROTATION_COMPLETED = "saml.key_rotation_completed"
 
-private const val PRIVATE_KEY_FIELD = "saml_signing_keys.private_key_ciphertext"
-private const val REQUEST_FIELD = "saml_requests.request_ciphertext"
-private const val RELAY_STATE_FIELD = "saml_requests.relay_state_ciphertext"
+internal const val PRIVATE_KEY_FIELD = "saml_signing_keys.private_key_ciphertext"
+internal const val REQUEST_FIELD = "saml_requests.request_ciphertext"
+internal const val RELAY_STATE_FIELD = "saml_requests.relay_state_ciphertext"
 private const val METADATA_PATH = "/saml/metadata"
 private const val SERVICE_PROVIDERS_TABLE = "service_providers"
 

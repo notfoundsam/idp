@@ -16,6 +16,10 @@ import kotlin.io.path.listDirectoryEntries
 
 private const val V1 = "classpath:fixtures/migrations/v1"
 private const val V2 = "classpath:fixtures/migrations/v2"
+private const val CONTRACT = "classpath:fixtures/migrations/contract"
+private const val PLATFORM = "classpath:db/platform"
+private const val PLATFORM_EXPAND = "classpath:fixtures/migrations/platform-expand"
+private const val PLATFORM_CONTRACT = "classpath:fixtures/migrations/platform-contract"
 
 class TenantMigrationRunnerTest :
     FunSpec({
@@ -155,6 +159,68 @@ class TenantMigrationRunnerTest :
             release.complete(Unit)
             creation.get(10, TimeUnit.SECONDS)
             migration.get(30, TimeUnit.SECONDS)
+        }
+
+        context("a contract step") {
+            test("migrates a schema whose expand step an earlier run applied") {
+                val owner = TestDatabase.create().owner()
+                TenantMigrationRunner(owner).migrateAll()
+                val tenant = newTenant(owner)
+                TenantMigrationRunner(owner, tenantLocations = listOf(V1, V2)).migrateTenant(tenant.id)
+
+                TenantMigrationRunner(owner, tenantLocations = listOf(V1, V2, CONTRACT)).migrateAll()
+
+                owner.applied(tenant.name) shouldBe 3
+            }
+
+            test("in the same run as its expand step is refused before any schema migrates") {
+                val owner = TestDatabase.create().owner()
+                TenantMigrationRunner(owner).migrateAll()
+                val tenant = newTenant(owner)
+                TenantMigrationRunner(owner, tenantLocations = listOf(V1)).migrateTenant(tenant.id)
+
+                val refusal =
+                    shouldThrow<ContractWithoutExpand> {
+                        TenantMigrationRunner(owner, tenantLocations = listOf(V1, V2, CONTRACT)).migrateAll()
+                    }
+
+                refusal.schema shouldBe tenant.name
+                refusal.contract shouldBe "3"
+                refusal.expand shouldBe "2"
+                owner.applied(tenant.name) shouldBe 1
+            }
+
+            test("comes with its expand step to a schema that holds no migration yet") {
+                val owner = TestDatabase.create().owner()
+                TenantMigrationRunner(owner).migrateAll()
+                val created = newTenant(owner)
+                val provisioned = newTenant(owner)
+                val latest = TenantMigrationRunner(owner, tenantLocations = listOf(V1, V2, CONTRACT))
+
+                latest.migrateTenant(provisioned.id)
+                latest.migrateAll()
+
+                owner.applied(provisioned.name) shouldBe 3
+                owner.applied(created.name) shouldBe 3
+            }
+
+            test("of the platform is refused before anything migrates, and an empty database takes it at once") {
+                val owner = TestDatabase.create().owner()
+                TenantMigrationRunner(owner).migrateAll()
+                val tenant = newTenant(owner)
+                val skipping = TenantMigrationRunner(owner, platformLocations = listOf(PLATFORM, PLATFORM_EXPAND, PLATFORM_CONTRACT))
+
+                shouldThrow<ContractWithoutExpand> { skipping.migrateAll() }.schema shouldBe "platform"
+
+                owner.exists("platform", "platform_fixture") shouldBe false
+                owner.exists(tenant.name, "flyway_schema_history") shouldBe false
+                TenantMigrationRunner(owner, platformLocations = listOf(PLATFORM, PLATFORM_EXPAND)).migrateAll()
+                skipping.migrateAll()
+                TenantMigrationRunner(
+                    TestDatabase.create().owner(),
+                    platformLocations = listOf(PLATFORM, PLATFORM_EXPAND, PLATFORM_CONTRACT),
+                ).migrateAll()
+            }
         }
 
         test("a broken platform migration stops before any tenant") {

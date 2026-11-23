@@ -11,6 +11,7 @@ import org.opensaml.core.xml.util.XMLObjectSupport
 import org.opensaml.saml.common.SAMLObjectContentReference
 import org.opensaml.saml.common.SignableSAMLObject
 import org.opensaml.security.x509.BasicX509Credential
+import org.opensaml.xmlsec.keyinfo.impl.X509KeyInfoGeneratorFactory
 import org.opensaml.xmlsec.signature.Signature
 import org.opensaml.xmlsec.signature.support.SignatureConstants
 import org.opensaml.xmlsec.signature.support.Signer
@@ -46,11 +47,12 @@ data class Login(
     val contextClass: String = PASSKEY,
     val sessionNotOnOrAfter: Instant? = Instant.now().plus(Duration.ofHours(1)),
     val issuer: String = IDP_ENTITY_ID,
-    val audience: String = OPS_ENTITY_ID,
+    val audience: String? = OPS_ENTITY_ID,
     val destination: String? = OPS_ACS,
     val recipient: String = OPS_ACS,
     val confirmationMethod: String = BEARER,
     val issuedAt: Instant = Instant.now(),
+    val notBefore: Instant? = null,
     val validFor: Duration = Duration.ofMinutes(5),
     val assertionId: String = "_${UUID.randomUUID()}",
     val signAssertion: Boolean = true,
@@ -58,6 +60,7 @@ data class Login(
     val algorithm: String = RSA_PSS_SHA256,
     val digest: String = SignatureConstants.ALGO_ID_DIGEST_SHA256,
     val doctype: Boolean = false,
+    val keyInfo: Boolean = false,
 )
 
 /** Stands in for the service tenant: the metadata `ops` is given, and Responses signed with the key in it or with another one. */
@@ -138,6 +141,8 @@ class FakeIdp(
         val inResponseTo = login.inResponseTo?.let { """ InResponseTo="$it"""" }.orEmpty()
         val sessionEnd = login.sessionNotOnOrAfter?.let { """ SessionNotOnOrAfter="$it"""" }.orEmpty()
         val advised = if (advice.isEmpty()) "" else "<saml:Advice>$advice</saml:Advice>"
+        val restriction =
+            login.audience?.let { "<saml:AudienceRestriction><saml:Audience>$it</saml:Audience></saml:AudienceRestriction>" }.orEmpty()
         return """
             <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${login.assertionId}" IssueInstant="$now" Version="2.0">
               <saml:Issuer>${login.issuer}</saml:Issuer>
@@ -147,8 +152,8 @@ class FakeIdp(
                   <saml:SubjectConfirmationData$inResponseTo NotOnOrAfter="$until" Recipient="${login.recipient}"/>
                 </saml:SubjectConfirmation>
               </saml:Subject>
-              <saml:Conditions NotBefore="${now.minusSeconds(1)}" NotOnOrAfter="$until">
-                <saml:AudienceRestriction><saml:Audience>${login.audience}</saml:Audience></saml:AudienceRestriction>
+              <saml:Conditions NotBefore="${login.notBefore ?: now.minusSeconds(1)}" NotOnOrAfter="$until">
+                $restriction
               </saml:Conditions>
               $advised
               <saml:AuthnStatement AuthnInstant="$now" SessionIndex="_session"$sessionEnd>
@@ -167,11 +172,15 @@ class FakeIdp(
         val root = parsers.parse(xml.byteInputStream()).documentElement
         val signable =
             XMLObjectProviderRegistrySupport.getUnmarshallerFactory().getUnmarshaller(root)!!.unmarshall(root) as SignableSAMLObject
+        val credential = BasicX509Credential(certificateOf(key), key.private)
         val signature =
             (XMLObjectSupport.buildXMLObject(Signature.DEFAULT_ELEMENT_NAME) as Signature).apply {
-                signingCredential = BasicX509Credential(certificateOf(key), key.private)
+                signingCredential = credential
                 signatureAlgorithm = login.algorithm
                 canonicalizationAlgorithm = SignatureConstants.ALGO_ID_C14N_EXCL_OMIT_COMMENTS
+                if (login.keyInfo) {
+                    keyInfo = X509KeyInfoGeneratorFactory().apply { setEmitEntityCertificate(true) }.newInstance().generate(credential)
+                }
             }
         signable.signature = signature
         (signature.contentReferences.single() as SAMLObjectContentReference).digestAlgorithm = login.digest

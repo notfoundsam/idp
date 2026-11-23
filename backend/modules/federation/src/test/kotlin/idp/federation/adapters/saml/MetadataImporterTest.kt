@@ -120,6 +120,17 @@ class MetadataImporterTest :
                 generateSequence<Throwable>(error) { it.cause }.forEach { (it.message ?: "") shouldNotContain "TOP-SECRET" }
             }
 
+            test("with an element deeper than the parser of the JDK allows is refused, and one within it is read") {
+                fun extended(levels: Int) =
+                    spMetadata().replaceFirst(
+                        Regex("(<md:EntityDescriptor[^>]*>)"),
+                        "$1<md:Extensions><a xmlns=\"urn:x\">" + "<a>".repeat(levels - 1) + "</a>".repeat(levels) + "</md:Extensions>",
+                    )
+
+                shouldThrow<MetadataNotValid> { read(extended(99)) }
+                read(extended(90))
+            }
+
             test("with an external DTD is refused") {
                 val xml = """<?xml version="1.0"?><!DOCTYPE x SYSTEM "http://127.0.0.1:1/evil.dtd">""" + spMetadata().substringAfter("?>")
 

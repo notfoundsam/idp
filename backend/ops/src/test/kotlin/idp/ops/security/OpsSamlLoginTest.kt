@@ -19,6 +19,7 @@ import idp.sharedkernel.testing.ConsoleCapture
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -135,6 +136,27 @@ class OpsSamlLoginTest :
                 environment.audit().last()["actor"] shouldBe OPERATOR_EMAIL
             }
 
+            test("reads the whole NameID, so a comment inserted after signing cannot cut it to another operator") {
+                val operator = browser()
+                val request = operator.startLogin()
+                val longer = "$OPERATOR_EMAIL.attacker.test"
+                val split =
+                    idp
+                        .response(
+                            Login(inResponseTo = request.id, nameId = longer),
+                        ).tampered(longer, "$OPERATOR_EMAIL<!---->.attacker.test")
+
+                val reply = operator.finishLogin(split, request.relayState)
+
+                if (reply.status == 303) {
+                    operator.submit("split").shouldNotBeNull()
+                    environment.audit().last()["actor"] shouldBe longer
+                } else {
+                    reply.status shouldBe 401
+                    operator.signedIn() shouldBe false
+                }
+            }
+
             test("ends when the session the IdP stated ends, even while the operator is active") {
                 val operator = browser()
                 operator.login(idp) { Login(inResponseTo = it.id, sessionNotOnOrAfter = Instant.now().plusSeconds(2)) }
@@ -241,6 +263,37 @@ class OpsSamlLoginTest :
                     val forged = fake.signedAssertion(login.copy(nameId = ATTACKER_EMAIL, assertionId = "_second"))
                     fake.response(login, forged + fake.signedAssertion(login))
                 },
+                Refusal("nested deeper than the parser allows", "Failed to deserialize") { fake, id ->
+                    val login = Login(inResponseTo = id)
+                    val nested = "<a xmlns=\"urn:x\">" + "<a>".repeat(99) + "</a>".repeat(100)
+                    fake.response(login, fake.signedAssertion(login), extensions = nested)
+                },
+                Refusal("with more attributes than the parser allows", "Failed to deserialize") { fake, id ->
+                    val login = Login(inResponseTo = id)
+                    val attributed = "<a xmlns=\"urn:x\" " + (1..201).joinToString(" ") { "a$it=\"\"" } + "/>"
+                    fake.response(login, fake.signedAssertion(login), extensions = attributed)
+                },
+                Refusal(
+                    "signed by a key not in the metadata, with its certificate in KeyInfo",
+                    "Invalid signature for object",
+                ) { fake, id ->
+                    fake.response(Login(inResponseTo = id, keyInfo = true), key = rsaKeyPair(2048))
+                },
+                Refusal(
+                    "with an empty NameID",
+                    "The assertion names no operator by email",
+                ) { fake, id -> fake.response(Login(inResponseTo = id, nameId = "")) },
+                Refusal(
+                    "with an empty Issuer",
+                    "required elements must have a value",
+                ) { fake, id -> fake.response(Login(inResponseTo = id, issuer = "")) },
+                Refusal("valid only from ten minutes on", "is not yet valid") { fake, id ->
+                    fake.response(Login(inResponseTo = id, notBefore = Instant.now().plus(Duration.ofMinutes(10))))
+                },
+                Refusal(
+                    "without an AudienceRestriction",
+                    "The assertion names no audience",
+                ) { fake, id -> fake.response(Login(inResponseTo = id, audience = null)) },
             ).forEach { refusal ->
                 test(refusal.name) {
                     val browser = browser()
@@ -259,6 +312,22 @@ class OpsSamlLoginTest :
                         "access.denied" to "anonymous",
                     )
                 }
+            }
+
+            test("over the size of a form answers 413 as the client's error, and opens no session") {
+                val browser = browser()
+                val request = browser.startLogin()
+                val login = Login(inResponseTo = request.id)
+                val large = idp.response(login, idp.signedAssertion(login), extensions = "<a xmlns=\"urn:x\">${" ".repeat(70_000)}</a>")
+
+                val lines =
+                    ConsoleCapture().use { console ->
+                        browser.finishLogin(large, request.relayState).status shouldBe 413
+                        console.lines()
+                    }
+
+                browser.signedIn() shouldBe false
+                lines.filter { "event=failure" in it }.shouldBeEmpty()
             }
 
             test("the same Response a second time") {
