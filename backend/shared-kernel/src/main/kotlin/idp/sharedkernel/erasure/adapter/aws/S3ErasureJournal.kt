@@ -51,7 +51,7 @@ class S3ErasureJournal(
             bucket: String,
         ): S3ErasureJournal = create(region, bucket, endpoint = null, credentials = null)
 
-        /** LocalStack serves buckets by path, not by host name. */
+        /** A local endpoint, such as AWS Emulator, serves buckets by path, not by host name. */
         fun create(
             region: String,
             bucket: String,

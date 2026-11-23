@@ -70,6 +70,10 @@ test('the SP of the local environment runs the backend, whose interop test start
   assert.equal(jobsFor(['dev-tools/simplesamlphp/authsources.php']).backend, true)
 })
 
+test('the image of AWS Emulator runs only the backend, whose adapter tests build it', () => {
+  assert.deepEqual(jobsFor(['dev-tools/aws-emulator/Dockerfile']), { ...NOTHING, backend: true })
+})
+
 test('the release workflows run only the job infra, which lints them', () => {
   assert.deepEqual(jobsFor(['.github/workflows/deploy.yml']), { ...NOTHING, infra: true })
 })

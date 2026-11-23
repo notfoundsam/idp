@@ -1,17 +1,16 @@
 package idp.sharedkernel.crypto.adapter.aws
 
 import idp.sharedkernel.crypto.keyManagementServiceContract
-import idp.sharedkernel.testing.TestLocalStack
+import idp.sharedkernel.testing.TestAwsEmulator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.date.shouldBeBetween
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.kms.KmsClient
 import software.amazon.awssdk.services.kms.model.KeyState
+import tools.jackson.databind.json.JsonMapper
 import java.net.URI
 import java.time.Duration
 import java.time.Instant
@@ -21,19 +20,18 @@ private const val REGION = "eu-west-1"
 private const val KEY_POLICY =
     """{"Version":"2012-10-17","Statement":[{"Sid":"Root","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"kms:*","Resource":"*"}]}"""
 
-private val CREDENTIALS = StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test"))
-
-private fun aws(endpoint: URI = TestLocalStack.endpoint) = AwsKeyManagementService.create(REGION, KEY_POLICY, endpoint, CREDENTIALS)
+private fun aws(endpoint: URI = TestAwsEmulator.endpoint) =
+    AwsKeyManagementService.create(REGION, KEY_POLICY, endpoint, TestAwsEmulator.credentials)
 
 private fun admin() =
     KmsClient
         .builder()
         .region(Region.of(REGION))
-        .endpointOverride(TestLocalStack.endpoint)
-        .credentialsProvider(CREDENTIALS)
+        .endpointOverride(TestAwsEmulator.endpoint)
+        .credentialsProvider(TestAwsEmulator.credentials)
         .build()
 
-class AwsKeyManagementServiceLocalStackTest :
+class AwsKeyManagementServiceEmulatorTest :
     FunSpec({
         include(
             keyManagementServiceContract(
@@ -62,7 +60,8 @@ class AwsKeyManagementServiceLocalStackTest :
 
             val policy = admin().getKeyPolicy { it.keyId(key.removePrefix("aws-kms://")).policyName("default") }.policy()
 
-            policy shouldBe KEY_POLICY
+            val json = JsonMapper.builder().build()
+            json.readTree(policy) shouldBe json.readTree(KEY_POLICY)
         }
 
         test("a destroyed key waits for the shortest deletion window") {

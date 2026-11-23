@@ -10,7 +10,7 @@ const CONTRACTS = /^contracts\//
 // The paths each job of ci.yml reads. backend/build.gradle.kts takes the images of its tests from docker-compose.yml and builds
 // the ones of AWS from infra; check-registries in the job infra reads the Gradle scripts and the pnpm lockfiles.
 const PATHS = {
-  backend: [/^backend\//, CONTRACTS, COMPOSE, /^dev-tools\/(postgres|pgbouncer|simplesamlphp)\//, /^infra\/(otel-collector|db-bootstrap|pgbouncer)\//],
+  backend: [/^backend\//, CONTRACTS, COMPOSE, /^dev-tools\/(postgres|pgbouncer|simplesamlphp|aws-emulator)\//, /^infra\/(otel-collector|db-bootstrap|pgbouncer)\//],
   frontend: [/^frontend\//, CONTRACTS, COMPOSE, /^infra\/web\//],
   infra: [/^infra\//, /^\.github\//, COMPOSE, /^backend\/(.+\/)?[^/]+\.gradle\.kts$/, /^frontend\/(pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$/],
   contracts: [CONTRACTS],
@@ -26,6 +26,7 @@ const NOT_E2E = [
   /^infra\/deploy\//,
   /^\.github\/workflows\/(deploy|rollback)\.yml$/,
   /^backend\/(.+\/)?src\/(test|testFixtures)\//,
+  /^dev-tools\/aws-emulator\//,
   /^frontend\/(?!e2e\/).*\.test\.ts$/,
 ]
 

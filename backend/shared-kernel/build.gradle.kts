@@ -45,18 +45,21 @@ dependencies {
     testFixturesCompileOnly(libs.jakarta.servlet.api)
 }
 
-// LocalStack runs as its own CI job, so `check` needs nothing beyond Postgres, PgBouncer and OpenBao.
+// AWS Emulator runs as its own CI job, so `check` needs nothing beyond Postgres, PgBouncer and OpenBao.
 tasks.test {
-    exclude("**/*LocalStackTest*")
+    exclude("**/*EmulatorTest*")
 }
 
-tasks.register<Test>("localStackTest") {
-    description = "Runs the KMS and erasure journal contracts against LocalStack."
+tasks.register<Test>("awsEmulatorTest") {
+    description = "Runs the KMS, erasure journal and caller identity adapters against AWS Emulator."
     group = "verification"
     testClassesDirs =
         sourceSets.test
             .get()
             .output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    include("**/*LocalStackTest*")
+    include("**/*EmulatorTest*")
+    val emulator = rootDir.resolve("../dev-tools/aws-emulator").canonicalFile
+    inputs.dir(emulator).withPathSensitivity(PathSensitivity.RELATIVE)
+    systemProperty("idp.awsEmulator.dir", emulator.path)
 }

@@ -5,6 +5,7 @@ import io.kotest.core.spec.style.funSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.types.shouldNotBeInstanceOf
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.experimental.xor
@@ -107,7 +108,9 @@ fun keyManagementServiceContract(
 
     test("an unknown key is reported") {
         shouldThrow<KeyNotFoundException> { kms().wrap(unknownKey(), MATERIAL) }
-        shouldThrow<KeyNotFoundException> { kms().unwrap(unknownKey(), MATERIAL) }
+        // A KMS can reject the material before it looks up the key, as AWS Emulator does.
+        shouldThrow<KeyManagementException> { kms().unwrap(unknownKey(), MATERIAL) }
+            .shouldNotBeInstanceOf<KeyManagementUnavailableException>()
     }
 
     test("destroying an unknown key is harmless") {

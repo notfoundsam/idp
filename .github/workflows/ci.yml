@@ -62,7 +62,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cat "${reports[@]}" | while IFS= read -r line; do echo "::warning title=Retried test::$line"; done
 
-  kms-localstack:
+  aws-emulator:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-26.04
@@ -74,7 +74,7 @@ jobs:
           distribution: corretto
           java-version: "25"
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
-      - run: ./gradlew :shared-kernel:localStackTest
+      - run: ./gradlew :shared-kernel:awsEmulatorTest
         working-directory: backend
 
   frontend:
@@ -203,7 +203,7 @@ jobs:
   # The one check a merge waits for. A job the change did not need is skipped and counts as passed, one that failed or was
   # cancelled does not.
   ci-ok:
-    needs: [changes, backend, kms-localstack, frontend, infra, e2e, api-contract, dependency-review, dependency-submission]
+    needs: [changes, backend, aws-emulator, frontend, infra, e2e, api-contract, dependency-review, dependency-submission]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5

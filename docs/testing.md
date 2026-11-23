@@ -19,7 +19,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | SAML interoperability | SimpleSAMLphp in a container with the configuration of `dev-tools/simplesamlphp`, the login over the HTTP API | `app/src/test/.../saml/SamlInteropTest.kt` |
 | Servlet filter | One filter called directly with servlet mocks, where a limit is too large to reach over HTTP | `SamlThrottleFilterTest` |
 | Architecture | Module boundaries and the build graph | `architecture-tests` |
-| KMS, erasure journal and caller identity | The AWS adapters against LocalStack | `*LocalStackTest` in `shared-kernel` |
+| KMS, erasure journal and caller identity | The AWS adapters against AWS Emulator, built from `dev-tools/aws-emulator` | `*EmulatorTest` in `shared-kernel` |
 | Frontend | Unit tests, and the committed API types against a fresh generation from `contracts/openapi` | `frontend/packages/api-client/src/generated.test.ts` |
 | Frontend components | A page mounted in happy-dom with a scripted API client, which answers each operation from a queue | `frontend/apps/login/src/App.test.ts`, `frontend/apps/console/src/console.test.ts`, `frontend/apps/console/src/admin/admin.test.ts` |
 | Build of the console | Vite builds the console in memory, then again with app code changed and with another version, and the `vendor` chunk keeps its name | `frontend/apps/console/vendor.test.ts` |
@@ -51,7 +51,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 ## Tools
 
 - **Kotest** with `FunSpec` (`StringSpec` in a few specs) and `kotest-assertions`, on the JUnit Platform.
-- **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit, SimpleSAMLphp, LocalStack and the OpenTelemetry Collector. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs. The images of `infra/` are built from their Dockerfiles, and a container reaches a fake on the host as `host.docker.internal` through `host-gateway`.
+- **Testcontainers** for Postgres, PgBouncer, OpenBao, Valkey, Mailpit, SimpleSAMLphp, AWS Emulator and the OpenTelemetry Collector. Test images are read from `docker-compose.yml` in `backend/build.gradle.kts`, so tests run what the local environment runs. The images of `infra/` are built from their Dockerfiles, and a container reaches a fake on the host as `host.docker.internal` through `host-gateway`.
 - **ArchUnit** for architecture rules.
 - **OpenTelemetry SDK testing** for `InMemorySpanExporter` and `InMemoryLogRecordExporter`.
 - **`ConsoleCapture`** in the `shared-kernel` test fixtures: copies `System.out` while open, which holds the JSON lines exactly as they leave the service.
@@ -128,7 +128,7 @@ Every test task runs with the JaCoCo agent. `./gradlew check` builds `testCodeCo
 - **All tests count.** A module is measured with the tests of the whole build, because the audiences and the SAML endpoints are tested over HTTP in `app` and `ops`, the way they run.
 - **Excluded:** `db`, which holds only jOOQ code generated from the migrations. The migrations have tests of their own, and every database test runs the generated code.
 - **Nothing else is excluded.** A line that no test reaches is a test to write, not an exclusion.
-- `localStackTest` does not count, since `check` does not run it.
+- `awsEmulatorTest` does not count, since `check` does not run it.
 
 ## Commands
 
@@ -136,7 +136,7 @@ Every test task runs with the JaCoCo agent. `./gradlew check` builds `testCodeCo
 make test                                  # backend, frontend and the release scripts
 cd backend && ./gradlew check              # backend tests, ktlint, architecture rules, coverage
 cd backend && ./gradlew :app:test --tests 'idp.app.login.FlowApiTest'
-cd backend && ./gradlew :shared-kernel:localStackTest
+cd backend && ./gradlew :shared-kernel:awsEmulatorTest
 make test-frontend                         # runs in Docker, also the tests of infra/web and the lint rules
 make test-deploy                           # the release scripts of infra/deploy in Docker, against fakes of S3, ECS and the IdP
 make release-smoke && make smoke-sso       # the smoke test of a release against a running `make up`
@@ -150,6 +150,8 @@ make load SCENARIO=saml DURATION=1m        # k6 against a running `make up-obser
 docker compose run --rm frontend corepack pnpm --filter @idp/api-client generate   # after a contract change
 ```
 
-`./gradlew test` leaves out `*LocalStackTest`, which runs as its own CI job.
+`./gradlew test` leaves out `*EmulatorTest`, which runs as its own CI job.
+
+AWS Emulator has no published image. `dev-tools/aws-emulator/Dockerfile` installs a package pinned by version and checksum, which were checked against the AWS signature. The emulator serves HTTPS with a certificate and keys of its own run, which `TestAwsEmulator` copies from the container, so the test JVM trusts only that certificate. It does not evaluate IAM or key policies, so a control proven only against it stays `Staging`.
 
 An environment variable reaches the test JVM only with `--no-configuration-cache`. With the cache on, Gradle reuses the stored environment and the new value is silently ignored.

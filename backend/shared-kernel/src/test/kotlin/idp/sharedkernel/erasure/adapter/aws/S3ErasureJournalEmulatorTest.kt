@@ -2,13 +2,11 @@ package idp.sharedkernel.erasure.adapter.aws
 
 import idp.sharedkernel.erasure.Erasure
 import idp.sharedkernel.erasure.erasureJournalContract
-import idp.sharedkernel.testing.TestLocalStack
+import idp.sharedkernel.testing.TestAwsEmulator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
@@ -19,15 +17,13 @@ import java.util.UUID
 
 private const val REGION = "eu-west-1"
 
-private val CREDENTIALS = StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test"))
-
-private fun s3(endpoint: URI = TestLocalStack.endpoint) =
+private fun s3(endpoint: URI = TestAwsEmulator.endpoint) =
     S3Client
         .builder()
         .region(Region.of(REGION))
         .endpointOverride(endpoint)
         .forcePathStyle(true)
-        .credentialsProvider(CREDENTIALS)
+        .credentialsProvider(TestAwsEmulator.credentials)
         .build()
 
 /** As production sets it up: Object Lock with a default retention, which also makes every put carry a checksum. */
@@ -53,10 +49,10 @@ private fun bucket(): String {
 
 private fun journal(
     bucket: String,
-    endpoint: URI = TestLocalStack.endpoint,
-) = S3ErasureJournal.create(REGION, bucket, endpoint, CREDENTIALS)
+    endpoint: URI = TestAwsEmulator.endpoint,
+) = S3ErasureJournal.create(REGION, bucket, endpoint, TestAwsEmulator.credentials)
 
-class S3ErasureJournalLocalStackTest :
+class S3ErasureJournalEmulatorTest :
     FunSpec({
         include(
             erasureJournalContract(
