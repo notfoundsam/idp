@@ -32,6 +32,7 @@ private const val USER_KEYS_PURPOSE = "user-keys"
 private const val BLIND_INDEX_PURPOSE = "blind-index"
 private const val MAX_CACHED_TENANTS = 10_000L
 
+/** [purpose] goes into the derivation of the key, so renaming it loses everything sealed under the old one. */
 enum class DerivedKey(
     internal val purpose: String,
 ) {
@@ -45,7 +46,7 @@ class UserKeyNotFoundException(
 ) : RuntimeException("No key for user $userId")
 
 /** Every use takes its own HKDF output, so the tenant key itself encrypts nothing. */
-private class TenantKey(
+internal class TenantKey(
     private val material: ByteArray,
     private val tenantId: UUID,
 ) {

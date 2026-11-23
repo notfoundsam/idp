@@ -53,15 +53,21 @@ export function metadataOf(entityId, sso, certificates) {
 }
 
 // The signature goes after the Issuer of the signed element, as SAML core 5.4.1 wants it. The inner one first, as in OpenSAML.
-function signatureOver(xml, element, privateKey, algorithm) {
-  const signer = new SignedXml({ privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }), signatureAlgorithm: algorithm, canonicalizationAlgorithm: EXC_C14N })
+// With [certificate] it names that certificate in its KeyInfo, as an IdP that wants to be trusted by what it sends would.
+function signatureOver(xml, element, privateKey, algorithm, certificate) {
+  const signer = new SignedXml({
+    privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    publicCert: certificate?.toString(),
+    signatureAlgorithm: algorithm,
+    canonicalizationAlgorithm: EXC_C14N,
+  })
   signer.addReference({ xpath: element, transforms: [ENVELOPED, EXC_C14N], digestAlgorithm: SHA256 })
   signer.computeSignature(xml, { prefix: 'ds', location: { reference: `${element}/*[local-name(.)='Issuer']`, action: 'after' } })
   return signer.getSignedXml()
 }
 
 // A Response as ResponseBuilder writes it. [signed] names the parts that carry a signature, as SpSettings.signedPart does.
-export function signedResponse({ key, issuer, sp, requestId, at, signed = ['assertion'], algorithm = PSS, ...fields }) {
+export function signedResponse({ key, issuer, sp, requestId, at, signed = ['assertion'], algorithm = PSS, keyInfo = false, ...fields }) {
   const iso = (offset) => new Date(at + offset).toISOString()
   const values = {
     destination: sp.acs,
@@ -87,8 +93,9 @@ export function signedResponse({ key, issuer, sp, requestId, at, signed = ['asse
     `<saml2:Conditions NotBefore="${iso(0)}" NotOnOrAfter="${values.notOnOrAfter}"><saml2:AudienceRestriction><saml2:Audience>${values.audience}</saml2:Audience>` +
     `</saml2:AudienceRestriction></saml2:Conditions><saml2:AuthnStatement AuthnInstant="${iso(0)}"><saml2:AuthnContext>` +
     `<saml2:AuthnContextClassRef>${values.contextClass}</saml2:AuthnContextClassRef></saml2:AuthnContext></saml2:AuthnStatement></saml2:Assertion></saml2p:Response>`
-  if (signed.includes('assertion')) xml = signatureOver(xml, "/*/*[local-name(.)='Assertion']", key.privateKey, algorithm)
-  if (signed.includes('response')) xml = signatureOver(xml, '/*', key.privateKey, algorithm)
+  const certificate = keyInfo ? key.certificate : undefined
+  if (signed.includes('assertion')) xml = signatureOver(xml, "/*/*[local-name(.)='Assertion']", key.privateKey, algorithm, certificate)
+  if (signed.includes('response')) xml = signatureOver(xml, '/*', key.privateKey, algorithm, certificate)
   return xml
 }
 

@@ -60,6 +60,24 @@ private val BOUNCE = Regex("""url=(/saml/sso/[0-9a-f-]{36})""")
 private val FLOW = Regex("""^/login/\?flow=([0-9a-f-]{36})$""")
 private val SAML_RESPONSE = Regex("""name="SAMLResponse" value="([^"]+)"""")
 
+/** Tables the journey below never fills, with the test that scans them for the values that reach them. */
+private val SCANNED_ELSEWHERE =
+    mapOf(
+        "tenant_applications" to "OpsAccessBoundaryTest, TenantProvisioningProcessTest",
+        "admin_reinvites" to "OpsAccessBoundaryTest",
+        "operator_audit" to "OpsAccessBoundaryTest",
+    )
+
+/** Tables that hold neither a secret nor a personal value, whatever happens, and what they hold instead. */
+private val NOTHING_TO_FIND =
+    mapOf(
+        "flyway_schema_history" to "the migrations applied",
+        "processed_events" to "ids of handled events",
+        "scheduled_locks" to "names of the jobs and when they ran",
+        "tenant_policies" to "switches and durations",
+        "passkey_challenges" to "random challenges, which go to the browser in clear and are spent on use",
+    )
+
 /** Every table and Valkey after a journey through every kind of data the IdP keeps, searched for what the journey gave in clear. */
 class PlaintextAtRestTest :
     FunSpec({
@@ -208,27 +226,52 @@ class PlaintextAtRestTest :
             stored.findings.shouldBeEmpty()
         }
 
-        test("the scan read the rows that hold them, in the tenant schemas and the platform") {
-            val tables =
+        val filled by lazy {
+            listOf(
+                "users",
+                "user_profiles",
+                "user_keys",
+                "password_credentials",
+                "totp_credentials",
+                "recovery_codes",
+                "passkey_credentials",
+                "email_changes",
+                "email_change_notices",
+                "password_resets",
+                "sso_sessions",
+                "flows",
+                "audit_entries",
+                "tenant_keys",
+            ).map { "${environment.globex.schema}.$it" } +
                 listOf(
-                    "users",
-                    "user_profiles",
-                    "user_keys",
-                    "password_credentials",
-                    "totp_credentials",
-                    "recovery_codes",
-                    "passkey_credentials",
-                    "email_changes",
-                    "email_change_notices",
-                    "password_resets",
-                    "sso_sessions",
-                    "flows",
+                    "invitations",
+                    "saml_requests",
+                    "saml_request_ids",
                     "audit_entries",
-                ).map { "${environment.globex.schema}.$it" } +
-                    listOf("invitations", "saml_requests", "saml_request_ids", "audit_entries").map { "${environment.acme.schema}.$it" } +
-                    "platform.outbox"
+                    "saml_identity",
+                    "saml_signing_keys",
+                    "service_providers",
+                    "sp_acs_endpoints",
+                    "sp_assignments",
+                    "subject_identifiers",
+                ).map { "${environment.acme.schema}.$it" } +
+                listOf("outbox", "tenants", "tenant_domains").map { "platform.$it" }
+        }
 
-            tables.filter { (stored.rows[it] ?: 0) == 0 }.shouldBeEmpty()
+        test("the scan read the rows that hold them, in the tenant schemas and the platform") {
+            filled.filter { (stored.rows[it] ?: 0) == 0 }.shouldBeEmpty()
+        }
+
+        test("every table is filled by the journey, scanned by another test, or holds nothing to find") {
+            val schemas = setOf(environment.globex.schema, environment.acme.schema, "platform")
+            val tables =
+                stored.rows.keys
+                    .filter { it.substringBefore('.') in schemas }
+                    .map { it.substringAfter('.') }
+                    .toSet()
+            val decided = filled.map { it.substringAfter('.') } + SCANNED_ELSEWHERE.keys + NOTHING_TO_FIND.keys
+
+            (tables - decided.toSet()).shouldBeEmpty()
         }
 
         test("the same scan finds what the IdP keeps in clear by design, such as the EntityID of a Service Provider") {

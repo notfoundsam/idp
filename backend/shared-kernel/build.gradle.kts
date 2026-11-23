@@ -33,6 +33,7 @@ dependencies {
     testFixturesImplementation(libs.testcontainers.postgresql)
     testFixturesImplementation(libs.jackson.databind)
     testFixturesImplementation(libs.kotest.assertions)
+    testFixturesImplementation(libs.kotest.runner)
     testFixturesImplementation(libs.snakeyaml)
     testFixturesImplementation(libs.lettuce.core)
     testFixturesImplementation(libs.bouncycastle)

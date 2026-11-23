@@ -27,7 +27,7 @@ private const val RECOVERY_CODES_ISSUED = "user.recovery_codes_issued"
 private const val RECOVERY_CODE_USED = "user.recovery_code_used"
 private const val TOTP_REMOVED = "user.totp_removed"
 
-private const val SECRET_FIELD = "totp_credentials.secret_ciphertext"
+internal const val SECRET_FIELD = "totp_credentials.secret_ciphertext"
 
 class TotpAlreadyEnrolled : DomainRuleViolation("TOTP is already enrolled")
 

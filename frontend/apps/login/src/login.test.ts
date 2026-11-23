@@ -160,6 +160,24 @@ describe('steps', () => {
     expect(login.state.problem).toBe('rejected')
   })
 
+  test('the answer to a challenge goes to the flow that asked for it, even when the page moved on meanwhile', async () => {
+    const { login, answer, calls } = loginWith()
+    answer('startFlow', flowAt('IDENTIFY'))
+    answer('beginPasskeyLogin', { challenge: 'AAAA', rpId: 'acme.idp.test', userVerification: 'required' })
+    answer('submitPasskey', flowAt('COMPLETE'))
+    answer('completeFlow', { returnUrl: null })
+    await login.begin()
+    await login.answerChallenge(
+      (id) => login.client.beginPasskeyLogin(id),
+      (id, options) => {
+        login.state.flow = { ...flowAt('IDENTIFY'), id: 'another-flow' }
+        return login.client.submitPasskey(id, { challenge: options.challenge } as never)
+      },
+    )
+    const flows = calls.filter((call) => call.operation.includes('Passkey')).map((call) => call.args[0])
+    expect(flows).toEqual([FLOW_ID, FLOW_ID])
+  })
+
   test('an enrollment shows the recovery codes before the next step', async () => {
     const { login, answer, navigation } = loginWith()
     answer('startFlow', flowAt('ENROLL_MFA', ['PASSKEY', 'TOTP']))

@@ -97,6 +97,14 @@ describe('connecting a service', () => {
     expect(alert(wrapper)).toBe(METADATA_TOO_LARGE)
   })
 
+  test('an old login leads to a fresh one before the service is connected', async () => {
+    const { page, wrapper } = await importing(refused(403, 'reauthentication_required'))
+    await pick(wrapper, new File(['<md:EntityDescriptor/>'], 'wiki.xml'))
+    await submit(wrapper, 'import-form')
+    expect(wrapper.get('[role="alert"] a').attributes('href')).toBe('/login/?reauthenticate')
+    expect(page.router.currentRoute.value.name).toBe('service-providers')
+  })
+
   test.each([
     [422, METADATA_REFUSED],
     [409, ENTITY_ID_TAKEN],
@@ -282,6 +290,18 @@ describe('the card of a service', () => {
     await submit(wrapper, 'pick-form')
     await click(wrapper, 'Assign selected')
     expect(alert(wrapper)).toBe(USER_GONE)
+    expect(wrapper.findAll('[data-testid="picked-user"]')).toHaveLength(1)
+  })
+
+  test('an old login leads to a fresh one before the users are assigned', async () => {
+    const page = await card()
+    page.answer('searchUsers', [{ id: CAROL, role: 'USER', status: 'ACTIVE' }])
+    page.answer('assignUsers', refused(403, 'reauthentication_required'))
+    const wrapper = await start(page)
+    await wrapper.get('#pick-email').setValue('carol@acme.test')
+    await submit(wrapper, 'pick-form')
+    await click(wrapper, 'Assign selected')
+    expect(wrapper.get('[role="alert"] a').attributes('href')).toBe('/login/?reauthenticate')
     expect(wrapper.findAll('[data-testid="picked-user"]')).toHaveLength(1)
   })
 

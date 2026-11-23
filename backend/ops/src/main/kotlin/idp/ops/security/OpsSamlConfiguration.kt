@@ -3,8 +3,10 @@ package idp.ops.security
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditLog
 import idp.sharedkernel.audit.AuditRecord
+import idp.sharedkernel.observability.UnexpectedErrorFilter
 import idp.sharedkernel.tenant.PlatformTransaction
 import idp.sharedkernel.web.ClientIp
+import idp.sharedkernel.web.RequestSizeFilter
 import idp.tenancy.application.ServiceTenant
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -16,6 +18,7 @@ import org.opensaml.saml.saml2.core.RequestedAuthnContext
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
+import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.authentication.ProviderManager
@@ -36,6 +39,7 @@ import java.nio.file.Path
 
 private const val LOGIN_SUCCEEDED = "operator.logged_in"
 private const val LOGIN_REFUSED = "operator.login_refused"
+private const val MAX_REQUEST_BYTES = 64L * 1024
 private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS", "TRACE")
 
 private val securityEvents = LoggerFactory.getLogger("idp.security")
@@ -77,6 +81,10 @@ class OpsSamlConfiguration(
 
     @Bean
     fun opsHostFilter() = OpsHostFilter(ServiceTenant.opsHost(baseDomain))
+
+    /** The SAMLResponse of the IdP is a few KiB and the API takes small JSON, so anything larger stops before Tomcat reads a form. */
+    @Bean
+    fun requestSizeFilter() = FilterRegistrationBean(RequestSizeFilter(MAX_REQUEST_BYTES)).apply { order = UnexpectedErrorFilter.ORDER + 2 }
 
     @Bean
     fun samlFilterChain(

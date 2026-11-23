@@ -5,7 +5,7 @@ import idp.sharedkernel.crypto.FieldContext
 import idp.sharedkernel.domain.DomainRuleViolation
 import java.util.UUID
 
-private const val CONTACT_FIELD = "tenant_applications.contact_ciphertext"
+internal const val APPLICATION_CONTACT_FIELD = "tenant_applications.contact_ciphertext"
 private const val MAX_CONTACT_LENGTH = 254
 private val EMAIL = Regex("""[^@\s]+@[^@\s]+""")
 
@@ -46,7 +46,7 @@ internal class TenantApplication(
 
     /** Null once the tenant is active. */
     fun contact(cipher: FieldCipher): String? =
-        contactCiphertext?.let { cipher.decrypt(it, FieldContext(CONTACT_FIELD, id)).decodeToString() }
+        contactCiphertext?.let { cipher.decrypt(it, FieldContext(APPLICATION_CONTACT_FIELD, id)).decodeToString() }
 
     /** The mask goes too: it still names the person and the mailbox of the company. */
     fun eraseContact() {
@@ -70,7 +70,7 @@ internal class TenantApplication(
                 tenantId,
                 companyName,
                 subdomain,
-                cipher.encrypt(contact.toByteArray(), FieldContext(CONTACT_FIELD, id)),
+                cipher.encrypt(contact.toByteArray(), FieldContext(APPLICATION_CONTACT_FIELD, id)),
                 mask(contact),
                 ApplicationStatus.SUBMITTED,
                 version = 0,

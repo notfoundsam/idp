@@ -15,9 +15,11 @@ import idp.ops.OpsApplication
 import idp.ops.OpsClient
 import idp.ops.OpsEnvironment
 import idp.ops.SESSION_COOKIE
+import idp.sharedkernel.testing.ConsoleCapture
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -34,15 +36,38 @@ import kotlin.time.Duration.Companion.seconds
 private const val RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
 private const val RSA_SHA1 = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
 
-/** A Response the fake IdP builds for the request of the browser, then bent in one way. */
+private const val ATTACKER_EMAIL = "attacker@platform.example"
+private const val SIGNED_ID = "_signed"
+private const val FORGED_ID = "_forged"
+private val SIGNATURE = Regex("<ds:Signature .*</ds:Signature>", RegexOption.DOT_MATCHES_ALL)
+
+/** A Response the fake IdP builds for the request of the browser, then bent in one way. [reason] is what the refusal must name. */
 private class Refusal(
     val name: String,
+    val reason: String? = null,
     val response: (FakeIdp, String) -> String,
 ) {
     override fun toString() = name
 }
 
 private fun bent(change: (Login) -> Login) = { idp: FakeIdp, id: String -> idp.response(change(Login(inResponseTo = id))) }
+
+/**
+ * Signature wrapping: the signed assertion stays in the Response, and a forged one naming another operator carries a copy of its
+ * signature where a careless verifier would read it.
+ */
+private fun wrapped(arrange: FakeIdp.(login: Login, signed: String, forged: (id: String, advice: String) -> String) -> String) =
+    { idp: FakeIdp, id: String ->
+        val login = Login(inResponseTo = id, assertionId = SIGNED_ID)
+        val signed = idp.signedAssertion(login)
+        val signature = SIGNATURE.find(signed)!!.value
+        val forged = { forgedId: String, advice: String ->
+            idp
+                .assertion(login.copy(nameId = ATTACKER_EMAIL, assertionId = forgedId), advice)
+                .replaceFirst("</saml:Issuer>", "</saml:Issuer>$signature")
+        }
+        idp.arrange(login, signed, forged)
+    }
 
 private fun String.tampered(
     from: String,
@@ -111,6 +136,27 @@ class OpsSamlLoginTest :
                 environment.audit().last()["actor"] shouldBe OPERATOR_EMAIL
             }
 
+            test("reads the whole NameID, so a comment inserted after signing cannot cut it to another operator") {
+                val operator = browser()
+                val request = operator.startLogin()
+                val longer = "$OPERATOR_EMAIL.attacker.test"
+                val split =
+                    idp
+                        .response(
+                            Login(inResponseTo = request.id, nameId = longer),
+                        ).tampered(longer, "$OPERATOR_EMAIL<!---->.attacker.test")
+
+                val reply = operator.finishLogin(split, request.relayState)
+
+                if (reply.status == 303) {
+                    operator.submit("split").shouldNotBeNull()
+                    environment.audit().last()["actor"] shouldBe longer
+                } else {
+                    reply.status shouldBe 401
+                    operator.signedIn() shouldBe false
+                }
+            }
+
             test("ends when the session the IdP stated ends, even while the operator is active") {
                 val operator = browser()
                 operator.login(idp) { Login(inResponseTo = it.id, sessionNotOnOrAfter = Instant.now().plusSeconds(2)) }
@@ -165,6 +211,8 @@ class OpsSamlLoginTest :
                 Refusal("for another destination") { fake, id ->
                     fake.response(Login(inResponseTo = id, destination = "https://sp.example/acs"))
                 },
+                Refusal("without a destination") { fake, id -> fake.response(Login(inResponseTo = id, destination = null)) },
+                Refusal("with an empty destination") { fake, id -> fake.response(Login(inResponseTo = id, destination = "")) },
                 Refusal(
                     "for another recipient",
                 ) { fake, id -> fake.response(Login(inResponseTo = id, recipient = "https://sp.example/acs")) },
@@ -192,12 +240,71 @@ class OpsSamlLoginTest :
                     fake.response(Login(inResponseTo = id, digest = SignatureConstants.ALGO_ID_DIGEST_SHA1))
                 },
                 Refusal("with a DOCTYPE") { fake, id -> fake.response(Login(inResponseTo = id, doctype = true)) },
+                Refusal(
+                    "wrapped: a forged assertion with the signature, the signed one in its Advice",
+                    "Invalid signature for object [$FORGED_ID]",
+                    wrapped { login, signed, forged -> response(login, forged(FORGED_ID, signed)) },
+                ),
+                Refusal(
+                    "wrapped: a forged assertion with the ID and the signature of the signed one, which is in its Advice",
+                    "Invalid signature for object [$SIGNED_ID]",
+                    wrapped { login, signed, forged -> response(login, forged(SIGNED_ID, signed)) },
+                ),
+                Refusal(
+                    "wrapped: the signed assertion in the Extensions, a forged one with its signature in its place",
+                    "Invalid signature for object [$FORGED_ID]",
+                    wrapped { login, signed, forged -> response(login, forged(FORGED_ID, ""), extensions = signed) },
+                ),
+                Refusal(
+                    "with two assertions, both signed by the IdP",
+                    "The Response must carry exactly one plain assertion",
+                ) { fake, id ->
+                    val login = Login(inResponseTo = id)
+                    val forged = fake.signedAssertion(login.copy(nameId = ATTACKER_EMAIL, assertionId = "_second"))
+                    fake.response(login, forged + fake.signedAssertion(login))
+                },
+                Refusal("nested deeper than the parser allows", "Failed to deserialize") { fake, id ->
+                    val login = Login(inResponseTo = id)
+                    val nested = "<a xmlns=\"urn:x\">" + "<a>".repeat(99) + "</a>".repeat(100)
+                    fake.response(login, fake.signedAssertion(login), extensions = nested)
+                },
+                Refusal("with more attributes than the parser allows", "Failed to deserialize") { fake, id ->
+                    val login = Login(inResponseTo = id)
+                    val attributed = "<a xmlns=\"urn:x\" " + (1..201).joinToString(" ") { "a$it=\"\"" } + "/>"
+                    fake.response(login, fake.signedAssertion(login), extensions = attributed)
+                },
+                Refusal(
+                    "signed by a key not in the metadata, with its certificate in KeyInfo",
+                    "Invalid signature for object",
+                ) { fake, id ->
+                    fake.response(Login(inResponseTo = id, keyInfo = true), key = rsaKeyPair(2048))
+                },
+                Refusal(
+                    "with an empty NameID",
+                    "The assertion names no operator by email",
+                ) { fake, id -> fake.response(Login(inResponseTo = id, nameId = "")) },
+                Refusal(
+                    "with an empty Issuer",
+                    "required elements must have a value",
+                ) { fake, id -> fake.response(Login(inResponseTo = id, issuer = "")) },
+                Refusal("valid only from ten minutes on", "is not yet valid") { fake, id ->
+                    fake.response(Login(inResponseTo = id, notBefore = Instant.now().plus(Duration.ofMinutes(10))))
+                },
+                Refusal(
+                    "without an AudienceRestriction",
+                    "The assertion names no audience",
+                ) { fake, id -> fake.response(Login(inResponseTo = id, audience = null)) },
             ).forEach { refusal ->
                 test(refusal.name) {
                     val browser = browser()
                     val request = browser.startLogin()
 
-                    browser.finishLogin(refusal.response(idp, request.id), request.relayState).status shouldBe 401
+                    val lines =
+                        ConsoleCapture().use { console ->
+                            browser.finishLogin(refusal.response(idp, request.id), request.relayState).status shouldBe 401
+                            console.lines()
+                        }
+                    refusal.reason?.let { reason -> lines.single { "event=ops.login_refused" in it } shouldContain reason }
 
                     browser.signedIn() shouldBe false
                     environment.audit().map { it["action"] to it["actor"] }.shouldContainExactly(
@@ -205,6 +312,22 @@ class OpsSamlLoginTest :
                         "access.denied" to "anonymous",
                     )
                 }
+            }
+
+            test("over the size of a form answers 413 as the client's error, and opens no session") {
+                val browser = browser()
+                val request = browser.startLogin()
+                val login = Login(inResponseTo = request.id)
+                val large = idp.response(login, idp.signedAssertion(login), extensions = "<a xmlns=\"urn:x\">${" ".repeat(70_000)}</a>")
+
+                val lines =
+                    ConsoleCapture().use { console ->
+                        browser.finishLogin(large, request.relayState).status shouldBe 413
+                        console.lines()
+                    }
+
+                browser.signedIn() shouldBe false
+                lines.filter { "event=failure" in it }.shouldBeEmpty()
             }
 
             test("the same Response a second time") {

@@ -46,7 +46,7 @@ Every key, algorithm and certificate the IdP uses, what each may protect, and ho
 | TOTP | HMAC-SHA-1 with a 160-bit secret, an ASVS exception | `TotpCredential` |
 | Passkey signatures | Verification of ES256, EdDSA and RS256 | `PasskeyVerifier` |
 | SAML signatures | RSA-PSS with SHA-256 by default, `rsa-sha256` per SP, SHA-256 digests, exclusive C14N, through OpenSAML and Apache Santuario | `SignatureAlgorithm` |
-| Field encryption | AES-256-GCM through Tink, the field and the row in the associated data | `FieldCipher` |
+| Field encryption | AES-256-GCM through Tink, the field and the row in the associated data. The field names, the HKDF info and purposes and the key version are part of what is stored, so `FieldNamesTest` of each context and `KnownAnswerTest` pin them | `FieldCipher` |
 | Transport | TLS 1.2 or 1.3. A client of an internal service checks the name and trusts one CA alone | Every connection, see [data-protection.md](data-protection.md) and `infra/terraform/README.md` |
 
 ## Certificates

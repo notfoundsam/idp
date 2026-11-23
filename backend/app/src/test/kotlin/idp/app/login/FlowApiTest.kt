@@ -6,6 +6,7 @@ import idp.authentication.application.SessionCookie
 import idp.sharedkernel.audit.Actor
 import idp.sharedkernel.audit.AuditTarget
 import idp.sharedkernel.security.UserRole
+import idp.sharedkernel.testing.ConsoleCapture
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
@@ -17,6 +18,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldBeEmpty
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotBeBlank
 import java.sql.Timestamp
 import java.time.Duration
@@ -300,6 +302,41 @@ class FlowApiTest :
                 val options = browser.post("/api/flows/$flow/passkey/options").json()
                 refused(browser.post("/api/flows/$flow/passkey", device.assertion(options)))
                 refused(browser.post("/api/flows/$flow/passkey", assertionOf("AAAA")))
+            }
+
+            test("a response to the challenge of one flow is refused in another") {
+                val device = enrolled("twoflows")
+                val browser = browser(GLOBEX)
+                val first = browser.startFlow()
+                val second = browser.startFlow()
+                val options = browser.post("/api/flows/$first/passkey/options").json()
+                browser.post("/api/flows/$second/passkey/options").status shouldBe 200
+
+                val assertion = device.assertion(options)
+
+                refused(browser.post("/api/flows/$second/passkey", assertion))
+                browser.post("/api/flows/$first/passkey", assertion).json().text("step") shouldBe "COMPLETE"
+            }
+
+            test("a token binding ID that is no base64url is refused and recorded as a failed login") {
+                val device = enrolled("tokenbinding")
+                val browser = browser(GLOBEX)
+                val flow = browser.startFlow()
+                val options = browser.post("/api/flows/$flow/passkey/options").json()
+                val clientData =
+                    """{"type":"webauthn.get","challenge":"${options.text("challenge")}","origin":"https://$GLOBEX",""" +
+                        """"tokenBinding":{"status":"present","id":"***"}}"""
+                val failures = { audit(environment.globex).count { it.action == "login.failed" && it.details?.get("factor") == "PASSKEY" } }
+                val before = failures()
+
+                val lines =
+                    ConsoleCapture().use { console ->
+                        refused(browser.post("/api/flows/$flow/passkey", device.assertion(options, clientData.toByteArray())))
+                        console.lines()
+                    }
+
+                failures() shouldBe before + 1
+                lines.single { "event=passkey.response_rejected" in it } shouldContain "exception=java.lang.IllegalArgumentException"
             }
 
             test("a body that is no base64url answers 400") {

@@ -10,8 +10,8 @@ import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
 import java.util.UUID
 
-private const val IP_FIELD = "audit_entries.ip"
-private const val DETAILS_FIELD = "audit_entries.details"
+internal const val IP_FIELD = "audit_entries.ip"
+internal const val DETAILS_FIELD = "audit_entries.details"
 
 private val json = JsonMapper()
 

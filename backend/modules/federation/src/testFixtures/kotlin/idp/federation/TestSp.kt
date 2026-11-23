@@ -8,6 +8,7 @@ import org.opensaml.core.xml.util.XMLObjectSupport
 import org.opensaml.saml.common.SAMLObjectContentReference
 import org.opensaml.saml.common.SignableSAMLObject
 import org.opensaml.security.x509.BasicX509Credential
+import org.opensaml.xmlsec.keyinfo.impl.X509KeyInfoGeneratorFactory
 import org.opensaml.xmlsec.signature.Signature
 import org.opensaml.xmlsec.signature.support.SignatureConstants
 import org.opensaml.xmlsec.signature.support.Signer
@@ -130,23 +131,28 @@ class TestSp(
         return "$query&Signature=${encoded(base64(signature))}"
     }
 
-    /** An enveloped signature over the root, as the POST binding carries it. */
+    /** An enveloped signature over the root, as the POST binding carries it. With [keyInfo] it carries the certificate as well. */
     fun signed(
         xml: String,
         algorithm: String = RSA_SHA256,
         digest: String = SignatureConstants.ALGO_ID_DIGEST_SHA256,
         key: KeyPair = keyPair,
+        keyInfo: Boolean = false,
     ): String {
         opensaml
         val document = parsers.parse(xml.byteInputStream())
         val root = document.documentElement
         val request =
             XMLObjectProviderRegistrySupport.getUnmarshallerFactory().getUnmarshaller(root)!!.unmarshall(root) as SignableSAMLObject
+        val credential = BasicX509Credential(certificate, key.private)
         val signature =
             (XMLObjectSupport.buildXMLObject(Signature.DEFAULT_ELEMENT_NAME) as Signature).apply {
-                signingCredential = BasicX509Credential(certificate, key.private)
+                signingCredential = credential
                 signatureAlgorithm = algorithm
                 canonicalizationAlgorithm = SignatureConstants.ALGO_ID_C14N_EXCL_OMIT_COMMENTS
+                if (keyInfo) {
+                    this.keyInfo = X509KeyInfoGeneratorFactory().apply { setEmitEntityCertificate(true) }.newInstance().generate(credential)
+                }
             }
         request.signature = signature
         (signature.contentReferences.single() as SAMLObjectContentReference).digestAlgorithm = digest

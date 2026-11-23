@@ -32,7 +32,7 @@ The store is apart from the services. Their task roles deny every call of CloudW
 | Layer | Logger | What a line holds |
 |---|---|---|
 | Bus | `LoggerDecorator` | The message type, the outcome as `OK` or an exception class, the duration and the correlation. Never the message |
-| Security events | `idp.security` | `event=throttle.rejected` with the scope, the dimension and the tenant. `event=saml.request_rejected` with the reason and the tenant. `event=ops.login_refused` with the reason of Spring Security |
+| Security events | `idp.security` | `event=throttle.rejected` with the scope, the dimension and the tenant. `event=saml.request_rejected` with the reason and the tenant. `event=ops.login_refused` with the reason of Spring Security. `event=passkey.response_rejected` with the class of an exception WebAuthn4J threw on a passkey response outside its own exception types |
 | Failures | `Failures` | `event=failure`, where it surfaced (`http`, `outbox`, `job`), the failed job, whether TLS failed, and the class and frames of each cause. Never an exception text. A failed job logs only this line |
 | Outbox | `OutboxDispatcher`, `IdempotentHandler` | The event ID and the attempt, a dead event, a skipped handler of a deleted tenant |
 | Jobs | `TenantJobRunner`, the key jobs | The job and a lost lease, the tenant as a field of the line |

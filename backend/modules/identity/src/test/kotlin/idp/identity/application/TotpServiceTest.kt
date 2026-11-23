@@ -43,7 +43,6 @@ private const val EMAIL = "ada.lovelace@acme.test"
 private const val IP = "198.51.100.7"
 private const val WAIT_SECONDS = 30L
 private const val STEP_SECONDS = 30L
-private const val SECRET_FIELD = "totp_credentials.secret_ciphertext"
 private val ADMIN = Actor.User(UUID.randomUUID())
 private val KEY_CACHE_TTL: Duration = Duration.ofMinutes(1)
 

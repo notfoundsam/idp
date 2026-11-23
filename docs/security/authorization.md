@@ -29,7 +29,7 @@ Who may call which function, reach which data and read which field. A new messag
 | `account` | public | anyone | Logout | Acts only on the session of the request |
 | `admin` | `admin.users` | `TENANT_ADMIN` | Search by the whole email, the user card, invite, resend the invitation, change the role, block, unblock, erase, reset MFA, end the sessions of a user or of the whole tenant | Inviting, changing a role, erasing and resetting MFA need a login at most 10 minutes old |
 | `admin` | `admin.policy` | `TENANT_ADMIN` | Read and save the policy | Saving needs a login at most 10 minutes old and the current `If-Match` |
-| `admin` | `admin.service_providers` | `TENANT_ADMIN` | List, read, register from a metadata file and remove SPs, save their settings, list, assign and revoke their users | Saving settings needs a login at most 10 minutes old and the current `If-Match`, removing an SP a login at most 10 minutes old |
+| `admin` | `admin.service_providers` | `TENANT_ADMIN` | List, read, register from a metadata file and remove SPs, save their settings, list, assign and revoke their users | Registering an SP, assigning users and removing an SP need a login at most 10 minutes old, saving settings that and the current `If-Match` |
 | `admin` | `admin.signing_keys` | `TENANT_ADMIN` | List the SAML signing keys, start and complete a rotation | Completing needs a login at most 10 minutes old |
 | `admin` | `admin.audit` | `TENANT_ADMIN` | Read the journal of the tenant, whole or about one target | |
 | `operator` | `tenants.read` | `Operator`, `OperatorCli` | Read a tenant and an application | |

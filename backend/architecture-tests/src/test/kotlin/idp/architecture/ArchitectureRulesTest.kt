@@ -3,6 +3,7 @@ package idp.architecture
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 
@@ -21,6 +22,12 @@ class ArchitectureRulesTest :
                 failure.message shouldContain "archfixtures.$name"
                 failure.message shouldContain "Violation"
             }
+        }
+
+        test("every command that may take an old login still exists, so the list names no command of the past") {
+            val missing = ArchitectureRules.withoutFreshAuthentication.keys.filterNot { code.contain("idp.$it") }
+
+            missing.shouldBeEmpty()
         }
 
         test("the SAML adapter is the only allowed controller in a context") {

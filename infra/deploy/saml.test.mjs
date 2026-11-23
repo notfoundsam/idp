@@ -83,9 +83,13 @@ test('a Response for another SP, request or ACS is refused, even when the IdP si
   assert.throws(() => check(respond(), { now: AT + 400_000 }), /expired/)
 })
 
-test('a Response that is unsigned, signed by another key, with SHA-1 or over another element is refused', () => {
+test('a Response that is unsigned, signed by another key even with its certificate in KeyInfo, with SHA-1 or over another element is refused', () => {
   assert.throws(() => check(respond({ signed: [] })), /Neither/)
   assert.throws(() => check(respond({ key: signingKey() })), /does not verify/)
+  const stranger = respond({ key: signingKey(), keyInfo: true })
+  assert.match(stranger, /<ds:X509Certificate>/)
+  assert.throws(() => check(stranger), /does not verify/)
+  assert.deepEqual(check(respond({ keyInfo: true })).signatures.map((it) => it.part), ['Assertion'])
   assert.throws(() => check(respond({ algorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1' })), /uses http:\/\/www.w3.org\/2000\/09\/xmldsig#rsa-sha1/)
   assert.throws(() => check(respond().replace(/URI="#[^"]+"/, 'URI="#_elsewhere"')), /refers to another element/)
   assert.throws(() => check(respond().replace('name-id-of-the-user', 'name-id-of-another')), /does not match/)

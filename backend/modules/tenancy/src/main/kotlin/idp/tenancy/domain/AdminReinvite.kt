@@ -4,7 +4,7 @@ import idp.sharedkernel.crypto.FieldCipher
 import idp.sharedkernel.crypto.FieldContext
 import java.util.UUID
 
-private const val CONTACT_FIELD = "admin_reinvites.contact_ciphertext"
+internal const val REINVITE_CONTACT_FIELD = "admin_reinvites.contact_ciphertext"
 
 /** An address on its way from `ops`, which cannot open it, to `worker`, which holds it only until the invitation exists. */
 internal class AdminReinvite(
@@ -12,7 +12,7 @@ internal class AdminReinvite(
     val tenantId: UUID,
     val contactCiphertext: ByteArray,
 ) {
-    fun contact(cipher: FieldCipher): String = cipher.decrypt(contactCiphertext, FieldContext(CONTACT_FIELD, id)).decodeToString()
+    fun contact(cipher: FieldCipher): String = cipher.decrypt(contactCiphertext, FieldContext(REINVITE_CONTACT_FIELD, id)).decodeToString()
 
     companion object {
         fun requested(
@@ -22,7 +22,7 @@ internal class AdminReinvite(
             cipher: FieldCipher,
         ): AdminReinvite {
             requireContact(contact)
-            return AdminReinvite(id, tenantId, cipher.encrypt(contact.toByteArray(), FieldContext(CONTACT_FIELD, id)))
+            return AdminReinvite(id, tenantId, cipher.encrypt(contact.toByteArray(), FieldContext(REINVITE_CONTACT_FIELD, id)))
         }
     }
 }

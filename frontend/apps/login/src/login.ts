@@ -154,6 +154,16 @@ export function createLogin({ client, release, reload, navigation }: LoginDepend
     return result
   }
 
+  /** A challenge belongs to the flow that asked for it, so its answer goes to that flow even when the page has moved on meanwhile. */
+  async function answerChallenge<T>(
+    challenge: (id: string) => Promise<T>,
+    respond: (id: string, issued: T) => Promise<Flow>,
+  ): Promise<void> {
+    const id = state.flow?.id
+    if (id === undefined) return
+    await attempt(async () => show(await respond(id, await challenge(id))))
+  }
+
   async function attempt(action: () => Promise<void>): Promise<void> {
     state.busy = true
     try {
@@ -210,7 +220,7 @@ export function createLogin({ client, release, reload, navigation }: LoginDepend
     state.login = login
   }
 
-  return { state, client, begin, beginInvitation, acceptInvitation, submit, enroll, fetchFor, codesSaved, remember }
+  return { state, client, begin, beginInvitation, acceptInvitation, submit, enroll, fetchFor, answerChallenge, codesSaved, remember }
 }
 
 export type Login = ReturnType<typeof createLogin>

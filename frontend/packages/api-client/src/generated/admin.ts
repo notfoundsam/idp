@@ -1133,7 +1133,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["NoSession"];
-            403: components["responses"]["Forbidden"];
+            403: components["responses"]["Refused"];
             /** @description The tenant already has a Service Provider with this EntityID */
             409: {
                 headers: {
@@ -1323,7 +1323,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["NoSession"];
-            403: components["responses"]["Forbidden"];
+            403: components["responses"]["Refused"];
             /** @description The tenant has no such Service Provider or no such user */
             404: {
                 headers: {

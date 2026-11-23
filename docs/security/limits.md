@@ -69,6 +69,8 @@ A flow lives for 15 minutes and is one of the few rows an anonymous caller can a
 | Client version | At least `MIN_CLIENT_VERSION`, when set | `426` |
 | AuthnRequest, decoded and inflated | 32 KiB, counted while inflating | Error page |
 | RelayState | 1 KiB | Error page |
+| Depth of an XML element, attributes of one element | 100 levels and 200 attributes, the limits of the JDK parser (`jdk.xml.maxElementDepth`, `jdk.xml.elementAttributeLimit`), in AuthnRequests, metadata and the Responses `ops` reads. Tests hold them, so a change of the JDK or of its JAXP settings fails (`AuthnRequestValidatorTest`, `MetadataImporterTest`, `OpsSamlLoginTest`) | Error page, `422`, or a refused login of `ops` |
+| Body of a request to `ops` | 64 KiB, a SAMLResponse of the IdP is a few KiB. Refused before Tomcat parses a form, by the same `RequestSizeFilter` as the API | `413`, `411` without a length |
 | Age of an AuthnRequest | 3 minutes after IssueInstant, with 3 minutes of skew either way | SAML error at the ACS |
 
 The largest legitimate body is a passkey attestation of a few KiB, and an AuthnRequest is about as large. SAML bindings ask for a RelayState of 80 bytes at most, which SPs that carry a return URL exceed.

@@ -7,11 +7,15 @@ import idp.sharedkernel.bus.MessageHandler
 import idp.sharedkernel.security.RequiresFreshAuthentication
 import java.util.UUID
 
-/** Only the content of the file arrives here, never its name. */
+/**
+ * Only the content of the file arrives here, never its name. An SP with an ACS of one's own is where assertions of the tenant go,
+ * so a stolen session alone must not be enough.
+ */
 class RegisterServiceProvider(
     val name: String,
     val metadata: ByteArray,
-) : Command<UUID>
+) : Command<UUID>,
+    RequiresFreshAuthentication
 
 class RegisterServiceProviderHandler(
     private val federation: FederationService,
@@ -53,11 +57,15 @@ class RemoveServiceProviderHandler(
     override fun handle(message: RemoveServiceProvider) = federation.removeServiceProvider(message.spId, currentAdmin(), clientIp())
 }
 
-/** The whole list in one transaction, so a user who is not there leaves everyone of the list unassigned. */
+/**
+ * The whole list in one transaction, so a user who is not there leaves everyone of the list unassigned. It lets the SP receive
+ * assertions for these users, so it needs a fresh login like registering one.
+ */
 class AssignUsers(
     val spId: UUID,
     val userIds: List<UUID>,
-) : Command<Unit>
+) : Command<Unit>,
+    RequiresFreshAuthentication
 
 class AssignUsersHandler(
     private val federation: FederationService,

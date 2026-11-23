@@ -41,8 +41,8 @@ class OperatorAuthentication(
 }
 
 /**
- * The checks of `ops` on top of what Spring Security verifies: signature, Issuer, Audience, Destination, the bearer confirmation and
- * the validity window. Spring runs the validators even after a failed signature, so the replay cache is written only in [authenticate],
+ * The checks of `ops` on top of what Spring Security verifies: signature, Issuer, Destination, the bearer confirmation, the validity
+ * window, and the audience of each AudienceRestriction there is. Spring requires none to be there, so [validateAssertion] does. Spring runs the validators even after a failed signature, so the replay cache is written only in [authenticate],
  * which runs once everything passed.
  */
 class OperatorAssertions(
@@ -50,10 +50,16 @@ class OperatorAssertions(
     private val clock: Clock = Clock.systemUTC(),
     private val clockSkew: Duration = Duration.ofMinutes(5),
 ) {
-    /** `ops` starts every login, so a Response that answers no request of this browser is refused. */
+    /**
+     * `ops` starts every login, so a Response that answers no request of this browser is refused. Spring compares `Destination` with
+     * the ACS only when it is there, and the IdP always sets it, so a Response without one is refused here.
+     */
     fun validateResponse(token: ResponseToken): Saml2ResponseValidatorResult {
         val response = token.response
         var result = Saml2ResponseValidatorResult.success()
+        if (response.destination.isNullOrBlank()) {
+            result = result.concat(Saml2Error(Saml2ErrorCodes.INVALID_DESTINATION, "The Response names no destination"))
+        }
         if (response.inResponseTo.isNullOrBlank()) {
             result = result.concat(Saml2Error(Saml2ErrorCodes.INVALID_IN_RESPONSE_TO, "The Response answers no request"))
         }
@@ -75,6 +81,9 @@ class OperatorAssertions(
         val end = sessionEnd(assertion)
         if (end == null || !end.isAfter(clock.instant())) result = result.concat(error("The assertion states no live session"))
         if (operatorName(assertion) == null) result = result.concat(error("The assertion names no operator by email"))
+        if (assertion.conditions?.audienceRestrictions.isNullOrEmpty()) {
+            result = result.concat(error("The assertion names no audience"))
+        }
         return result
     }
 

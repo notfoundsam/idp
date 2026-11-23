@@ -43,7 +43,7 @@ class TenantFilter(
 
     companion object {
         /** After the checks that need no tenant, so an outdated client or an oversized request costs no lookup. */
-        const val ORDER = RequestSizeFilter.ORDER + 1
+        const val ORDER = REQUEST_SIZE_ORDER + 1
 
         const val TENANT_ID = LogFields.TENANT_ID
     }
