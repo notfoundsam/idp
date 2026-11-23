@@ -16,7 +16,7 @@ services:
         url: https://sp.idp.test/simplesaml/
       - name: Grafana
         subtitle: Traces and metrics, after make up-observability
-        url: http://localhost:3000
+        url: https://grafana.idp.test
   - name: Application
     items:
       - name: Tenant acme

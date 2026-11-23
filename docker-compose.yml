@@ -341,6 +341,12 @@ services:
       - ./dev-tools/lgtm/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/idp.yaml:ro
       - ./dev-tools/lgtm/dashboards:/idp/dashboards:ro
       - ./dev-tools/lgtm/alerts.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/idp.yaml:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana.rule=Host(`grafana.${IDP_DOMAIN:-idp.test}`)
+      # Above the router of app, which would take /api of any subdomain.
+      - traefik.http.routers.grafana.priority=100
+      - traefik.http.services.grafana.loadbalancer.server.port=3000
 
   # Load scenarios of dev-tools/k6, see dev-tools/README.md. Their metrics go to LGTM, so `make load` needs `make up-observability`.
   k6:

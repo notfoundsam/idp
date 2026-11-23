@@ -24,7 +24,7 @@ After a backend change run `make jars`, then `docker compose restart app`.
 | https://ops.idp.test | `ops` |
 | https://acme.idp.test, https://globex.idp.test | Tenants, `/api` and `/saml` go to `app`, `/login/` and `/console/` to `nginx` |
 | https://ops-sso.idp.test | Service tenant, the IdP of `ops`, routed to `app` like any tenant |
-| http://localhost:3000 | Grafana, only after `make up-observability`; `IDP_GRAFANA_PORT` changes the port |
+| https://grafana.idp.test | Grafana, only after `make up-observability`, also on http://localhost:3000, whose port `IDP_GRAFANA_PORT` changes |
 
 Debug ports: `app` 5005, `worker` 5006, `ops` 5007. Postgres listens on `127.0.0.1:5432`.
 
@@ -79,7 +79,7 @@ tcp:
 
 The certificate comes from the laptop, whose browser already trusts its mkcert CA, and the key of that CA stays there. So the server runs neither `make install` nor `make setup-ssl`, which would make a CA of its own. On the laptop `IDP_DOMAIN=<domain> make setup-ssl` issues `dev-tools/certs/<domain>.pem` and `<domain>-key.pem`. Copy both into `dev-tools/certs` of the server, put the `rootCA.pem` of the laptop (`mkcert -CAROOT`) in a folder there and set `CAROOT` to it in `.env`. Then install a JDK for Gradle and run `make dns-mapping frontend-install jars` once: the server itself may not ask the DNS of the network, so its `/etc/hosts` maps the domain to `127.0.0.1` like on the laptop.
 
-Grafana stays on the server, reached through `ssh -N -L 3001:127.0.0.1:3001 <server>` at http://localhost:3001. Without a domain of its own the server keeps `idp.test`, and the laptop reaches it through `ssh -N -L 443:127.0.0.1:443 <server>` while the local environment is stopped.
+Grafana opens at `https://grafana.<domain>` like the other tools, and without a domain of its own through `ssh -N -L 3001:127.0.0.1:3001 <server>` at http://localhost:3001. Without a domain of its own the server keeps `idp.test`, and the laptop reaches it through `ssh -N -L 443:127.0.0.1:443 <server>` while the local environment is stopped.
 
 A machine runs one environment: the compose project is `idp` in every checkout, so `make up`, `make test-e2e` and `make load` of two checkouts share the same containers and data. `./gradlew check`, the linters and `make test-infra` run side by side.
 
@@ -140,7 +140,7 @@ Without an operation it prints the usage. It exits with 1 when an operation is r
 
 The services log one JSON object per line, so `docker compose logs app` shows JSON, see [logging.md](../docs/security/logging.md). `app`, `worker` and `ops` send traces, logs and metrics over OTLP only when they get `OTEL_EXPORTER_OTLP_ENDPOINT`, and metrics also need `OTEL_METRICS_EXPORTER=otlp`. Spring Boot maps these OpenTelemetry variables to its own properties. `make up` passes neither, so the services export nothing. Compose passes them on from the shell, so a shell that sets them for something else sends telemetry there.
 
-`make up-observability` starts `grafana/otel-lgtm` under the `observability` profile and points the services at it. Every local request is sampled. Grafana with Tempo, Prometheus and Loki opens at http://localhost:3000 as `admin` / `admin`, and the data stays in the `idp-lgtm` volume.
+`make up-observability` starts `grafana/otel-lgtm` under the `observability` profile and points the services at it. Every local request is sampled. Grafana with Tempo, Prometheus and Loki opens at https://grafana.idp.test and http://localhost:3000 as `admin` / `admin`, and the data stays in the `idp-lgtm` volume.
 
 A request span carries `tenant_id`. In Tempo, search with TraceQL, for example `{ resource.service.name = "app" && span.tenant_id = "<id>" }`. In Loki a line carries `tenant_id` and `correlation_id` as structured metadata, for example `{service_name="worker"} | correlation_id = "<id>"` follows a request into the events it published. Metrics take about a minute to appear, because they are pushed once a minute.
 

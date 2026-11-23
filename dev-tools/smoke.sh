@@ -124,6 +124,11 @@ logs_reach_loki() {
   return 1
 }
 
+# /api of a subdomain would go to app without the priority of the router of Grafana.
+grafana_health() {
+  curl -s --cacert "$CA" --resolve grafana.$IDP_DOMAIN:443:127.0.0.1 https://grafana.$IDP_DOMAIN/api/health | grep -q '"database": "ok"'
+}
+
 wait_for_routes
 
 check "http redirects to https" http_redirects
@@ -154,6 +159,7 @@ check "worker health" health worker
 check "ops health" health ops
 
 if lgtm_running; then
+  check "grafana.$IDP_DOMAIN reaches Grafana" grafana_health
   check "app traces reach Tempo" traces_reach_tempo app
   check "worker traces reach Tempo" traces_reach_tempo worker
   check "ops traces reach Tempo" traces_reach_tempo ops
