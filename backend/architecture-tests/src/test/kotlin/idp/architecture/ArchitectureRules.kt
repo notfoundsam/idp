@@ -15,7 +15,9 @@ import com.tngtech.archunit.lang.SimpleConditionEvent
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
+import idp.sharedkernel.bus.Command
 import idp.sharedkernel.bus.Message
+import idp.sharedkernel.security.RequiresFreshAuthentication
 import idp.sharedkernel.security.SecurityConfig
 
 /** Every rule takes the root package, so the same rule runs on the code and on its fixture. */
@@ -91,6 +93,20 @@ object ArchitectureRules {
             "audience.login.application.command.recovery.ConfirmPasswordReset",
             "audience.login.application.command.recovery.ConfirmEmailChange",
             "audience.account.application.command.Logout",
+        )
+
+    /** Names below the root package of the commands of `admin` and `account` that take an old login, and why. */
+    val withoutFreshAuthentication =
+        mapOf(
+            "audience.account.application.command.Logout" to "protective: ends the own session at once",
+            "audience.admin.application.command.EndAllSessions" to "protective: ends every session of the tenant at once",
+            "audience.admin.application.command.EndUserSessions" to "protective: ends the sessions of a user at once",
+            "audience.admin.application.command.BlockUser" to "protective: stops a user at once",
+            "audience.account.application.command.ChangePassword" to "asks for the current password instead",
+            "audience.admin.application.command.UnblockUser" to "gives no access the user did not have",
+            "audience.admin.application.command.ResendInvitation" to "gives no access the invitation did not give",
+            "audience.admin.application.command.UnassignUsers" to "takes access away",
+            "audience.admin.application.command.StartKeyRotation" to "publishes the next key, which signs nothing until completed",
         )
 
     private const val JOOQ_SCHEMAS = """db\.jooq\.(platform|tenant)\.tables"""
@@ -307,6 +323,30 @@ object ArchitectureRules {
             .areNotInterfaces()
             .should(publicListed(root))
 
+    private fun freshOrListed(root: String) =
+        object : ArchCondition<JavaClass>("need a fresh login or be listed in withoutFreshAuthentication") {
+            override fun check(
+                command: JavaClass,
+                events: ConditionEvents,
+            ) {
+                val listed = withoutFreshAuthentication.keys.map { "$root.$it" }
+                if (!command.isAssignableTo(RequiresFreshAuthentication::class.java) && command.name !in listed) {
+                    events.add(SimpleConditionEvent.violated(command, "${command.name} needs a fresh login or a reason to take an old one"))
+                }
+            }
+        }
+
+    /** A new command of `admin` or `account` decides whether a stolen session alone may run it. */
+    private fun freshAuthentication(root: String): ArchRule =
+        classes()
+            .that()
+            .resideInAnyPackage("$root.audience.admin..", "$root.audience.account..")
+            .and()
+            .areAssignableTo(Command::class.java)
+            .and()
+            .areNotInterfaces()
+            .should(freshOrListed(root))
+
     private fun isContextType(
         type: JavaClass,
         root: String,
@@ -409,6 +449,7 @@ object ArchitectureRules {
             "contextmessages" to ::noMessagesInContexts,
             "throttleonlyinapp" to ::throttleOnlyInApp,
             "audiencemessages" to ::audienceMessages,
+            "freshauthentication" to ::freshAuthentication,
             "publicmessages" to ::publicMessagesListed,
             "audienceresponses" to ::audienceResponses,
             "jooqusage" to ::jooqUsage,

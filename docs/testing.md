@@ -12,7 +12,7 @@ How the project tests its code and with which tools. A change that adds a tool o
 | API contract | Controllers and responses checked against `contracts/openapi/*.yaml` | `FlowContractTest`, `AccountContractTest`, `AdminContractTest`, `OpsContractTest` |
 | Telemetry | The real application with spans and log records kept in memory | `app/src/test/.../web/TracingTest.kt`, `LogsTest` |
 | Logs and metrics | The real application with its console copied: the JSON lines of logins, refusals, failures and SAML, and the counters they move | `NoPiiInLogsTest`, `FailureMetricsTest` |
-| Data at rest | The real application with Valkey after a journey through every kind of data it keeps, then every row of every table and every key of Valkey searched for each value the journey gave in clear | `app/src/test/.../security/PlaintextAtRestTest.kt` |
+| Data at rest | The real application with Valkey after a journey through every kind of data it keeps, then every row of every table and every key of Valkey searched for each value the journey gave in clear. Every table is one the journey fills, one another test scans, or one listed with why it holds nothing to find, so a new table fails the test until it is decided | `app/src/test/.../security/PlaintextAtRestTest.kt` |
 | Load | k6 scenarios against `make up-observability`, run by hand to find bottlenecks and regressions, not to measure capacity | `dev-tools/k6/saml.js` |
 | SAML messages | Requests a test SP writes, signs and encodes, against the validator and over HTTP | `AuthnRequestValidatorTest`, `SsoApiTest`, `ResumeApiTest` |
 | SAML login of `ops` | Responses a fake IdP writes and signs, each bent in one way, posted to the ACS of the real `ops` | `ops/src/test/.../security/OpsSamlLoginTest.kt` |

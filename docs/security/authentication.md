@@ -114,7 +114,7 @@ Registration and login both require user verification. A passkey that passed it 
 
 Only ES256, EdDSA and RS256 are accepted. RS256 is a recorded exception to V11.6.1, because some platform authenticators offer nothing else. The application only verifies it and never creates such a signature.
 
-Every challenge is 256 bits from `SecureRandom`, lives in Postgres for 5 minutes and works once. It is spent by a single `DELETE` before the response is verified, so a failed attempt also uses it up. A registration challenge belongs to its user and cannot finish a login, and the reverse.
+Every challenge is 256 bits from `SecureRandom`, lives in Postgres for 5 minutes and works once. It is spent by a single `DELETE` before the response is verified, so a failed attempt also uses it up. A registration challenge belongs to its user and cannot finish a login, and the reverse. A login challenge belongs to the flow that asked for it, so a response signed for one flow is refused in another, even in the same browser.
 
 A login challenge is created before anyone is known, so an anonymous caller can add rows. They expire and a job removes them, and the limit on unfinished flows bounds them meanwhile.
 

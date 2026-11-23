@@ -109,33 +109,50 @@ internal class Passkeys {
         )
 }
 
+/** Who a challenge was handed to: the user who registers a passkey, or the flow of a login, where nobody is known yet. */
+internal sealed interface ChallengeOwner {
+    data class User(
+        val id: UUID,
+    ) : ChallengeOwner
+
+    data class Flow(
+        val id: UUID,
+    ) : ChallengeOwner
+}
+
+private val ChallengeOwner.userId get() = (this as? ChallengeOwner.User)?.id
+
+private val ChallengeOwner.flowId get() = (this as? ChallengeOwner.Flow)?.id
+
 internal class PasskeyChallenges {
     fun add(
         dsl: DSLContext,
         challenge: ByteArray,
-        userId: UUID?,
+        owner: ChallengeOwner,
         expiresAt: Instant,
     ) {
         dsl
             .insertInto(PASSKEY_CHALLENGES)
             .set(PASSKEY_CHALLENGES.CHALLENGE, challenge)
-            .set(PASSKEY_CHALLENGES.USER_ID, userId)
+            .set(PASSKEY_CHALLENGES.USER_ID, owner.userId)
+            .set(PASSKEY_CHALLENGES.FLOW_ID, owner.flowId)
             .set(PASSKEY_CHALLENGES.EXPIRES_AT, expiresAt.atOffset(ZoneOffset.UTC))
             .execute()
     }
 
-    /** One statement, so of two concurrent responses only one gets the row. A null [userId] means a login. */
+    /** One statement, so of two concurrent responses only one gets the row. */
     fun consume(
         dsl: DSLContext,
         challenge: ByteArray,
-        userId: UUID?,
+        owner: ChallengeOwner,
         now: Instant,
     ): Boolean =
         dsl
             .deleteFrom(PASSKEY_CHALLENGES)
             .where(
                 PASSKEY_CHALLENGES.CHALLENGE.eq(challenge),
-                PASSKEY_CHALLENGES.USER_ID.isNotDistinctFrom(userId),
+                PASSKEY_CHALLENGES.USER_ID.isNotDistinctFrom(owner.userId),
+                PASSKEY_CHALLENGES.FLOW_ID.isNotDistinctFrom(owner.flowId),
                 PASSKEY_CHALLENGES.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)),
             ).execute() == 1
 }

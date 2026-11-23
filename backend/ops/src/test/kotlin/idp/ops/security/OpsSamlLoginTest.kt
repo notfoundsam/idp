@@ -15,6 +15,7 @@ import idp.ops.OpsApplication
 import idp.ops.OpsClient
 import idp.ops.OpsEnvironment
 import idp.ops.SESSION_COOKIE
+import idp.sharedkernel.testing.ConsoleCapture
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -34,15 +35,38 @@ import kotlin.time.Duration.Companion.seconds
 private const val RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
 private const val RSA_SHA1 = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
 
-/** A Response the fake IdP builds for the request of the browser, then bent in one way. */
+private const val ATTACKER_EMAIL = "attacker@platform.example"
+private const val SIGNED_ID = "_signed"
+private const val FORGED_ID = "_forged"
+private val SIGNATURE = Regex("<ds:Signature .*</ds:Signature>", RegexOption.DOT_MATCHES_ALL)
+
+/** A Response the fake IdP builds for the request of the browser, then bent in one way. [reason] is what the refusal must name. */
 private class Refusal(
     val name: String,
+    val reason: String? = null,
     val response: (FakeIdp, String) -> String,
 ) {
     override fun toString() = name
 }
 
 private fun bent(change: (Login) -> Login) = { idp: FakeIdp, id: String -> idp.response(change(Login(inResponseTo = id))) }
+
+/**
+ * Signature wrapping: the signed assertion stays in the Response, and a forged one naming another operator carries a copy of its
+ * signature where a careless verifier would read it.
+ */
+private fun wrapped(arrange: FakeIdp.(login: Login, signed: String, forged: (id: String, advice: String) -> String) -> String) =
+    { idp: FakeIdp, id: String ->
+        val login = Login(inResponseTo = id, assertionId = SIGNED_ID)
+        val signed = idp.signedAssertion(login)
+        val signature = SIGNATURE.find(signed)!!.value
+        val forged = { forgedId: String, advice: String ->
+            idp
+                .assertion(login.copy(nameId = ATTACKER_EMAIL, assertionId = forgedId), advice)
+                .replaceFirst("</saml:Issuer>", "</saml:Issuer>$signature")
+        }
+        idp.arrange(login, signed, forged)
+    }
 
 private fun String.tampered(
     from: String,
@@ -165,6 +189,8 @@ class OpsSamlLoginTest :
                 Refusal("for another destination") { fake, id ->
                     fake.response(Login(inResponseTo = id, destination = "https://sp.example/acs"))
                 },
+                Refusal("without a destination") { fake, id -> fake.response(Login(inResponseTo = id, destination = null)) },
+                Refusal("with an empty destination") { fake, id -> fake.response(Login(inResponseTo = id, destination = "")) },
                 Refusal(
                     "for another recipient",
                 ) { fake, id -> fake.response(Login(inResponseTo = id, recipient = "https://sp.example/acs")) },
@@ -192,12 +218,40 @@ class OpsSamlLoginTest :
                     fake.response(Login(inResponseTo = id, digest = SignatureConstants.ALGO_ID_DIGEST_SHA1))
                 },
                 Refusal("with a DOCTYPE") { fake, id -> fake.response(Login(inResponseTo = id, doctype = true)) },
+                Refusal(
+                    "wrapped: a forged assertion with the signature, the signed one in its Advice",
+                    "Invalid signature for object [$FORGED_ID]",
+                    wrapped { login, signed, forged -> response(login, forged(FORGED_ID, signed)) },
+                ),
+                Refusal(
+                    "wrapped: a forged assertion with the ID and the signature of the signed one, which is in its Advice",
+                    "Invalid signature for object [$SIGNED_ID]",
+                    wrapped { login, signed, forged -> response(login, forged(SIGNED_ID, signed)) },
+                ),
+                Refusal(
+                    "wrapped: the signed assertion in the Extensions, a forged one with its signature in its place",
+                    "Invalid signature for object [$FORGED_ID]",
+                    wrapped { login, signed, forged -> response(login, forged(FORGED_ID, ""), extensions = signed) },
+                ),
+                Refusal(
+                    "with two assertions, both signed by the IdP",
+                    "The Response must carry exactly one plain assertion",
+                ) { fake, id ->
+                    val login = Login(inResponseTo = id)
+                    val forged = fake.signedAssertion(login.copy(nameId = ATTACKER_EMAIL, assertionId = "_second"))
+                    fake.response(login, forged + fake.signedAssertion(login))
+                },
             ).forEach { refusal ->
                 test(refusal.name) {
                     val browser = browser()
                     val request = browser.startLogin()
 
-                    browser.finishLogin(refusal.response(idp, request.id), request.relayState).status shouldBe 401
+                    val lines =
+                        ConsoleCapture().use { console ->
+                            browser.finishLogin(refusal.response(idp, request.id), request.relayState).status shouldBe 401
+                            console.lines()
+                        }
+                    refusal.reason?.let { reason -> lines.single { "event=ops.login_refused" in it } shouldContain reason }
 
                     browser.signedIn() shouldBe false
                     environment.audit().map { it["action"] to it["actor"] }.shouldContainExactly(

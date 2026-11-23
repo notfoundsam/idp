@@ -1,5 +1,6 @@
 package idp.identity.application
 
+import idp.identity.adapters.persistence.ChallengeOwner
 import idp.identity.adapters.persistence.PasskeyChallenges
 import idp.identity.adapters.persistence.Passkeys
 import idp.identity.adapters.persistence.RecoveryCodes
@@ -95,7 +96,7 @@ class PasskeyService(
         transaction.execute { dsl ->
             users.find(dsl, userId) ?: throw UserNotFound(userId)
             val challenge = newChallenge()
-            challenges.add(dsl, challenge, userId, clock.instant().plus(challengeTtl))
+            challenges.add(dsl, challenge, ChallengeOwner.User(userId), clock.instant().plus(challengeTtl))
             PasskeyRegistrationOptions(
                 challenge,
                 PasskeyCredential.userHandle(userId),
@@ -114,7 +115,7 @@ class PasskeyService(
     ): UUID {
         val challenge = verifier.challengeOf(attestation.clientDataJson) ?: throw PasskeyNotValid()
         val now = clock.instant()
-        if (!transaction.execute { dsl -> challenges.consume(dsl, challenge, userId, now) }) throw PasskeyNotValid()
+        if (!transaction.execute { dsl -> challenges.consume(dsl, challenge, ChallengeOwner.User(userId), now) }) throw PasskeyNotValid()
         val verified =
             verifier.verifyRegistration(attestation.attestationObject, attestation.clientDataJson, challenge, host)
                 ?: throw PasskeyNotValid()
@@ -164,10 +165,11 @@ class PasskeyService(
         }
     }
 
-    fun beginAuthentication(): PasskeyAuthenticationOptions =
+    /** [flowId] is the login the challenge is for: a response to it passes in that flow only. */
+    fun beginAuthentication(flowId: UUID): PasskeyAuthenticationOptions =
         transaction.execute { dsl ->
             val challenge = newChallenge()
-            challenges.add(dsl, challenge, null, clock.instant().plus(challengeTtl))
+            challenges.add(dsl, challenge, ChallengeOwner.Flow(flowId), clock.instant().plus(challengeTtl))
             PasskeyAuthenticationOptions(challenge)
         }
 
@@ -175,12 +177,13 @@ class PasskeyService(
     fun authenticate(
         assertion: PasskeyAssertion,
         host: String,
+        flowId: UUID,
         ip: String? = null,
     ): UUID? {
         val challenge = verifier.challengeOf(assertion.clientDataJson) ?: return null
         return transaction.execute { dsl ->
             val now = clock.instant()
-            if (!challenges.consume(dsl, challenge, null, now)) return@execute null
+            if (!challenges.consume(dsl, challenge, ChallengeOwner.Flow(flowId), now)) return@execute null
             val credential = passkeys.find(dsl, assertion.credentialId) ?: return@execute null
             if (!credential.isOwnedBy(assertion.userHandle)) return@execute null
             val check =

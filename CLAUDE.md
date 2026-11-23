@@ -26,6 +26,7 @@ A multi-tenant SAML Identity Provider for B2B customers. `docs/architecture.md` 
 - Tests: write them in whatever order suits the task. Every change ships with tests, including failure cases. Approach, tools and fixtures are in `docs/testing.md`.
 - Accepted migrations are never edited. Add a new `V<n>__*.sql`.
 - Every sensitive action writes through `AuditLog` and has a test for it.
+- A new command of `admin` or `account` implements `RequiresFreshAuthentication`, or goes into `withoutFreshAuthentication` of `ArchitectureRules` with its reason.
 - A change that adds, removes or weakens a security control updates its row in `docs/security/asvs-l2.md`. Find the row by requirement number with `grep -n`, the file is too long to read whole.
 - A control proven only against LocalStack or a mocked AWS provider is `Staging` in `asvs-l2.md`, never `Done`, and its row names the check that remains.
 - Docs, code, issues and commits never link to or copy `docs/plans/`: the repository is public and the plans are not.

@@ -19,7 +19,10 @@ import com.webauthn4j.server.ServerProperty
 import com.webauthn4j.util.exception.WebAuthnException
 import com.webauthn4j.verifier.exception.MaliciousCounterValueException
 import idp.identity.domain.credential.PasskeyCredential
+import org.slf4j.LoggerFactory
 import tools.jackson.core.JacksonException
+
+private val securityEvents = LoggerFactory.getLogger("idp.security")
 
 /** RS256 stays for authenticators that offer nothing else: the system only verifies it, see V11.6.1 in `docs/security/asvs-l2.md`. */
 private val ALGORITHMS =
@@ -99,7 +102,11 @@ internal class PasskeyVerifier {
             }
         }
 
-    /** A parser failure comes out of WebAuthn4J as it is, not as its own exception, and anyone can send malformed bytes. */
+    /**
+     * Anyone can send these bytes, so whatever WebAuthn4J throws on them is a refusal. Not every failure is its own exception: a
+     * parser failure comes out as it is, and a token binding ID that is no base64url throws from `java.util.Base64`. An exception of
+     * another type is logged by its class, so a fault of this code does not pass as a refusal unseen.
+     */
     private inline fun <T> orRefused(
         refusal: T,
         block: () -> T,
@@ -109,6 +116,9 @@ internal class PasskeyVerifier {
         } catch (_: WebAuthnException) {
             refusal
         } catch (_: JacksonException) {
+            refusal
+        } catch (failure: RuntimeException) {
+            securityEvents.warn("event=passkey.response_rejected exception={}", failure.javaClass.name)
             refusal
         }
 

@@ -37,10 +37,11 @@ function submitCode() {
   )
 }
 
-async function passkey(credentials: CredentialsContainer) {
-  const options = await props.login.fetchFor((id) => props.login.client.beginPasskeyLogin(id))
-  if (options === null) return
-  await props.login.submit(async (id) => props.login.client.submitPasskey(id, await signInWithPasskey(credentials, options)))
+function passkey(credentials: CredentialsContainer) {
+  return props.login.answerChallenge(
+    (id) => props.login.client.beginPasskeyLogin(id),
+    async (id, options) => props.login.client.submitPasskey(id, await signInWithPasskey(credentials, options)),
+  )
 }
 </script>
 

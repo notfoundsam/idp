@@ -1,6 +1,7 @@
 dependencies {
     implementation(project(":shared-kernel"))
     implementation(libs.bouncycastle)
+    implementation(libs.slf4j.api)
     implementation(libs.webauthn4j.core)
 
     testImplementation(testFixtures(project(":shared-kernel")))

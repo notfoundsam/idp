@@ -24,7 +24,7 @@ class BeginPasskeyLoginHandler(
 
     override fun handle(message: BeginPasskeyLogin): PasskeyAuthenticationOptions {
         authentication.step(message.flow)
-        return passkeys.beginAuthentication()
+        return passkeys.beginAuthentication(message.flow.id)
     }
 }
 
@@ -47,7 +47,7 @@ class SubmitPasskeyHandler(
     /** A forged response and a valid passkey of someone else answer alike, otherwise a passkey of one's own would probe logins. */
     override fun handle(message: SubmitPasskey): FlowView =
         attempts.step(message.flow, LoginFactor.PASSKEY) {
-            passkeys.authenticate(message.assertion, message.host, clientIp())?.let { owner ->
+            passkeys.authenticate(message.assertion, message.host, message.flow.id, clientIp())?.let { owner ->
                 authentication.passkeyPassed(message.flow, owner)
             }
         }

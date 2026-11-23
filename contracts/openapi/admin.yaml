@@ -395,7 +395,7 @@ paths:
         "401":
           $ref: "#/components/responses/NoSession"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/Refused"
         "409":
           description: The tenant already has a Service Provider with this EntityID
         "413":
@@ -548,7 +548,7 @@ paths:
         "401":
           $ref: "#/components/responses/NoSession"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/Refused"
         "404":
           description: The tenant has no such Service Provider or no such user
         "413":

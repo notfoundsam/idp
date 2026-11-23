@@ -54,7 +54,11 @@ class PasskeyDevice(
         return json("attestationObject" to encoded(response.attestationObject), "clientDataJson" to encoded(response.clientDataJSON))
     }
 
-    fun assertion(options: JsonNode): String {
+    /** [clientDataJson] stands in for what the authenticator signed, so the signature no longer matches it. */
+    fun assertion(
+        options: JsonNode,
+        clientDataJson: ByteArray? = null,
+    ): String {
         val required = UserVerificationRequirement.REQUIRED
         val challenge = DefaultChallenge(decoded(options.text("challenge")))
         val credential = client.get(PublicKeyCredentialRequestOptions(challenge, null, options.text("rpId"), null, required, null))
@@ -63,7 +67,7 @@ class PasskeyDevice(
             "credentialId" to encoded(credential.rawId),
             "userHandle" to encoded(response.userHandle),
             "authenticatorData" to encoded(response.authenticatorData),
-            "clientDataJson" to encoded(response.clientDataJSON),
+            "clientDataJson" to encoded(clientDataJson ?: response.clientDataJSON),
             "signature" to encoded(response.signature),
         )
     }

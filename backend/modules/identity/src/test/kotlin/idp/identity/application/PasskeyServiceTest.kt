@@ -27,6 +27,9 @@ import com.webauthn4j.data.attestation.statement.NoneAttestationStatement
 import com.webauthn4j.data.client.ClientDataType
 import com.webauthn4j.data.client.CollectedClientData
 import com.webauthn4j.data.client.Origin
+import com.webauthn4j.data.client.TokenBinding
+import com.webauthn4j.data.client.TokenBindingStatus
+import com.webauthn4j.data.client.challenge.Challenge
 import com.webauthn4j.data.client.challenge.DefaultChallenge
 import com.webauthn4j.data.extension.authenticator.AuthenticationExtensionAuthenticatorOutput
 import com.webauthn4j.data.extension.authenticator.RegistrationExtensionAuthenticatorOutput
@@ -87,6 +90,7 @@ private const val IP = "198.51.100.7"
 private const val WAIT_SECONDS = 30L
 private const val RSA_BITS = 2048
 private val ADMIN = Actor.User(UUID.randomUUID())
+private val FLOW = UUID.randomUUID()
 private val KEY_CACHE_TTL: Duration = Duration.ofMinutes(1)
 private val CHALLENGE_TTL: Duration = Duration.ofMinutes(5)
 private val OBJECTS = ObjectConverter()
@@ -120,6 +124,25 @@ private class PasskeyAudit : AuditLog {
 private fun sha256(bytes: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(bytes)
 
 private fun https(host: String) = Origin("https://$host")
+
+private typealias ClientDataOf = (ClientDataType, Challenge) -> CollectedClientData
+
+private val HONEST_CLIENT: ClientDataOf = { type, challenge -> CollectedClientData(type, challenge, https(HOST), null) }
+
+/** WebAuthn4J decodes the ID with `java.util.Base64` before it reads the status, and that throws no exception of its own. */
+private val BROKEN_TOKEN_BINDING: ClientDataOf =
+    { type, challenge -> CollectedClientData(type, challenge, https(HOST), TokenBinding(TokenBindingStatus.PRESENT, "***")) }
+
+private fun otherCeremony(type: ClientDataType) =
+    if (type == ClientDataType.WEBAUTHN_CREATE) ClientDataType.WEBAUTHN_GET else ClientDataType.WEBAUTHN_CREATE
+
+/** Signed by the authenticator, each with one field neither ceremony accepts: no top origin is allowed, and no embedding. */
+private val FORGED_CLIENT_DATA: Map<String, ClientDataOf> =
+    mapOf(
+        "a cross-origin response" to { type, challenge -> CollectedClientData(type, challenge, https(HOST), true, null) },
+        "a top origin" to { type, challenge -> CollectedClientData(type, challenge, https(HOST), false, https(OTHER_HOST), null) },
+        "the type of the other ceremony" to { type, challenge -> CollectedClientData(otherCeremony(type), challenge, https(HOST), null) },
+    )
 
 /** The browser and a platform authenticator of one person. */
 private class Device {
@@ -212,10 +235,12 @@ private class SoftPasskey(
 
     private fun flags(
         attested: Boolean,
+        present: Boolean,
         verified: Boolean,
         backedUp: Boolean,
     ): Byte {
-        var flags = AuthenticatorData.BIT_UP.toInt()
+        var flags = 0
+        if (present) flags = flags or AuthenticatorData.BIT_UP.toInt()
         if (verified) flags = flags or AuthenticatorData.BIT_UV.toInt()
         if (attested) flags = flags or AuthenticatorData.BIT_AT.toInt()
         if (backupEligible) flags = flags or AuthenticatorData.BIT_BE.toInt()
@@ -226,17 +251,19 @@ private class SoftPasskey(
     fun attestation(
         challenge: ByteArray,
         verified: Boolean = true,
+        present: Boolean = true,
+        client: ClientDataOf = HONEST_CLIENT,
     ): PasskeyAttestation {
         val data =
             AuthenticatorData<RegistrationExtensionAuthenticatorOutput>(
                 sha256(HOST.toByteArray()),
-                flags(attested = true, verified, backedUp = false),
+                flags(attested = true, present, verified, backedUp = false),
                 0,
                 AttestedCredentialData(AAGUID.ZERO, credentialId, type.publicKey(keys)),
             )
         return PasskeyAttestation(
             AttestationObjectConverter(OBJECTS).convertToBytes(AttestationObject(data, NoneAttestationStatement())),
-            clientData(ClientDataType.WEBAUTHN_CREATE, challenge),
+            clientData(client, ClientDataType.WEBAUTHN_CREATE, challenge),
         )
     }
 
@@ -245,31 +272,32 @@ private class SoftPasskey(
         user: UUID,
         verified: Boolean = true,
         backedUp: Boolean = false,
+        present: Boolean = true,
+        client: ClientDataOf = HONEST_CLIENT,
     ): PasskeyAssertion {
         val data =
             AuthenticatorDataConverter(OBJECTS).convert(
                 AuthenticatorData<AuthenticationExtensionAuthenticatorOutput>(
                     sha256(HOST.toByteArray()),
-                    flags(attested = false, verified, backedUp),
+                    flags(attested = false, present, verified, backedUp),
                     0,
                 ),
             )
-        val client = clientData(ClientDataType.WEBAUTHN_GET, challenge)
+        val clientDataJson = clientData(client, ClientDataType.WEBAUTHN_GET, challenge)
         val signature =
             Signature.getInstance(type.signature).run {
                 initSign(keys.private)
-                update(data + sha256(client))
+                update(data + sha256(clientDataJson))
                 sign()
             }
-        return PasskeyAssertion(credentialId, PasskeyCredential.userHandle(user), data, client, signature)
+        return PasskeyAssertion(credentialId, PasskeyCredential.userHandle(user), data, clientDataJson, signature)
     }
 
     private fun clientData(
+        client: ClientDataOf,
         type: ClientDataType,
         challenge: ByteArray,
-    ) = CollectedClientDataConverter(OBJECTS).convertToBytes(
-        CollectedClientData(type, DefaultChallenge(challenge), https(HOST), null),
-    )
+    ) = CollectedClientDataConverter(OBJECTS).convertToBytes(client(type, DefaultChallenge(challenge)))
 }
 
 private class PasskeyFixture {
@@ -322,7 +350,7 @@ private class PasskeyFixture {
         audit.changes.clear()
     }
 
-    fun TenantContext.loginChallenge(): ByteArray = acting { beginAuthentication() }.challenge
+    fun TenantContext.loginChallenge(flow: UUID = FLOW): ByteArray = acting { beginAuthentication(flow) }.challenge
 
     fun TenantContext.table(name: String) = "\"${TenantSchema(tenantId).name}\".$name"
 
@@ -604,6 +632,47 @@ class PasskeyServiceTest :
                     }
                 }
 
+                test("a response without user presence is refused") {
+                    PasskeyFixture().run {
+                        val tenant = tenant()
+                        val user = tenant.user()
+                        val options = tenant.acting { beginRegistration(user) }
+                        val attestation = SoftPasskey().attestation(options.challenge, present = false)
+
+                        shouldThrow<PasskeyNotValid> { tenant.acting { finishRegistration(user, attestation, HOST, ADMIN) } }
+
+                        tenant.credentials(user).shouldBeEmpty()
+                    }
+                }
+
+                FORGED_CLIENT_DATA.forEach { (name, client) ->
+                    test("$name is refused") {
+                        PasskeyFixture().run {
+                            val tenant = tenant()
+                            val user = tenant.user()
+                            val options = tenant.acting { beginRegistration(user) }
+                            val attestation = SoftPasskey().attestation(options.challenge, client = client)
+
+                            shouldThrow<PasskeyNotValid> { tenant.acting { finishRegistration(user, attestation, HOST, ADMIN) } }
+
+                            tenant.credentials(user).shouldBeEmpty()
+                        }
+                    }
+                }
+
+                test("a token binding ID that is no base64url is refused") {
+                    PasskeyFixture().run {
+                        val tenant = tenant()
+                        val user = tenant.user()
+                        val options = tenant.acting { beginRegistration(user) }
+                        val attestation = SoftPasskey().attestation(options.challenge, client = BROKEN_TOKEN_BINDING)
+
+                        shouldThrow<PasskeyNotValid> { tenant.acting { finishRegistration(user, attestation, HOST, ADMIN) } }
+
+                        tenant.credentials(user).shouldBeEmpty()
+                    }
+                }
+
                 MALFORMED_CLIENT_DATA.forEach { (name, clientData) ->
                     test("$name as client data is refused") {
                         PasskeyFixture().run {
@@ -644,7 +713,7 @@ class PasskeyServiceTest :
 
                             tenant.registered(user, key)
 
-                            tenant.acting { authenticate(key.assertion(tenant.loginChallenge(), user), HOST) } shouldBe user
+                            tenant.acting { authenticate(key.assertion(tenant.loginChallenge(), user), HOST, FLOW) } shouldBe user
                         }
                     }
                 }
@@ -868,7 +937,7 @@ class PasskeyServiceTest :
                     val device = tenant.registered(user)
                     val before = tenant.signCount(user)
 
-                    tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST) } shouldBe user
+                    tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST, FLOW) } shouldBe user
 
                     (tenant.signCount(user) > before) shouldBe true
                     (tenant.credentials(user).single()["last_used_at"] as Timestamp).toInstant() shouldBe clock.now
@@ -882,7 +951,7 @@ class PasskeyServiceTest :
                     val device = tenant.registered(user)
                     val before = tenant.userVersion(user)
 
-                    tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST) } shouldBe user
+                    tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST, FLOW) } shouldBe user
 
                     tenant.userVersion(user) shouldBe before
                     audit.changes.shouldBeEmpty()
@@ -896,7 +965,7 @@ class PasskeyServiceTest :
 
                         val garbage = PasskeyAssertion(byteArrayOf(1), null, byteArrayOf(2), clientData, byteArrayOf(4))
 
-                        tenant.acting { authenticate(garbage, HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(garbage, HOST, FLOW) }.shouldBeNull()
                     }
                 }
             }
@@ -917,7 +986,7 @@ class PasskeyServiceTest :
                             genuine.signature,
                         )
 
-                    tenant.acting { authenticate(garbled, HOST) }.shouldBeNull()
+                    tenant.acting { authenticate(garbled, HOST, FLOW) }.shouldBeNull()
                 }
             }
 
@@ -928,7 +997,7 @@ class PasskeyServiceTest :
 
                     val assertion = SoftPasskey().assertion(tenant.loginChallenge(), user)
 
-                    tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                    tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
                 }
             }
 
@@ -947,7 +1016,7 @@ class PasskeyServiceTest :
                             genuine.signature.tampered(),
                         )
 
-                    tenant.acting { authenticate(forged, HOST) }.shouldBeNull()
+                    tenant.acting { authenticate(forged, HOST, FLOW) }.shouldBeNull()
                 }
             }
 
@@ -960,7 +1029,7 @@ class PasskeyServiceTest :
 
                     val assertion = key.assertion(tenant.loginChallenge(), UUID.randomUUID())
 
-                    tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                    tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
                 }
             }
 
@@ -972,7 +1041,7 @@ class PasskeyServiceTest :
                     tenant.registered(user, key)
                     tenant.credentials(user).single()["backed_up"] shouldBe false
 
-                    tenant.acting { authenticate(key.assertion(tenant.loginChallenge(), user, backedUp = true), HOST) } shouldBe user
+                    tenant.acting { authenticate(key.assertion(tenant.loginChallenge(), user, backedUp = true), HOST, FLOW) } shouldBe user
 
                     tenant.credentials(user).single()["backed_up"] shouldBe true
                 }
@@ -986,9 +1055,9 @@ class PasskeyServiceTest :
                         val key = SoftPasskey()
                         tenant.registered(user, key)
                         val assertion = key.assertion(tenant.loginChallenge(), user)
-                        tenant.acting { authenticate(assertion, HOST) } shouldBe user
+                        tenant.acting { authenticate(assertion, HOST, FLOW) } shouldBe user
 
-                        tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
                     }
                 }
 
@@ -1001,7 +1070,7 @@ class PasskeyServiceTest :
                         tenant.registered(user, key)
                         val assertion = key.assertion(tenant.loginChallenge(), user)
 
-                        val results = inParallel(parallel) { tenant.acting { authenticate(assertion, HOST) } }
+                        val results = inParallel(parallel) { tenant.acting { authenticate(assertion, HOST, FLOW) } }
 
                         results.filterNotNull() shouldContainExactly listOf(user)
                     }
@@ -1013,9 +1082,9 @@ class PasskeyServiceTest :
                         val user = tenant.user()
                         val device = tenant.registered(user)
                         val challenge = tenant.loginChallenge()
-                        tenant.acting { authenticate(device.assertion(challenge, origin = https("evil.test")), HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(device.assertion(challenge, origin = https("evil.test")), HOST, FLOW) }.shouldBeNull()
 
-                        tenant.acting { authenticate(device.assertion(challenge), HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(device.assertion(challenge), HOST, FLOW) }.shouldBeNull()
                     }
                 }
 
@@ -1027,7 +1096,22 @@ class PasskeyServiceTest :
                         val assertion = device.assertion(tenant.loginChallenge())
                         clock.now = clock.now.plus(CHALLENGE_TTL)
 
-                        tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
+                    }
+                }
+
+                test("of another flow fails, and stays good for its own") {
+                    PasskeyFixture().run {
+                        val tenant = tenant()
+                        val user = tenant.user()
+                        val key = SoftPasskey()
+                        tenant.registered(user, key)
+                        val other = UUID.randomUUID()
+                        val assertion = key.assertion(tenant.loginChallenge(other), user)
+
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
+
+                        tenant.acting { authenticate(assertion, HOST, other) } shouldBe user
                     }
                 }
 
@@ -1038,7 +1122,7 @@ class PasskeyServiceTest :
                         val device = tenant.registered(user)
                         val assertion = device.assertion(tenant.acting { beginRegistration(user) }.challenge)
 
-                        tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
                     }
                 }
             }
@@ -1052,7 +1136,7 @@ class PasskeyServiceTest :
 
                         val assertion = device.assertion(tenant.loginChallenge(), origin = https("evil.test"))
 
-                        tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
                     }
                 }
 
@@ -1065,7 +1149,50 @@ class PasskeyServiceTest :
 
                         val assertion = key.assertion(tenant.loginChallenge(), user, verified = false)
 
-                        tenant.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
+                    }
+                }
+
+                test("a response without user presence fails") {
+                    PasskeyFixture().run {
+                        val tenant = tenant()
+                        val user = tenant.user()
+                        val key = SoftPasskey()
+                        tenant.registered(user, key)
+
+                        val assertion = key.assertion(tenant.loginChallenge(), user, present = false)
+
+                        tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
+                    }
+                }
+
+                FORGED_CLIENT_DATA.forEach { (name, client) ->
+                    test("$name fails") {
+                        PasskeyFixture().run {
+                            val tenant = tenant()
+                            val user = tenant.user()
+                            val key = SoftPasskey()
+                            tenant.registered(user, key)
+
+                            val assertion = key.assertion(tenant.loginChallenge(), user, client = client)
+
+                            tenant.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
+                        }
+                    }
+                }
+
+                test("a token binding ID that is no base64url fails and spends the challenge") {
+                    PasskeyFixture().run {
+                        val tenant = tenant()
+                        val user = tenant.user()
+                        val key = SoftPasskey()
+                        tenant.registered(user, key)
+                        val challenge = tenant.loginChallenge()
+                        val broken = key.assertion(challenge, user, client = BROKEN_TOKEN_BINDING)
+
+                        tenant.acting { authenticate(broken, HOST, FLOW) }.shouldBeNull()
+
+                        tenant.acting { authenticate(key.assertion(challenge, user), HOST, FLOW) }.shouldBeNull()
                     }
                 }
 
@@ -1077,7 +1204,7 @@ class PasskeyServiceTest :
 
                         val assertion = device.assertion(tenant.loginChallenge())
 
-                        tenant.acting { authenticate(assertion, OTHER_HOST) }.shouldBeNull()
+                        tenant.acting { authenticate(assertion, OTHER_HOST, FLOW) }.shouldBeNull()
                     }
                 }
             }
@@ -1088,12 +1215,12 @@ class PasskeyServiceTest :
                         val tenant = tenant()
                         val user = tenant.user()
                         val device = tenant.registered(user)
-                        tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST) } shouldBe user
+                        tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST, FLOW) } shouldBe user
                         val stored = tenant.signCount(user)
                         device.authenticator.isCountUpEnabled = false
 
                         val clone = device.assertion(tenant.loginChallenge())
-                        tenant.acting { authenticate(clone, HOST, IP) }.shouldBeNull()
+                        tenant.acting { authenticate(clone, HOST, FLOW, IP) }.shouldBeNull()
 
                         tenant.signCount(user) shouldBe stored
                         val record = audit.denials.single()
@@ -1113,7 +1240,7 @@ class PasskeyServiceTest :
                         val credentialId = tenant.credentials(user).single()["credential_id"] as ByteArray
                         val stale =
                             TenantContext.with(tenant) { transaction.execute { dsl -> passkeys.find(dsl, credentialId) } }.shouldNotBeNull()
-                        tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST) } shouldBe user
+                        tenant.acting { authenticate(device.assertion(tenant.loginChallenge()), HOST, FLOW) } shouldBe user
                         val winner = tenant.signCount(user)
 
                         val recorded =
@@ -1132,7 +1259,7 @@ class PasskeyServiceTest :
                         val key = SoftPasskey()
                         tenant.registered(user, key)
 
-                        repeat(2) { tenant.acting { authenticate(key.assertion(tenant.loginChallenge(), user), HOST) } shouldBe user }
+                        repeat(2) { tenant.acting { authenticate(key.assertion(tenant.loginChallenge(), user), HOST, FLOW) } shouldBe user }
 
                         tenant.signCount(user) shouldBe 0L
                         audit.denials.shouldBeEmpty()
@@ -1151,8 +1278,8 @@ class PasskeyServiceTest :
 
                     val assertion = device.assertion(second.loginChallenge())
 
-                    second.acting { authenticate(assertion, OTHER_HOST) }.shouldBeNull()
-                    second.acting { authenticate(assertion, HOST) }.shouldBeNull()
+                    second.acting { authenticate(assertion, OTHER_HOST, FLOW) }.shouldBeNull()
+                    second.acting { authenticate(assertion, HOST, FLOW) }.shouldBeNull()
                 }
             }
 
@@ -1175,14 +1302,29 @@ class PasskeyServiceTest :
         }
 
         context("the challenges") {
-            test("a login stores one without a user") {
+            test("a login stores one for its flow, without a user") {
                 PasskeyFixture().run {
                     val tenant = tenant()
 
                     val challenge = tenant.loginChallenge()
 
                     challenge shouldHaveSize 32
-                    tenant.challenges().single()["user_id"].shouldBeNull()
+                    val row = tenant.challenges().single()
+                    row["user_id"].shouldBeNull()
+                    row["flow_id"] shouldBe FLOW
+                }
+            }
+
+            test("a registration stores one for its user, without a flow") {
+                PasskeyFixture().run {
+                    val tenant = tenant()
+                    val user = tenant.user()
+
+                    tenant.acting { beginRegistration(user) }
+
+                    val row = tenant.challenges().single()
+                    row["user_id"] shouldBe user
+                    row["flow_id"].shouldBeNull()
                 }
             }
 

@@ -50,10 +50,16 @@ class OperatorAssertions(
     private val clock: Clock = Clock.systemUTC(),
     private val clockSkew: Duration = Duration.ofMinutes(5),
 ) {
-    /** `ops` starts every login, so a Response that answers no request of this browser is refused. */
+    /**
+     * `ops` starts every login, so a Response that answers no request of this browser is refused. Spring compares `Destination` with
+     * the ACS only when it is there, and the IdP always sets it, so a Response without one is refused here.
+     */
     fun validateResponse(token: ResponseToken): Saml2ResponseValidatorResult {
         val response = token.response
         var result = Saml2ResponseValidatorResult.success()
+        if (response.destination.isNullOrBlank()) {
+            result = result.concat(Saml2Error(Saml2ErrorCodes.INVALID_DESTINATION, "The Response names no destination"))
+        }
         if (response.inResponseTo.isNullOrBlank()) {
             result = result.concat(Saml2Error(Saml2ErrorCodes.INVALID_IN_RESPONSE_TO, "The Response answers no request"))
         }

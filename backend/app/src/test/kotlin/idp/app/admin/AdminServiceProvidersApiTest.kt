@@ -260,6 +260,19 @@ class AdminServiceProvidersApiTest :
                 }
             }
 
+            test("needs a fresh login, keeps nothing, and the refusal is audited") {
+                val (browser, admin) = admin("sp-aged-importer")
+                val before = acme.acting { federation.serviceProviders() }.map { it.id }.toSet()
+                environment.age(admin)
+
+                val reply = browser.upload("Aged", metadata())
+
+                reply.status shouldBe 403
+                reply.json().text("error") shouldBe "reauthentication_required"
+                acme.acting { federation.serviceProviders() }.map { it.id }.toSet() shouldBe before
+                audit(admin).map { it.action } shouldContain "access.reauthentication_required"
+            }
+
             test("ignores the file name of the upload: it reaches neither the SP nor the journal") {
                 val (browser, admin) = admin("sp-named-file")
                 val fileName = "../../evil-upload<script>.xml"
@@ -534,6 +547,20 @@ class AdminServiceProvidersApiTest :
                 records shouldHaveSize 2
                 records.map { it.target }.toSet() shouldBe setOf(AuditTarget.user(first), AuditTarget.user(second))
                 records.forEach { it.details shouldBe mapOf("sp_id" to "$id") }
+            }
+
+            test("need a fresh login, assign nobody, and the refusal is audited") {
+                val (browser, admin) = admin("sp-aged-assigner")
+                val target = user("sp-aged-assigned")
+                val id = register()
+                environment.age(admin)
+
+                val reply = browser.post(users(id), usersBody(target))
+
+                reply.status shouldBe 403
+                reply.json().text("error") shouldBe "reauthentication_required"
+                assigned(id).shouldBeEmpty()
+                audit(admin).map { it.action } shouldContain "access.reauthentication_required"
             }
 
             test("the users of an SP come from one query, by ID, role and status") {

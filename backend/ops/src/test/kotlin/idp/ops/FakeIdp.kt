@@ -47,7 +47,7 @@ data class Login(
     val sessionNotOnOrAfter: Instant? = Instant.now().plus(Duration.ofHours(1)),
     val issuer: String = IDP_ENTITY_ID,
     val audience: String = OPS_ENTITY_ID,
-    val destination: String = OPS_ACS,
+    val destination: String? = OPS_ACS,
     val recipient: String = OPS_ACS,
     val confirmationMethod: String = BEARER,
     val issuedAt: Instant = Instant.now(),
@@ -96,13 +96,49 @@ class FakeIdp(
     fun response(
         login: Login,
         key: KeyPair = keyPair,
+    ): String = response(login, if (login.signAssertion) signedAssertion(login, key) else assertion(login), key = key)
+
+    /** A Response for [login] around [assertions] and [extensions], which a test arranges as it likes. */
+    fun response(
+        login: Login,
+        assertions: String,
+        extensions: String = "",
+        key: KeyPair = keyPair,
+    ): String {
+        val inResponseTo = login.inResponseTo?.let { """ InResponseTo="$it"""" }.orEmpty()
+        val destination = login.destination?.let { """ Destination="$it"""" }.orEmpty()
+        val extension = if (extensions.isEmpty()) "" else "<samlp:Extensions>$extensions</samlp:Extensions>"
+        val response =
+            """
+            <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+                ID="_${UUID.randomUUID()}" Version="2.0" IssueInstant="${login.issuedAt}"$destination$inResponseTo>
+              <saml:Issuer>${login.issuer}</saml:Issuer>
+              $extension
+              <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
+              $assertions
+            </samlp:Response>
+            """.trimIndent()
+        val signed = if (login.signResponse) sign(response, login, key) else response
+        val document = if (login.doctype) """<!DOCTYPE samlp:Response [<!ENTITY x "x">]>$signed""" else signed
+        return base64(document.toByteArray())
+    }
+
+    fun signedAssertion(
+        login: Login,
+        key: KeyPair = keyPair,
+    ): String = sign(assertion(login), login, key)
+
+    /** Unsigned. [advice] goes into `saml:Advice`, where SAML lets an IdP carry other assertions. */
+    fun assertion(
+        login: Login,
+        advice: String = "",
     ): String {
         val now = login.issuedAt
         val until = now.plus(login.validFor)
         val inResponseTo = login.inResponseTo?.let { """ InResponseTo="$it"""" }.orEmpty()
         val sessionEnd = login.sessionNotOnOrAfter?.let { """ SessionNotOnOrAfter="$it"""" }.orEmpty()
-        val assertion =
-            """
+        val advised = if (advice.isEmpty()) "" else "<saml:Advice>$advice</saml:Advice>"
+        return """
             <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${login.assertionId}" IssueInstant="$now" Version="2.0">
               <saml:Issuer>${login.issuer}</saml:Issuer>
               <saml:Subject>
@@ -114,24 +150,12 @@ class FakeIdp(
               <saml:Conditions NotBefore="${now.minusSeconds(1)}" NotOnOrAfter="$until">
                 <saml:AudienceRestriction><saml:Audience>${login.audience}</saml:Audience></saml:AudienceRestriction>
               </saml:Conditions>
+              $advised
               <saml:AuthnStatement AuthnInstant="$now" SessionIndex="_session"$sessionEnd>
                 <saml:AuthnContext><saml:AuthnContextClassRef>${login.contextClass}</saml:AuthnContextClassRef></saml:AuthnContext>
               </saml:AuthnStatement>
             </saml:Assertion>
             """.trimIndent()
-        val signedAssertion = if (login.signAssertion) sign(assertion, login, key) else assertion
-        val response =
-            """
-            <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
-                ID="_${UUID.randomUUID()}" Version="2.0" IssueInstant="$now" Destination="${login.destination}"$inResponseTo>
-              <saml:Issuer>${login.issuer}</saml:Issuer>
-              <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
-              $signedAssertion
-            </samlp:Response>
-            """.trimIndent()
-        val signed = if (login.signResponse) sign(response, login, key) else response
-        val document = if (login.doctype) """<!DOCTYPE samlp:Response [<!ENTITY x "x">]>$signed""" else signed
-        return base64(document.toByteArray())
     }
 
     private fun sign(
