@@ -10,4 +10,5 @@ DOMAINS=(
   "mail.$IDP_DOMAIN"
   "sp.$IDP_DOMAIN"
   "dashboard.$IDP_DOMAIN"
+  "grafana.$IDP_DOMAIN"
 )
